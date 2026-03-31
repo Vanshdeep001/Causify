@@ -1,0 +1,706 @@
+﻿d:\DebugSync\tools\apa
+che-maven-3.9.6\bin\mv
+n.cmd : WARNING: A 
+restricted method in 
+java.lang.System has 
+been called
+At line:1 char:54
++ ... dk-25.0.2"; d:\D
+ebugSync\tools\apache-
+maven-3.9.6\bin\mvn.cm
+d clean c ...
++                 ~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (WARNING: A   
+  rest...has been     
+called:String) []    
+, RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+WARNING: java.lang.Sys
+tem::load has been 
+called by org.fusesour
+ce.jansi.internal.Jans
+iLoader in an unnamed 
+module (file:/D:/Debug
+Sync/tools/apache-mave
+n-3.9.6/lib/jansi-2.4.
+0.jar)
+WARNING: Use --enable-
+native-access=ALL-UNNA
+MED to avoid a 
+warning for callers 
+in this module
+WARNING: Restricted 
+methods will be 
+blocked in a future 
+release unless native 
+access is enabled
+
+WARNING: A terminally 
+deprecated method in 
+sun.misc.Unsafe has 
+been called
+WARNING: sun.misc.Unsa
+fe::objectFieldOffset 
+has been called by com
+.google.common.util.co
+ncurrent.AbstractFutur
+e$UnsafeAtomicHelper (
+file:/D:/DebugSync/too
+ls/apache-maven-3.9.6/
+lib/guava-32.0.1-jre.j
+ar)
+WARNING: Please 
+consider reporting 
+this to the 
+maintainers of class c
+om.google.common.util.
+concurrent.AbstractFut
+ure$UnsafeAtomicHelper
+WARNING: sun.misc.Unsa
+fe::objectFieldOffset 
+will be removed in a 
+future release
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------< com.debugsync:debugsync-backend >-------------------
+[INFO] Building DebugSync Backend 1.0.0
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- clean:3.3.2:clean (default-clean) @ debugsync-backend ---
+[INFO] Deleting d:\DebugSync\backend\target
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ debugsync-backend ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] Copying 0 resource from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ debugsync-backend ---
+[INFO] Changes detected - recompiling the module! :source
+[INFO] Compiling 27 source files with javac [debug release 17] to target\classes
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR : 
+[INFO] -------------------------------------------------------------
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[51,9] cannot find symbol
+  symbol:   variable log
+  location: class com.debugsync.service.CausalityGraphService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[51,69] cannot find symbol
+  symbol:   method getType()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[51,86] cannot find symbol
+  symbol:   method getLineNumber()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[59,39] cannot find symbol
+  symbol:   method getSuspectedVariable()
+  location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[60,33] cannot find symbol
+  symbol:   method getSuspectedVariable()
+  location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[62,40] cannot find symbol
+  symbol:   method getSuspectedChange()
+  location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[63,24] cannot find symbol
+  symbol:   method getSuspectedChange()
+  location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[66,28] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.GraphNode
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[76,36] cannot find symbol
+  symbol:   method getSuspectedVariable()
+  location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[77,24] cannot find symbol
+  symbol:   method getSuspectedVariable()
+  location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[80,28] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.GraphNode
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[88,28] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.GraphEdge
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[96,61] cannot find symbol
+  symbol:   method getLineNumber()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[102,48] cannot find symbol
+  symbol:   method getLineNumber()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[98,28] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.GraphNode
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[106,28] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.GraphEdge
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[115,28] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.GraphNode
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[118,25] cannot find symbol
+  symbol:   method getType()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[119,26] cannot find symbol
+  symbol:   method getMessage()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[123,28] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.GraphEdge
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[130,18] cannot find symbol
+  symbol:   method getInvolvedVariables()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[130,59] cannot find symbol
+  symbol:   method getInvolvedVariables()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[131,42] cannot find symbol
+  symbol:   method getInvolvedVariables()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[135,46] cannot find symbol
+  symbol:   method getSuspectedVariable()
+  location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[139,36] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.GraphNode
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[147,36] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.GraphEdge
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[155,9] cannot find symbol
+  symbol:   variable log
+  location: class com.debugsync.service.CausalityGraphService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[157,34] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.CausalityGraphData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/SessionController.java:[40,34] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.model.Session
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/SessionController.java:[50,35] cannot find symbol
+  symbol:   method getId()
+  location: variable session of type com.debugsync.model.Session
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/SessionController.java:[51,37] cannot find symbol
+  symbol:   method getName()
+  location: variable session of type com.debugsync.model.Session
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/util/ErrorParser.java:[84,24] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/TimelineService.java:[35,45] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/TimelineService.java:[44,9] cannot find symbol
+  symbol:   variable log
+  location: class com.debugsync.service.TimelineService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/TimelineService.java:[44,61] cannot find symbol
+  symbol:   method getId()
+  location: variable saved of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CollaborationService.java:[42,9] cannot find symbol
+  symbol:   variable log
+  location: class com.debugsync.service.CollaborationService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CollaborationService.java:[55,9] cannot find symbol
+  symbol:   variable log
+  location: class com.debugsync.service.CollaborationService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[59,55] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.RootCauseResponse
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[60,61] cannot find symbol
+  symbol:   method getErrorType()
+  location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[60,90] cannot find symbol
+  symbol:   method getType()
+  location: variable parsedError of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[61,64] cannot find symbol
+  symbol:   method getErrorMessage()
+  location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[61,96] cannot find symbol
+  symbol:   method getMessage()
+  location: variable parsedError of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[62,61] cannot find symbol
+  symbol:   method getErrorLine()
+  location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[62,90] cannot find symbol
+  symbol:   method getLineNumber()
+  location: variable parsedError of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[63,57] cannot find symbol
+  symbol:   method getSteps()
+  location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[64,69] cannot find symbol
+  symbol:   method getSuspectedVariable()
+  location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[65,67] cannot find symbol
+  symbol:   method getSuspectedChange()
+  location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[66,63] cannot find symbol
+  symbol:   method getExplanation()
+  location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[67,62] cannot find symbol
+  symbol:   method getConfidence()
+  location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[63,9] cannot find symbol
+  symbol:   variable log
+  location: class com.debugsync.service.RootCauseService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[63,73] cannot find symbol
+  symbol:   method getType()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[63,90] cannot find symbol
+  symbol:   method getLineNumber()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[69,57] cannot find symbol
+  symbol:   method getLineNumber()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[75,44] cannot find symbol
+  symbol:   method getLineNumber()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[72,45] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.StepData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[100,45] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.StepData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[115,80] cannot find symbol
+  symbol:   method getCode()
+  location: variable previous of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[115,99] cannot find symbol
+  symbol:   method getCode()
+  location: variable current of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[145,45] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.StepData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[168,46] cannot find symbol
+  symbol:   method getLineNumber()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[189,45] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.StepData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[198,47] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[199,29] cannot find symbol
+  symbol:   method getType()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[200,32] cannot find symbol
+  symbol:   method getMessage()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[201,29] cannot find symbol
+  symbol:   method getLineNumber()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[222,38] cannot find symbol
+  symbol:   method getType()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[222,80] cannot find symbol
+  symbol:   method getLineNumber()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[216,47] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[217,29] cannot find symbol
+  symbol:   method getType()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[218,32] cannot find symbol
+  symbol:   method getMessage()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[219,29] cannot find symbol
+  symbol:   method getLineNumber()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[237,48] cannot find symbol
+  symbol:   method getType()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[238,26] cannot find symbol
+  symbol:   method getLineNumber()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[256,49] cannot find symbol
+  symbol:   method getMessage()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[257,72] cannot find symbol
+  symbol:   method getLineNumber()
+  location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[68,56] cannot find symbol
+  symbol:   method getLanguage()
+  location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[70,48] cannot find symbol
+  symbol:   method getCode()
+  location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[73,52] cannot find symbol
+  symbol:   method getLanguage()
+  location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[96,24] cannot find symbol
+  symbol:   method getSessionId()
+  location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[98,70] cannot find symbol
+  symbol:   method getCode()
+  location: variable lastSnapshot of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[99,69] cannot find symbol
+  symbol:   method getCode()
+  location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[104,24] cannot find symbol
+  symbol:   method getSessionId()
+  location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[105,24] cannot find symbol
+  symbol:   method getCode()
+  location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[112,48] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.model.ExecutionLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[113,37] cannot find symbol
+  symbol:   method getId()
+  location: variable snapshot of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[126,73] cannot find symbol
+  symbol:   method getCode()
+  location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[128,55] cannot find symbol
+  symbol:   method getId()
+  location: variable execLog of type com.debugsync.model.ExecutionLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[133,45] cannot find symbol
+  symbol:   method getCode()
+  location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[133,64] cannot find symbol
+  symbol:   method getSessionId()
+  location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[139,64] cannot find symbol
+  symbol:   method getCode()
+  location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[146,37] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[150,57] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse.SnapshotData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[151,33] cannot find symbol
+  symbol:   method getId()
+  location: variable snapshot of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[152,35] cannot find symbol
+  symbol:   method getCode()
+  location: variable snapshot of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[153,37] cannot find symbol
+  symbol:   method getUserId()
+  location: variable snapshot of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[154,40] cannot find symbol
+  symbol:   method getTimestamp()
+  location: variable snapshot of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[163,13] cannot find symbol
+  symbol:   variable log
+  location: class com.debugsync.service.ExecutionService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[164,37] cannot find symbol
+  symbol:   method builder()
+  location: class com.debugsync.dto.ExecutionResponse
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/websocket/CollaborationHandler.java:[38,9] cannot find symbol
+  symbol:   variable log
+  location: class com.debugsync.websocket.CollaborationHandler
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/websocket/CollaborationHandler.java:[58,9] cannot find symbol
+  symbol:   variable log
+  location: class com.debugsync.websocket.CollaborationHandler
+[INFO] 100 errors 
+[INFO] -------------------------------------------------------------
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  2.142 s
+[INFO] Finished at: 2026-03-23T16:22:13+05:30
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:compile (default-compile) on project debugsync-backend: Compilation failure: Compilation failure: 
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[51,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class com.debugsync.service.CausalityGraphService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[51,69] cannot find symbol
+[ERROR]   symbol:   method getType()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[51,86] cannot find symbol
+[ERROR]   symbol:   method getLineNumber()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[59,39] cannot find symbol
+[ERROR]   symbol:   method getSuspectedVariable()
+[ERROR]   location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[60,33] cannot find symbol
+[ERROR]   symbol:   method getSuspectedVariable()
+[ERROR]   location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[62,40] cannot find symbol
+[ERROR]   symbol:   method getSuspectedChange()
+[ERROR]   location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[63,24] cannot find symbol
+[ERROR]   symbol:   method getSuspectedChange()
+[ERROR]   location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[66,28] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.GraphNode
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[76,36] cannot find symbol
+[ERROR]   symbol:   method getSuspectedVariable()
+[ERROR]   location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[77,24] cannot find symbol
+[ERROR]   symbol:   method getSuspectedVariable()
+[ERROR]   location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[80,28] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.GraphNode
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[88,28] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.GraphEdge
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[96,61] cannot find symbol
+[ERROR]   symbol:   method getLineNumber()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[102,48] cannot find symbol
+[ERROR]   symbol:   method getLineNumber()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[98,28] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.GraphNode
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[106,28] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.GraphEdge
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[115,28] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.GraphNode
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[118,25] cannot find symbol
+[ERROR]   symbol:   method getType()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[119,26] cannot find symbol
+[ERROR]   symbol:   method getMessage()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[123,28] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.GraphEdge
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[130,18] cannot find symbol
+[ERROR]   symbol:   method getInvolvedVariables()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[130,59] cannot find symbol
+[ERROR]   symbol:   method getInvolvedVariables()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[131,42] cannot find symbol
+[ERROR]   symbol:   method getInvolvedVariables()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[135,46] cannot find symbol
+[ERROR]   symbol:   method getSuspectedVariable()
+[ERROR]   location: variable rootCause of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[139,36] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.GraphNode
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[147,36] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.GraphEdge
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[155,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class com.debugsync.service.CausalityGraphService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CausalityGraphService.java:[157,34] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.CausalityGraphData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/SessionController.java:[40,34] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.model.Session
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/SessionController.java:[50,35] cannot find symbol
+[ERROR]   symbol:   method getId()
+[ERROR]   location: variable session of type com.debugsync.model.Session
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/SessionController.java:[51,37] cannot find symbol
+[ERROR]   symbol:   method getName()
+[ERROR]   location: variable session of type com.debugsync.model.Session
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/util/ErrorParser.java:[84,24] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/TimelineService.java:[35,45] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/TimelineService.java:[44,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class com.debugsync.service.TimelineService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/TimelineService.java:[44,61] cannot find symbol
+[ERROR]   symbol:   method getId()
+[ERROR]   location: variable saved of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CollaborationService.java:[42,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class com.debugsync.service.CollaborationService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/CollaborationService.java:[55,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class com.debugsync.service.CollaborationService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[59,55] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.RootCauseResponse
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[60,61] cannot find symbol
+[ERROR]   symbol:   method getErrorType()
+[ERROR]   location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[60,90] cannot find symbol
+[ERROR]   symbol:   method getType()
+[ERROR]   location: variable parsedError of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[61,64] cannot find symbol
+[ERROR]   symbol:   method getErrorMessage()
+[ERROR]   location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[61,96] cannot find symbol
+[ERROR]   symbol:   method getMessage()
+[ERROR]   location: variable parsedError of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[62,61] cannot find symbol
+[ERROR]   symbol:   method getErrorLine()
+[ERROR]   location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[62,90] cannot find symbol
+[ERROR]   symbol:   method getLineNumber()
+[ERROR]   location: variable parsedError of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[63,57] cannot find symbol
+[ERROR]   symbol:   method getSteps()
+[ERROR]   location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[64,69] cannot find symbol
+[ERROR]   symbol:   method getSuspectedVariable()
+[ERROR]   location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[65,67] cannot find symbol
+[ERROR]   symbol:   method getSuspectedChange()
+[ERROR]   location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[66,63] cannot find symbol
+[ERROR]   symbol:   method getExplanation()
+[ERROR]   location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/controller/RootCauseController.java:[67,62] cannot find symbol
+[ERROR]   symbol:   method getConfidence()
+[ERROR]   location: variable rootCauseData of type com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[63,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class com.debugsync.service.RootCauseService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[63,73] cannot find symbol
+[ERROR]   symbol:   method getType()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[63,90] cannot find symbol
+[ERROR]   symbol:   method getLineNumber()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[69,57] cannot find symbol
+[ERROR]   symbol:   method getLineNumber()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[75,44] cannot find symbol
+[ERROR]   symbol:   method getLineNumber()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[72,45] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.StepData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[100,45] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.StepData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[115,80] cannot find symbol
+[ERROR]   symbol:   method getCode()
+[ERROR]   location: variable previous of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[115,99] cannot find symbol
+[ERROR]   symbol:   method getCode()
+[ERROR]   location: variable current of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[145,45] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.StepData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[168,46] cannot find symbol
+[ERROR]   symbol:   method getLineNumber()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[189,45] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.StepData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[198,47] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[199,29] cannot find symbol
+[ERROR]   symbol:   method getType()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[200,32] cannot find symbol
+[ERROR]   symbol:   method getMessage()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[201,29] cannot find symbol
+[ERROR]   symbol:   method getLineNumber()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[222,38] cannot find symbol
+[ERROR]   symbol:   method getType()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[222,80] cannot find symbol
+[ERROR]   symbol:   method getLineNumber()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[216,47] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.RootCauseData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[217,29] cannot find symbol
+[ERROR]   symbol:   method getType()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[218,32] cannot find symbol
+[ERROR]   symbol:   method getMessage()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[219,29] cannot find symbol
+[ERROR]   symbol:   method getLineNumber()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[237,48] cannot find symbol
+[ERROR]   symbol:   method getType()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[238,26] cannot find symbol
+[ERROR]   symbol:   method getLineNumber()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[256,49] cannot find symbol
+[ERROR]   symbol:   method getMessage()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/RootCauseService.java:[257,72] cannot find symbol
+[ERROR]   symbol:   method getLineNumber()
+[ERROR]   location: variable error of type com.debugsync.model.ErrorLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[68,56] cannot find symbol
+[ERROR]   symbol:   method getLanguage()
+[ERROR]   location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[70,48] cannot find symbol
+[ERROR]   symbol:   method getCode()
+[ERROR]   location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[73,52] cannot find symbol
+[ERROR]   symbol:   method getLanguage()
+[ERROR]   location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[96,24] cannot find symbol
+[ERROR]   symbol:   method getSessionId()
+[ERROR]   location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[98,70] cannot find symbol
+[ERROR]   symbol:   method getCode()
+[ERROR]   location: variable lastSnapshot of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[99,69] cannot find symbol
+[ERROR]   symbol:   method getCode()
+[ERROR]   location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[104,24] cannot find symbol
+[ERROR]   symbol:   method getSessionId()
+[ERROR]   location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[105,24] cannot find symbol
+[ERROR]   symbol:   method getCode()
+[ERROR]   location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[112,48] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.model.ExecutionLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[113,37] cannot find symbol
+[ERROR]   symbol:   method getId()
+[ERROR]   location: variable snapshot of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[126,73] cannot find symbol
+[ERROR]   symbol:   method getCode()
+[ERROR]   location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[128,55] cannot find symbol
+[ERROR]   symbol:   method getId()
+[ERROR]   location: variable execLog of type com.debugsync.model.ExecutionLog
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[133,45] cannot find symbol
+[ERROR]   symbol:   method getCode()
+[ERROR]   location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[133,64] cannot find symbol
+[ERROR]   symbol:   method getSessionId()
+[ERROR]   location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[139,64] cannot find symbol
+[ERROR]   symbol:   method getCode()
+[ERROR]   location: variable request of type com.debugsync.dto.ExecutionRequest
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[146,37] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[150,57] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse.SnapshotData
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[151,33] cannot find symbol
+[ERROR]   symbol:   method getId()
+[ERROR]   location: variable snapshot of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[152,35] cannot find symbol
+[ERROR]   symbol:   method getCode()
+[ERROR]   location: variable snapshot of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[153,37] cannot find symbol
+[ERROR]   symbol:   method getUserId()
+[ERROR]   location: variable snapshot of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[154,40] cannot find symbol
+[ERROR]   symbol:   method getTimestamp()
+[ERROR]   location: variable snapshot of type com.debugsync.model.CodeSnapshot
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[163,13] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class com.debugsync.service.ExecutionService
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/service/ExecutionService.java:[164,37] cannot find symbol
+[ERROR]   symbol:   method builder()
+[ERROR]   location: class com.debugsync.dto.ExecutionResponse
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/websocket/CollaborationHandler.java:[38,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class com.debugsync.websocket.CollaborationHandler
+[ERROR] /d:/DebugSync/backend/src/main/java/com/debugsync/websocket/CollaborationHandler.java:[58,9] cannot find symbol
+[ERROR]   symbol:   variable log
+[ERROR]   location: class com.debugsync.websocket.CollaborationHandler
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

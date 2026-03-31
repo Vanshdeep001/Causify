@@ -1,0 +1,513 @@
+﻿d:\DebugSync\tools\apa
+che-maven-3.9.6\bin\mv
+n.cmd : WARNING: A 
+restricted method in 
+java.lang.System has 
+been called
+At line:1 char:54
++ ... dk-25.0.2"; d:\D
+ebugSync\tools\apache-
+maven-3.9.6\bin\mvn.cm
+d clean c ...
++                 ~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (WARNING: A   
+  rest...has been     
+called:String) []    
+, RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+WARNING: java.lang.Sys
+tem::load has been 
+called by org.fusesour
+ce.jansi.internal.Jans
+iLoader in an unnamed 
+module (file:/D:/Debug
+Sync/tools/apache-mave
+n-3.9.6/lib/jansi-2.4.
+0.jar)
+WARNING: Use --enable-
+native-access=ALL-UNNA
+MED to avoid a 
+warning for callers 
+in this module
+WARNING: Restricted 
+methods will be 
+blocked in a future 
+release unless native 
+access is enabled
+
+WARNING: A terminally 
+deprecated method in 
+sun.misc.Unsafe has 
+been called
+WARNING: sun.misc.Unsa
+fe::objectFieldOffset 
+has been called by com
+.google.common.util.co
+ncurrent.AbstractFutur
+e$UnsafeAtomicHelper (
+file:/D:/DebugSync/too
+ls/apache-maven-3.9.6/
+lib/guava-32.0.1-jre.j
+ar)
+WARNING: Please 
+consider reporting 
+this to the 
+maintainers of class c
+om.google.common.util.
+concurrent.AbstractFut
+ure$UnsafeAtomicHelper
+WARNING: sun.misc.Unsa
+fe::objectFieldOffset 
+will be removed in a 
+future release
+[INFO] Error stacktraces are turned on.
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------< com.debugsync:debugsync-backend >-------------------
+[INFO] Building DebugSync Backend 1.0.0
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- clean:3.3.2:clean (default-clean) @ debugsync-backend ---
+[INFO] Deleting d:\DebugSync\backend\target
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ debugsync-backend ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] Copying 0 resource from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ debugsync-backend ---
+Downloading from central: https://repo.maven.apache.org/maven2/org/projectlombok/lombok/1.18.36/lombok-1.18.36.pom
+Progress (1): 1.1 kB
+Progress (1): 1.5 kB
+                    
+Downloaded from central: https://repo.maven.apache.org/maven2/org/projectlombok/lombok/1.18.36/lombok-1.18.36.pom (1.5 kB at 5.2 kB/s)
+Downloading from central: https://repo.maven.apache.org/maven2/org/projectlombok/lombok/1.18.36/lombok-1.18.36.jar
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.1/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.2/2.1 MB
+Progress (1): 0.3/2.1 MB
+Progress (1): 0.3/2.1 MB
+Progress (1): 0.3/2.1 MB
+Progress (1): 0.3/2.1 MB
+Progress (1): 0.3/2.1 MB
+Progress (1): 0.3/2.1 MB
+Progress (1): 0.4/2.1 MB
+Progress (1): 0.4/2.1 MB
+Progress (1): 0.4/2.1 MB
+Progress (1): 0.4/2.1 MB
+Progress (1): 0.4/2.1 MB
+Progress (1): 0.4/2.1 MB
+Progress (1): 0.5/2.1 MB
+Progress (1): 0.5/2.1 MB
+Progress (1): 0.5/2.1 MB
+Progress (1): 0.5/2.1 MB
+Progress (1): 0.5/2.1 MB
+Progress (1): 0.5/2.1 MB
+Progress (1): 0.5/2.1 MB
+Progress (1): 0.6/2.1 MB
+Progress (1): 0.6/2.1 MB
+Progress (1): 0.6/2.1 MB
+Progress (1): 0.6/2.1 MB
+Progress (1): 0.6/2.1 MB
+Progress (1): 0.6/2.1 MB
+Progress (1): 0.7/2.1 MB
+Progress (1): 0.7/2.1 MB
+Progress (1): 0.7/2.1 MB
+Progress (1): 0.7/2.1 MB
+Progress (1): 0.7/2.1 MB
+Progress (1): 0.7/2.1 MB
+Progress (1): 0.8/2.1 MB
+Progress (1): 0.8/2.1 MB
+Progress (1): 0.8/2.1 MB
+Progress (1): 0.8/2.1 MB
+Progress (1): 0.8/2.1 MB
+Progress (1): 0.8/2.1 MB
+Progress (1): 0.9/2.1 MB
+Progress (1): 0.9/2.1 MB
+Progress (1): 0.9/2.1 MB
+Progress (1): 0.9/2.1 MB
+Progress (1): 0.9/2.1 MB
+Progress (1): 0.9/2.1 MB
+Progress (1): 1.0/2.1 MB
+Progress (1): 1.0/2.1 MB
+Progress (1): 1.0/2.1 MB
+Progress (1): 1.0/2.1 MB
+Progress (1): 1.0/2.1 MB
+Progress (1): 1.0/2.1 MB
+Progress (1): 1.1/2.1 MB
+Progress (1): 1.1/2.1 MB
+Progress (1): 1.1/2.1 MB
+Progress (1): 1.1/2.1 MB
+Progress (1): 1.1/2.1 MB
+Progress (1): 1.1/2.1 MB
+Progress (1): 1.2/2.1 MB
+Progress (1): 1.2/2.1 MB
+Progress (1): 1.2/2.1 MB
+Progress (1): 1.2/2.1 MB
+Progress (1): 1.2/2.1 MB
+Progress (1): 1.2/2.1 MB
+Progress (1): 1.3/2.1 MB
+Progress (1): 1.3/2.1 MB
+Progress (1): 1.3/2.1 MB
+Progress (1): 1.3/2.1 MB
+Progress (1): 1.3/2.1 MB
+Progress (1): 1.3/2.1 MB
+Progress (1): 1.4/2.1 MB
+Progress (1): 1.4/2.1 MB
+Progress (1): 1.4/2.1 MB
+Progress (1): 1.4/2.1 MB
+Progress (1): 1.4/2.1 MB
+Progress (1): 1.4/2.1 MB
+Progress (1): 1.4/2.1 MB
+Progress (1): 1.5/2.1 MB
+Progress (1): 1.5/2.1 MB
+Progress (1): 1.5/2.1 MB
+Progress (1): 1.5/2.1 MB
+Progress (1): 1.5/2.1 MB
+Progress (1): 1.5/2.1 MB
+Progress (1): 1.6/2.1 MB
+Progress (1): 1.6/2.1 MB
+Progress (1): 1.6/2.1 MB
+Progress (1): 1.6/2.1 MB
+Progress (1): 1.6/2.1 MB
+Progress (1): 1.6/2.1 MB
+Progress (1): 1.7/2.1 MB
+Progress (1): 1.7/2.1 MB
+Progress (1): 1.7/2.1 MB
+Progress (1): 1.7/2.1 MB
+Progress (1): 1.7/2.1 MB
+Progress (1): 1.7/2.1 MB
+Progress (1): 1.8/2.1 MB
+Progress (1): 1.8/2.1 MB
+Progress (1): 1.8/2.1 MB
+Progress (1): 1.8/2.1 MB
+Progress (1): 1.8/2.1 MB
+Progress (1): 1.8/2.1 MB
+Progress (1): 1.9/2.1 MB
+Progress (1): 1.9/2.1 MB
+Progress (1): 1.9/2.1 MB
+Progress (1): 1.9/2.1 MB
+Progress (1): 1.9/2.1 MB
+Progress (1): 1.9/2.1 MB
+Progress (1): 2.0/2.1 MB
+Progress (1): 2.0/2.1 MB
+Progress (1): 2.0/2.1 MB
+Progress (1): 2.0/2.1 MB
+Progress (1): 2.0/2.1 MB
+Progress (1): 2.0/2.1 MB
+Progress (1): 2.0/2.1 MB
+Progress (1): 2.1 MB    
+                    
+Downloaded from central: https://repo.maven.apache.org/maven2/org/projectlombok/lombok/1.18.36/lombok-1.18.36.jar (2.1 MB at 7.2 MB/s)
+[INFO] Changes detected - recompiling the module! :source
+[INFO] Compiling 27 source files with javac [debug release 17] to target\classes
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  2.234 s
+[INFO] Finished at: 2026-03-23T16:24:04+05:30
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:compile (default-compile) on project debugsync-backend: Fatal error compiling: java.lang.ExceptionInInitializerError: com.sun.tools.javac.code.TypeTag :: UNKNOWN -> [Help 1]
+org.apache.maven.lifecycle.LifecycleExecutionException: Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin:3.11.0:compile (default-compile) on project debugsync-backend: Fatal error compiling
+    at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute2 (MojoExecutor.java:333)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute (MojoExecutor.java:316)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:212)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:174)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.access$000 (MojoExecutor.java:75)
+    at org.apache.maven.lifecycle.internal.MojoExecutor$1.run (MojoExecutor.java:162)
+    at org.apache.maven.plugin.DefaultMojosExecutionStrategy.execute (DefaultMojosExecutionStrategy.java:39)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:159)
+    at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject (LifecycleModuleBuilder.java:105)
+    at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject (LifecycleModuleBuilder.java:73)
+    at org.apache.maven.lifecycle.internal.builder.singlethreaded.SingleThreadedBuilder.build (SingleThreadedBuilder.java:53)
+    at org.apache.maven.lifecycle.internal.LifecycleStarter.execute (LifecycleStarter.java:118)
+    at org.apache.maven.DefaultMaven.doExecute (DefaultMaven.java:261)
+    at org.apache.maven.DefaultMaven.doExecute (DefaultMaven.java:173)
+    at org.apache.maven.DefaultMaven.execute (DefaultMaven.java:101)
+    at org.apache.maven.cli.MavenCli.execute (MavenCli.java:906)
+    at org.apache.maven.cli.MavenCli.doMain (MavenCli.java:283)
+    at org.apache.maven.cli.MavenCli.main (MavenCli.java:206)
+    at jdk.internal.reflect.DirectMethodHandleAccessor.invoke (DirectMethodHandleAccessor.java:104)
+    at java.lang.reflect.Method.invoke (Method.java:565)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.launchEnhanced (Launcher.java:283)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.launch (Launcher.java:226)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.mainWithExitCode (Launcher.java:407)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.main (Launcher.java:348)
+Caused by: org.apache.maven.plugin.MojoExecutionException: Fatal error compiling
+    at org.apache.maven.plugin.compiler.AbstractCompilerMojo.execute (AbstractCompilerMojo.java:1143)
+    at org.apache.maven.plugin.compiler.CompilerMojo.execute (CompilerMojo.java:193)
+    at org.apache.maven.plugin.DefaultBuildPluginManager.executeMojo (DefaultBuildPluginManager.java:126)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute2 (MojoExecutor.java:328)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute (MojoExecutor.java:316)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:212)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:174)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.access$000 (MojoExecutor.java:75)
+    at org.apache.maven.lifecycle.internal.MojoExecutor$1.run (MojoExecutor.java:162)
+    at org.apache.maven.plugin.DefaultMojosExecutionStrategy.execute (DefaultMojosExecutionStrategy.java:39)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:159)
+    at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject (LifecycleModuleBuilder.java:105)
+    at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject (LifecycleModuleBuilder.java:73)
+    at org.apache.maven.lifecycle.internal.builder.singlethreaded.SingleThreadedBuilder.build (SingleThreadedBuilder.java:53)
+    at org.apache.maven.lifecycle.internal.LifecycleStarter.execute (LifecycleStarter.java:118)
+    at org.apache.maven.DefaultMaven.doExecute (DefaultMaven.java:261)
+    at org.apache.maven.DefaultMaven.doExecute (DefaultMaven.java:173)
+    at org.apache.maven.DefaultMaven.execute (DefaultMaven.java:101)
+    at org.apache.maven.cli.MavenCli.execute (MavenCli.java:906)
+    at org.apache.maven.cli.MavenCli.doMain (MavenCli.java:283)
+    at org.apache.maven.cli.MavenCli.main (MavenCli.java:206)
+    at jdk.internal.reflect.DirectMethodHandleAccessor.invoke (DirectMethodHandleAccessor.java:104)
+    at java.lang.reflect.Method.invoke (Method.java:565)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.launchEnhanced (Launcher.java:283)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.launch (Launcher.java:226)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.mainWithExitCode (Launcher.java:407)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.main (Launcher.java:348)
+Caused by: org.codehaus.plexus.compiler.CompilerException: java.lang.ExceptionInInitializerError
+    at org.codehaus.plexus.compiler.javac.JavaxToolsCompiler.compileInProcess (JavaxToolsCompiler.java:198)
+    at org.codehaus.plexus.compiler.javac.JavacCompiler.performCompile (JavacCompiler.java:183)
+    at org.apache.maven.plugin.compiler.AbstractCompilerMojo.execute (AbstractCompilerMojo.java:1140)
+    at org.apache.maven.plugin.compiler.CompilerMojo.execute (CompilerMojo.java:193)
+    at org.apache.maven.plugin.DefaultBuildPluginManager.executeMojo (DefaultBuildPluginManager.java:126)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute2 (MojoExecutor.java:328)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute (MojoExecutor.java:316)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:212)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:174)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.access$000 (MojoExecutor.java:75)
+    at org.apache.maven.lifecycle.internal.MojoExecutor$1.run (MojoExecutor.java:162)
+    at org.apache.maven.plugin.DefaultMojosExecutionStrategy.execute (DefaultMojosExecutionStrategy.java:39)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:159)
+    at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject (LifecycleModuleBuilder.java:105)
+    at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject (LifecycleModuleBuilder.java:73)
+    at org.apache.maven.lifecycle.internal.builder.singlethreaded.SingleThreadedBuilder.build (SingleThreadedBuilder.java:53)
+    at org.apache.maven.lifecycle.internal.LifecycleStarter.execute (LifecycleStarter.java:118)
+    at org.apache.maven.DefaultMaven.doExecute (DefaultMaven.java:261)
+    at org.apache.maven.DefaultMaven.doExecute (DefaultMaven.java:173)
+    at org.apache.maven.DefaultMaven.execute (DefaultMaven.java:101)
+    at org.apache.maven.cli.MavenCli.execute (MavenCli.java:906)
+    at org.apache.maven.cli.MavenCli.doMain (MavenCli.java:283)
+    at org.apache.maven.cli.MavenCli.main (MavenCli.java:206)
+    at jdk.internal.reflect.DirectMethodHandleAccessor.invoke (DirectMethodHandleAccessor.java:104)
+    at java.lang.reflect.Method.invoke (Method.java:565)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.launchEnhanced (Launcher.java:283)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.launch (Launcher.java:226)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.mainWithExitCode (Launcher.java:407)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.main (Launcher.java:348)
+Caused by: java.lang.RuntimeException: java.lang.ExceptionInInitializerError
+    at com.sun.tools.javac.api.JavacTaskImpl.invocationHelper (JavacTaskImpl.java:168)
+    at com.sun.tools.javac.api.JavacTaskImpl.doCall (JavacTaskImpl.java:100)
+    at com.sun.tools.javac.api.JavacTaskImpl.call (JavacTaskImpl.java:94)
+    at org.codehaus.plexus.compiler.javac.JavaxToolsCompiler.compileInProcess (JavaxToolsCompiler.java:136)
+    at org.codehaus.plexus.compiler.javac.JavacCompiler.performCompile (JavacCompiler.java:183)
+    at org.apache.maven.plugin.compiler.AbstractCompilerMojo.execute (AbstractCompilerMojo.java:1140)
+    at org.apache.maven.plugin.compiler.CompilerMojo.execute (CompilerMojo.java:193)
+    at org.apache.maven.plugin.DefaultBuildPluginManager.executeMojo (DefaultBuildPluginManager.java:126)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute2 (MojoExecutor.java:328)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute (MojoExecutor.java:316)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:212)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:174)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.access$000 (MojoExecutor.java:75)
+    at org.apache.maven.lifecycle.internal.MojoExecutor$1.run (MojoExecutor.java:162)
+    at org.apache.maven.plugin.DefaultMojosExecutionStrategy.execute (DefaultMojosExecutionStrategy.java:39)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:159)
+    at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject (LifecycleModuleBuilder.java:105)
+    at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject (LifecycleModuleBuilder.java:73)
+    at org.apache.maven.lifecycle.internal.builder.singlethreaded.SingleThreadedBuilder.build (SingleThreadedBuilder.java:53)
+    at org.apache.maven.lifecycle.internal.LifecycleStarter.execute (LifecycleStarter.java:118)
+    at org.apache.maven.DefaultMaven.doExecute (DefaultMaven.java:261)
+    at org.apache.maven.DefaultMaven.doExecute (DefaultMaven.java:173)
+    at org.apache.maven.DefaultMaven.execute (DefaultMaven.java:101)
+    at org.apache.maven.cli.MavenCli.execute (MavenCli.java:906)
+    at org.apache.maven.cli.MavenCli.doMain (MavenCli.java:283)
+    at org.apache.maven.cli.MavenCli.main (MavenCli.java:206)
+    at jdk.internal.reflect.DirectMethodHandleAccessor.invoke (DirectMethodHandleAccessor.java:104)
+    at java.lang.reflect.Method.invoke (Method.java:565)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.launchEnhanced (Launcher.java:283)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.launch (Launcher.java:226)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.mainWithExitCode (Launcher.java:407)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.main (Launcher.java:348)
+Caused by: java.lang.ExceptionInInitializerError
+    at lombok.javac.apt.LombokProcessor.placePostCompileAndDontMakeForceRoundDummiesHook (LombokProcessor.java:174)
+    at lombok.javac.apt.LombokProcessor.init (LombokProcessor.java:96)
+    at lombok.core.AnnotationProcessor$JavacDescriptor.want (AnnotationProcessor.java:160)
+    at lombok.core.AnnotationProcessor.init (AnnotationProcessor.java:213)
+    at lombok.launch.AnnotationProcessorHider$AnnotationProcessor.init (AnnotationProcessor.java:64)
+    at com.sun.tools.javac.processing.JavacProcessingEnvironment$ProcessorState.<init> (JavacProcessingEnvironment.java:635)
+    at com.sun.tools.javac.processing.JavacProcessingEnvironment$DiscoveredProcessors$ProcessorStateIterator.next (JavacProcessingEnvironment.java:761)
+    at com.sun.tools.javac.processing.JavacProcessingEnvironment.discoverAndRunProcs (JavacProcessingEnvironment.java:857)
+    at com.sun.tools.javac.processing.JavacProcessingEnvironment$Round.run (JavacProcessingEnvironment.java:1188)
+    at com.sun.tools.javac.processing.JavacProcessingEnvironment.doProcessing (JavacProcessingEnvironment.java:1301)
+    at com.sun.tools.javac.main.JavaCompiler.processAnnotations (JavaCompiler.java:1262)
+    at com.sun.tools.javac.main.JavaCompiler.compile (JavaCompiler.java:938)
+    at com.sun.tools.javac.api.JavacTaskImpl.lambda$doCall$0 (JavacTaskImpl.java:104)
+    at com.sun.tools.javac.api.JavacTaskImpl.invocationHelper (JavacTaskImpl.java:152)
+    at com.sun.tools.javac.api.JavacTaskImpl.doCall (JavacTaskImpl.java:100)
+    at com.sun.tools.javac.api.JavacTaskImpl.call (JavacTaskImpl.java:94)
+    at org.codehaus.plexus.compiler.javac.JavaxToolsCompiler.compileInProcess (JavaxToolsCompiler.java:136)
+    at org.codehaus.plexus.compiler.javac.JavacCompiler.performCompile (JavacCompiler.java:183)
+    at org.apache.maven.plugin.compiler.AbstractCompilerMojo.execute (AbstractCompilerMojo.java:1140)
+    at org.apache.maven.plugin.compiler.CompilerMojo.execute (CompilerMojo.java:193)
+    at org.apache.maven.plugin.DefaultBuildPluginManager.executeMojo (DefaultBuildPluginManager.java:126)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute2 (MojoExecutor.java:328)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute (MojoExecutor.java:316)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:212)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:174)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.access$000 (MojoExecutor.java:75)
+    at org.apache.maven.lifecycle.internal.MojoExecutor$1.run (MojoExecutor.java:162)
+    at org.apache.maven.plugin.DefaultMojosExecutionStrategy.execute (DefaultMojosExecutionStrategy.java:39)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:159)
+    at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject (LifecycleModuleBuilder.java:105)
+    at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject (LifecycleModuleBuilder.java:73)
+    at org.apache.maven.lifecycle.internal.builder.singlethreaded.SingleThreadedBuilder.build (SingleThreadedBuilder.java:53)
+    at org.apache.maven.lifecycle.internal.LifecycleStarter.execute (LifecycleStarter.java:118)
+    at org.apache.maven.DefaultMaven.doExecute (DefaultMaven.java:261)
+    at org.apache.maven.DefaultMaven.doExecute (DefaultMaven.java:173)
+    at org.apache.maven.DefaultMaven.execute (DefaultMaven.java:101)
+    at org.apache.maven.cli.MavenCli.execute (MavenCli.java:906)
+    at org.apache.maven.cli.MavenCli.doMain (MavenCli.java:283)
+    at org.apache.maven.cli.MavenCli.main (MavenCli.java:206)
+    at jdk.internal.reflect.DirectMethodHandleAccessor.invoke (DirectMethodHandleAccessor.java:104)
+    at java.lang.reflect.Method.invoke (Method.java:565)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.launchEnhanced (Launcher.java:283)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.launch (Launcher.java:226)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.mainWithExitCode (Launcher.java:407)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.main (Launcher.java:348)
+Caused by: java.lang.NoSuchFieldException: com.sun.tools.javac.code.TypeTag :: UNKNOWN
+    at lombok.permit.Permit.getField (Permit.java:144)
+    at lombok.javac.JavacTreeMaker$SchroedingerType.getFieldCached (JavacTreeMaker.java:171)
+    at lombok.javac.JavacTreeMaker$TypeTag.typeTag (JavacTreeMaker.java:259)
+    at lombok.javac.Javac.<clinit> (Javac.java:187)
+    at lombok.javac.apt.LombokProcessor.placePostCompileAndDontMakeForceRoundDummiesHook (LombokProcessor.java:174)
+    at lombok.javac.apt.LombokProcessor.init (LombokProcessor.java:96)
+    at lombok.core.AnnotationProcessor$JavacDescriptor.want (AnnotationProcessor.java:160)
+    at lombok.core.AnnotationProcessor.init (AnnotationProcessor.java:213)
+    at lombok.launch.AnnotationProcessorHider$AnnotationProcessor.init (AnnotationProcessor.java:64)
+    at com.sun.tools.javac.processing.JavacProcessingEnvironment$ProcessorState.<init> (JavacProcessingEnvironment.java:635)
+    at com.sun.tools.javac.processing.JavacProcessingEnvironment$DiscoveredProcessors$ProcessorStateIterator.next (JavacProcessingEnvironment.java:761)
+    at com.sun.tools.javac.processing.JavacProcessingEnvironment.discoverAndRunProcs (JavacProcessingEnvironment.java:857)
+    at com.sun.tools.javac.processing.JavacProcessingEnvironment$Round.run (JavacProcessingEnvironment.java:1188)
+    at com.sun.tools.javac.processing.JavacProcessingEnvironment.doProcessing (JavacProcessingEnvironment.java:1301)
+    at com.sun.tools.javac.main.JavaCompiler.processAnnotations (JavaCompiler.java:1262)
+    at com.sun.tools.javac.main.JavaCompiler.compile (JavaCompiler.java:938)
+    at com.sun.tools.javac.api.JavacTaskImpl.lambda$doCall$0 (JavacTaskImpl.java:104)
+    at com.sun.tools.javac.api.JavacTaskImpl.invocationHelper (JavacTaskImpl.java:152)
+    at com.sun.tools.javac.api.JavacTaskImpl.doCall (JavacTaskImpl.java:100)
+    at com.sun.tools.javac.api.JavacTaskImpl.call (JavacTaskImpl.java:94)
+    at org.codehaus.plexus.compiler.javac.JavaxToolsCompiler.compileInProcess (JavaxToolsCompiler.java:136)
+    at org.codehaus.plexus.compiler.javac.JavacCompiler.performCompile (JavacCompiler.java:183)
+    at org.apache.maven.plugin.compiler.AbstractCompilerMojo.execute (AbstractCompilerMojo.java:1140)
+    at org.apache.maven.plugin.compiler.CompilerMojo.execute (CompilerMojo.java:193)
+    at org.apache.maven.plugin.DefaultBuildPluginManager.executeMojo (DefaultBuildPluginManager.java:126)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute2 (MojoExecutor.java:328)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.doExecute (MojoExecutor.java:316)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:212)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:174)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.access$000 (MojoExecutor.java:75)
+    at org.apache.maven.lifecycle.internal.MojoExecutor$1.run (MojoExecutor.java:162)
+    at org.apache.maven.plugin.DefaultMojosExecutionStrategy.execute (DefaultMojosExecutionStrategy.java:39)
+    at org.apache.maven.lifecycle.internal.MojoExecutor.execute (MojoExecutor.java:159)
+    at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject (LifecycleModuleBuilder.java:105)
+    at org.apache.maven.lifecycle.internal.LifecycleModuleBuilder.buildProject (LifecycleModuleBuilder.java:73)
+    at org.apache.maven.lifecycle.internal.builder.singlethreaded.SingleThreadedBuilder.build (SingleThreadedBuilder.java:53)
+    at org.apache.maven.lifecycle.internal.LifecycleStarter.execute (LifecycleStarter.java:118)
+    at org.apache.maven.DefaultMaven.doExecute (DefaultMaven.java:261)
+    at org.apache.maven.DefaultMaven.doExecute (DefaultMaven.java:173)
+    at org.apache.maven.DefaultMaven.execute (DefaultMaven.java:101)
+    at org.apache.maven.cli.MavenCli.execute (MavenCli.java:906)
+    at org.apache.maven.cli.MavenCli.doMain (MavenCli.java:283)
+    at org.apache.maven.cli.MavenCli.main (MavenCli.java:206)
+    at jdk.internal.reflect.DirectMethodHandleAccessor.invoke (DirectMethodHandleAccessor.java:104)
+    at java.lang.reflect.Method.invoke (Method.java:565)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.launchEnhanced (Launcher.java:283)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.launch (Launcher.java:226)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.mainWithExitCode (Launcher.java:407)
+    at org.codehaus.plexus.classworlds.launcher.Launcher.main (Launcher.java:348)
+[ERROR] 
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

@@ -1,0 +1,39 @@
+# DebugSync Backend — Application Configuration
+# -----------------------------------------------
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: DebugSync
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 100MB
+
+  # H2 in-memory database (swap to PostgreSQL for production)
+  datasource:
+    url: jdbc:h2:file:./data/debugsync;DB_CLOSE_ON_EXIT=FALSE;AUTO_RECONNECT=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  # JPA / Hibernate settings
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+
+  # H2 console (for debugging, access at /h2-console)
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+# CORS configuration (allow frontend dev server)
+debugsync:
+  cors:
+    allowed-origins: http://localhost:5173
