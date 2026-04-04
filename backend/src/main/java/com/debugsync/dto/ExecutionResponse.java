@@ -13,6 +13,7 @@ public class ExecutionResponse {
     private SnapshotData snapshot;
     private RootCauseData rootCause;
     private CausalityGraphData causalityGraph;
+    private CommitSuggestionDto commitSuggestion;
 
     public ExecutionResponse() {}
 
@@ -28,6 +29,8 @@ public class ExecutionResponse {
     public void setRootCause(RootCauseData rootCause) { this.rootCause = rootCause; }
     public CausalityGraphData getCausalityGraph() { return causalityGraph; }
     public void setCausalityGraph(CausalityGraphData causalityGraph) { this.causalityGraph = causalityGraph; }
+    public CommitSuggestionDto getCommitSuggestion() { return commitSuggestion; }
+    public void setCommitSuggestion(CommitSuggestionDto commitSuggestion) { this.commitSuggestion = commitSuggestion; }
 
     /* ---- Nested data classes ---- */
 
@@ -38,6 +41,7 @@ public class ExecutionResponse {
         private String timestamp;
         private String diff;
         private boolean hasError;
+        private CommitSuggestionDto suggestion;
 
         public SnapshotData() {}
 
@@ -53,6 +57,8 @@ public class ExecutionResponse {
         public void setDiff(String diff) { this.diff = diff; }
         public boolean isHasError() { return hasError; }
         public void setHasError(boolean hasError) { this.hasError = hasError; }
+        public CommitSuggestionDto getSuggestion() { return suggestion; }
+        public void setSuggestion(CommitSuggestionDto suggestion) { this.suggestion = suggestion; }
     }
 
     public static class RootCauseData {
@@ -64,6 +70,14 @@ public class ExecutionResponse {
         private String suspectedChange;
         private String explanation;
         private double confidence;
+
+        // AI-powered analysis fields
+        private String whatHappened;
+        private String rootCauseChain;
+        private String howToFix;
+        private String proTip;
+        private String fullAiAnalysis;
+        private java.util.Map<String, String> semanticContext;
 
         public RootCauseData() {}
 
@@ -83,6 +97,19 @@ public class ExecutionResponse {
         public void setExplanation(String explanation) { this.explanation = explanation; }
         public double getConfidence() { return confidence; }
         public void setConfidence(double confidence) { this.confidence = confidence; }
+
+        public String getWhatHappened() { return whatHappened; }
+        public void setWhatHappened(String whatHappened) { this.whatHappened = whatHappened; }
+        public String getRootCauseChain() { return rootCauseChain; }
+        public void setRootCauseChain(String rootCauseChain) { this.rootCauseChain = rootCauseChain; }
+        public String getHowToFix() { return howToFix; }
+        public void setHowToFix(String howToFix) { this.howToFix = howToFix; }
+        public String getProTip() { return proTip; }
+        public void setProTip(String proTip) { this.proTip = proTip; }
+        public String getFullAiAnalysis() { return fullAiAnalysis; }
+        public void setFullAiAnalysis(String fullAiAnalysis) { this.fullAiAnalysis = fullAiAnalysis; }
+        public java.util.Map<String, String> getSemanticContext() { return semanticContext; }
+        public void setSemanticContext(java.util.Map<String, String> semanticContext) { this.semanticContext = semanticContext; }
     }
 
     public static class StepData {

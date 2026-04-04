@@ -5,6 +5,7 @@ package com.debugsync.controller;
 
 import com.debugsync.model.Session;
 import com.debugsync.repository.SessionRepository;
+import com.debugsync.service.FileService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,11 +16,11 @@ import java.util.*;
 public class SessionController {
 
     private final SessionRepository sessionRepository;
-    private final com.debugsync.repository.ProjectFileRepository projectFileRepository;
+    private final FileService fileService;
 
-    public SessionController(SessionRepository sessionRepository, com.debugsync.repository.ProjectFileRepository projectFileRepository) {
+    public SessionController(SessionRepository sessionRepository, FileService fileService) {
         this.sessionRepository = sessionRepository;
-        this.projectFileRepository = projectFileRepository;
+        this.fileService = fileService;
     }
 
     @PostMapping("/create")
@@ -59,8 +60,10 @@ public class SessionController {
             return ResponseEntity.status(401).body(Map.of("message", "Invalid password"));
         }
 
-        List<com.debugsync.model.ProjectFile> files = projectFileRepository.findBySessionId(id);
         String userId = UUID.randomUUID().toString().substring(0, 8);
+
+        // Load all project files so the collaborator gets the full file tree
+        List<Map<String, String>> files = fileService.getFilesForSession(id);
 
         Map<String, Object> response = new HashMap<>();
         response.put("id", session.getId());
@@ -72,26 +75,34 @@ public class SessionController {
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/{sessionId}/upload")
-    public ResponseEntity<?> uploadProject(@PathVariable String sessionId, @RequestBody List<Map<String, String>> files) {
+    // Flat endpoint for bulk upload
+    @PostMapping("/upload")
+    public ResponseEntity<?> uploadProject(@RequestParam String sessionId, @RequestBody List<Map<String, String>> files) {
         if (!sessionRepository.existsById(sessionId)) {
             return ResponseEntity.status(404).body("Session not found");
         }
+        return ResponseEntity.ok(fileService.uploadFiles(sessionId, files));
+    }
 
-        List<com.debugsync.model.ProjectFile> savedFiles = new ArrayList<>();
-        for (Map<String, String> fileData : files) {
-            String path = fileData.get("path");
-            String content = fileData.get("content");
-            
-            com.debugsync.model.ProjectFile projectFile = projectFileRepository
-                .findBySessionIdAndPath(sessionId, path)
-                .orElse(new com.debugsync.model.ProjectFile(sessionId, path, content));
-            
-            projectFile.setContent(content);
-            savedFiles.add(projectFileRepository.save(projectFile));
+    // Flat endpoint for single file save
+    @PostMapping("/save-file")
+    public ResponseEntity<?> saveFile(@RequestBody Map<String, String> fileData) {
+        String sessionId = fileData.get("sessionId");
+        String path = fileData.get("path");
+        String content = fileData.get("content");
+        
+        if (sessionId == null || sessionId.isEmpty()) {
+            return ResponseEntity.badRequest().body("sessionId is required");
         }
+        
+        return ResponseEntity.ok(fileService.saveFile(sessionId, path, content));
+    }
 
-        return ResponseEntity.ok(savedFiles);
+    // Flat endpoint for single file delete
+    @DeleteMapping("/delete-file")
+    public ResponseEntity<?> deleteFile(@RequestParam String sessionId, @RequestParam String path) {
+        fileService.deleteFileRecursive(sessionId, path);
+        return ResponseEntity.ok().build();
     }
 
     @GetMapping("/{id}")
@@ -99,5 +110,13 @@ public class SessionController {
         return sessionRepository.findById(id)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
+    }
+    @GetMapping("/{id}/files")
+    public ResponseEntity<?> getSessionFiles(@PathVariable String id) {
+        if (!sessionRepository.existsById(id)) {
+            return ResponseEntity.status(404).body(Map.of("message", "Session not found"));
+        }
+        List<Map<String, String>> files = fileService.getFilesForSession(id);
+        return ResponseEntity.ok(files);
     }
 }

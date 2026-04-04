@@ -13,7 +13,6 @@ import com.debugsync.model.CodeSnapshot;
 import com.debugsync.model.ErrorLog;
 import com.debugsync.repository.SnapshotRepository;
 import com.debugsync.util.DiffUtil;
-import com.debugsync.util.ErrorParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -26,25 +25,34 @@ public class RootCauseService {
 
     private static final Logger log = LoggerFactory.getLogger(RootCauseService.class);
     private final SnapshotRepository snapshotRepository;
+    private final AiAnalysisService aiAnalysisService;
 
-    public RootCauseService(SnapshotRepository snapshotRepository) {
+    public RootCauseService(SnapshotRepository snapshotRepository, AiAnalysisService aiAnalysisService) {
         this.snapshotRepository = snapshotRepository;
+        this.aiAnalysisService = aiAnalysisService;
     }
 
     // Main 4-step analysis method
     public ExecutionResponse.RootCauseData analyze(ErrorLog error, String code, String sessionId) {
         log.info("Starting root cause analysis for {} at line {}", error.getType(), error.getLineNumber());
         List<ExecutionResponse.StepData> steps = new ArrayList<>();
+        Map<String, String> semContext = parseSemanticContext(error.getSemanticContext());
 
         // STEP 1: EXTRACT — get variables from the failing line
         String failingLine = getLineFromCode(code, error.getLineNumber());
-        List<String> variables = ErrorParser.extractVariablesFromLine(failingLine);
+        Map<String, String> varRoles = parseInvolvedVariables(error.getInvolvedVariables());
+        List<String> variables = new ArrayList<>(varRoles.keySet());
 
-        steps.add(new ExecutionResponse.StepData(1, "EXTRACT",
-            "Failing line " + error.getLineNumber() + ": \"" + (failingLine != null ? failingLine.trim() : "?")
-            + "\" → Variables: " + (variables.isEmpty() ? "none found" : String.join(", ", variables))));
-
-        if (variables.isEmpty()) return buildPartialResult(error, steps);
+        String extractDetail = "Failing line " + error.getLineNumber() + ": \"" + (failingLine != null ? failingLine.trim() : "?") + "\"";
+        if (variables.isEmpty()) {
+            steps.add(new ExecutionResponse.StepData(1, "EXTRACT", extractDetail + " → No variables found."));
+            return buildPartialResult(error, steps);
+        } else {
+            String varsWithRoles = varRoles.entrySet().stream()
+                .map(e -> e.getKey() + " [" + e.getValue() + "]")
+                .collect(Collectors.joining(", "));
+            steps.add(new ExecutionResponse.StepData(1, "EXTRACT", extractDetail + " → Variables: " + varsWithRoles));
+        }
 
         // STEP 2: TRACE — find last assignments
         Map<String, Integer> variableAssignments = new LinkedHashMap<>();
@@ -98,14 +106,29 @@ public class RootCauseService {
 
         for (String varName : variables) {
             double score = 0;
+            String role = varRoles.getOrDefault(varName, "neutral");
+            
+            // ── Semantic Bonus (Strongest Signal) ──
+            if ("divisor".equals(role)) score += 0.9;
+            else if ("base_object".equals(role)) score += 0.8;
+            else if ("index".equals(role)) score += 0.7;
+            
+            // ── Extra Semantic Context (Runtime Values) ──
+            if ("index".equals(role) && semContext.containsKey("index")) score += 0.5;
+            if (semContext.containsKey("base") && varName.equals(semContext.get("base"))) score += 0.4;
+            
+            // ── History & Context ──
             if (recentChanges.containsKey(varName)) score += 0.4;
+            
             int assignLine = variableAssignments.getOrDefault(varName, -1);
             if (assignLine > 0) {
                 int distance = Math.abs(error.getLineNumber() - assignLine);
                 score += Math.max(0, 0.3 - (distance * 0.02));
             }
+            
             int occurrences = countOccurrences(code, varName);
-            score += Math.min(0.3, occurrences * 0.05);
+            score += Math.min(0.2, occurrences * 0.04);
+            
             scores.put(varName, Math.round(score * 100.0) / 100.0);
             if (score > bestScore) { bestScore = score; suspectedVariable = varName; }
         }
@@ -118,7 +141,7 @@ public class RootCauseService {
             rankDetail + (suspectedVariable != null ? " → Winner: " + suspectedVariable : "")));
 
         // Build result
-        String explanation = generateExplanation(error, suspectedVariable, recentChanges, code);
+        String explanation = generateExplanation(error, suspectedVariable, recentChanges, code, semContext);
 
         ExecutionResponse.RootCauseData result = new ExecutionResponse.RootCauseData();
         result.setErrorType(error.getType());
@@ -129,7 +152,56 @@ public class RootCauseService {
         result.setSuspectedChange(recentChanges.getOrDefault(suspectedVariable, "Initial value in code"));
         result.setExplanation(explanation);
         result.setConfidence(Math.min(0.95, bestScore + 0.15));
+        result.setSemanticContext(semContext);
+
+        // STEP 5: AI Analysis (Optional/Premium)
+        String lang = guessLanguage(code);
+        AiAnalysisService.AiAnalysisResult aiResult = aiAnalysisService.analyze(
+            error.getType(), error.getMessage(), error.getLineNumber(), 
+            suspectedVariable, code, lang, semContext
+        );
+
+        if (aiResult != null) {
+            result.setWhatHappened(aiResult.getWhatHappened());
+            result.setRootCauseChain(aiResult.getRootCauseChain());
+            result.setHowToFix(aiResult.getHowToFix());
+            result.setProTip(aiResult.getProTip());
+            result.setFullAiAnalysis(aiResult.getFullAnalysis());
+        }
+
         return result;
+    }
+
+    private String guessLanguage(String code) {
+        if (code == null) return "javascript";
+        String trimmed = code.trim().toLowerCase();
+        if (trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html")) return "html";
+        if (code.contains("public static void main")) return "java";
+        if (code.contains("def ") && code.contains(":")) return "python";
+        return "javascript";
+    }
+
+    private Map<String, String> parseInvolvedVariables(String involved) {
+        Map<String, String> map = new LinkedHashMap<>();
+        if (involved == null || involved.isEmpty()) return map;
+        String[] parts = involved.split(",");
+        for (String p : parts) {
+            String[] kv = p.split(":");
+            if (kv.length == 2) map.put(kv[0], kv[1]);
+            else map.put(p, "neutral");
+        }
+        return map;
+    }
+
+    private Map<String, String> parseSemanticContext(String context) {
+        Map<String, String> map = new LinkedHashMap<>();
+        if (context == null || context.isEmpty()) return map;
+        String[] parts = context.split(";");
+        for (String p : parts) {
+            String[] kv = p.split("=");
+            if (kv.length == 2) map.put(kv[0], kv[1]);
+        }
+        return map;
     }
 
     private ExecutionResponse.RootCauseData buildPartialResult(ErrorLog error, List<ExecutionResponse.StepData> steps) {
@@ -144,7 +216,17 @@ public class RootCauseService {
     }
 
     private String generateExplanation(ErrorLog error, String suspectedVariable,
-                                        Map<String, String> recentChanges, String code) {
+                                        Map<String, String> recentChanges, String code,
+                                        Map<String, String> semContext) {
+        // Special case: Direct Precision for Index/Bounds errors
+        if (semContext.containsKey("index") && semContext.containsKey("length")) {
+            String index = semContext.get("index");
+            int len = Integer.parseInt(semContext.get("length"));
+            return String.format("The error occurred because index %s exceeds the valid range (0 to %d). " +
+                                 "This resulted in an ArrayIndexOutOfBoundsException when accessing the array.", 
+                                 index, len - 1);
+        }
+
         StringBuilder sb = new StringBuilder();
         sb.append("The ").append(error.getType()).append(" at line ").append(error.getLineNumber()).append(" occurred because ");
         if (suspectedVariable != null) {

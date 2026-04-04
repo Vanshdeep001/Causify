@@ -14,6 +14,12 @@ public class RootCauseResponse {
     private String suspectedChange;
     private String explanation;
     private double confidence;
+    private String whatHappened;
+    private String rootCauseChain;
+    private String howToFix;
+    private String proTip;
+    private String fullAiAnalysis;
+    private java.util.Map<String, String> semanticContext;
     private ExecutionResponse.CausalityGraphData causalityGraph;
 
     public RootCauseResponse() {}
@@ -34,6 +40,20 @@ public class RootCauseResponse {
     public void setExplanation(String explanation) { this.explanation = explanation; }
     public double getConfidence() { return confidence; }
     public void setConfidence(double confidence) { this.confidence = confidence; }
+
+    public String getWhatHappened() { return whatHappened; }
+    public void setWhatHappened(String whatHappened) { this.whatHappened = whatHappened; }
+    public String getRootCauseChain() { return rootCauseChain; }
+    public void setRootCauseChain(String rootCauseChain) { this.rootCauseChain = rootCauseChain; }
+    public String getHowToFix() { return howToFix; }
+    public void setHowToFix(String howToFix) { this.howToFix = howToFix; }
+    public String getProTip() { return proTip; }
+    public void setProTip(String proTip) { this.proTip = proTip; }
+    public String getFullAiAnalysis() { return fullAiAnalysis; }
+    public void setFullAiAnalysis(String fullAiAnalysis) { this.fullAiAnalysis = fullAiAnalysis; }
+    public java.util.Map<String, String> getSemanticContext() { return semanticContext; }
+    public void setSemanticContext(java.util.Map<String, String> semanticContext) { this.semanticContext = semanticContext; }
+
     public ExecutionResponse.CausalityGraphData getCausalityGraph() { return causalityGraph; }
     public void setCausalityGraph(ExecutionResponse.CausalityGraphData causalityGraph) { this.causalityGraph = causalityGraph; }
 }

@@ -11,10 +11,9 @@ const UserPresence = () => {
   const lastChange = useEditorStore((s) => s.lastChange);
 
   return (
-    <div className="user-presence" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-      <div style={{ display: 'flex' }}>
-        {connectedUsers.map((user) => {
-          // Pulse if this user was the source of a recent change (within 3s)
+    <div className="user-presence" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '10px' }}>
+        {connectedUsers.map((user, idx) => {
           const isActive = lastChange && lastChange.userId === user.id && (Date.now() - lastChange.timestamp < 3000);
           
           return (
@@ -22,46 +21,74 @@ const UserPresence = () => {
               key={user.id}
               title={user.username}
               style={{
-                width: '36px',
-                height: '36px',
+                width: '32px',
+                height: '32px',
                 background: user.color || '#ddd',
-                border: isActive ? `3px solid ${user.color}` : 'var(--border-thin)',
+                borderRadius: '50%',
+                border: `2px solid var(--bg-creme)`, // White-space separator
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontFamily: 'var(--font-number)',
                 fontWeight: 900,
-                fontSize: '0.8rem',
-                color: '#000',
-                marginLeft: '-10px',
+                fontSize: '0.6rem',
+                color: '#fff',
+                marginLeft: '-12px',
                 position: 'relative',
-                zIndex: (isActive || user.id === currentUser?.id) ? 10 : 1,
-                boxShadow: isActive ? `0 0 12px ${user.color}` : 'none',
-                transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                transform: isActive ? 'scale(1.15)' : 'scale(1)',
-                boxSizing: 'border-box'
+                zIndex: (isActive ? 100 : connectedUsers.length - idx),
+                boxShadow: isActive ? `0 0 0 2px #fff, 0 0 0 4px ${user.color}` : '0 2px 4px rgba(0,0,0,0.1)',
+                transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                transform: isActive ? 'translateY(-2px)' : 'translateY(0)',
+                textShadow: '0 1px 2px rgba(0,0,0,0.2)',
+                cursor: 'default'
               }}
             >
               {user.username.substring(0, 1).toUpperCase()}
               {isActive && (
-                <span style={{
-                   position: 'absolute', top: '-5px', right: '-5px',
-                   fontSize: '0.6rem', background: '#080808', color: user.color,
-                   borderRadius: '50%', width: '14px', height: '14px',
-                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                   border: `1px solid ${user.color}`
-                }}>✎</span>
+                <div style={{
+                  position: 'absolute',
+                  bottom: '-2px',
+                  right: '-2px',
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '50%',
+                  background: 'var(--accent-toxic-green)',
+                  border: '2px solid #fff',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                }} />
               )}
             </div>
           );
         })}
       </div>
-      <div className="tech-label" style={{ 
-        background: 'var(--accent-toxic-green)',
-        fontSize: '0.7rem',
+      
+      <div style={{ 
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '4px 10px',
+        background: 'rgba(0,0,0,0.03)',
+        borderRadius: '20px',
+        border: '1px solid rgba(0,0,0,0.05)',
         marginLeft: '4px'
       }}>
-        ONLINE: {connectedUsers.length}
+        <div style={{ 
+          width: '6px', 
+          height: '6px', 
+          borderRadius: '50%', 
+          background: 'var(--accent-toxic-green)',
+          boxShadow: '0 0 8px var(--accent-toxic-green)' 
+        }} />
+        <span style={{ 
+          fontFamily: 'var(--font-number)',
+          fontWeight: 700,
+          fontSize: '0.55rem',
+          letterSpacing: '0.05em',
+          color: 'var(--color-black)',
+          opacity: 0.7
+        }}>
+          {connectedUsers.length} ONLINE
+        </span>
       </div>
     </div>
   );

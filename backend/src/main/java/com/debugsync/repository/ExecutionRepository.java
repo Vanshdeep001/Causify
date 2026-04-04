@@ -9,4 +9,5 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ExecutionRepository extends JpaRepository<ExecutionLog, String> {
+    ExecutionLog findBySnapshotId(String snapshotId);
 }

@@ -21,6 +21,7 @@ public class ErrorLog {
 
     private int lineNumber;
     private String involvedVariables;
+    private String semanticContext;
 
     public ErrorLog() {}
 
@@ -36,4 +37,6 @@ public class ErrorLog {
     public void setLineNumber(int lineNumber) { this.lineNumber = lineNumber; }
     public String getInvolvedVariables() { return involvedVariables; }
     public void setInvolvedVariables(String involvedVariables) { this.involvedVariables = involvedVariables; }
+    public String getSemanticContext() { return semanticContext; }
+    public void setSemanticContext(String semanticContext) { this.semanticContext = semanticContext; }
 }

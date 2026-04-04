@@ -33,7 +33,9 @@ spring:
       enabled: true
       path: /h2-console
 
-# CORS configuration (allow frontend dev server)
+# Custom DebugSync configuration
 debugsync:
+  ai:
+    openrouter-api-key: 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
   cors:
     allowed-origins: http://localhost:5173

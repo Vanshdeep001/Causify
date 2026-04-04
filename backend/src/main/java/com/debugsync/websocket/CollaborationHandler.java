@@ -48,4 +48,11 @@ public class CollaborationHandler {
     public void handleCursorUpdate(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
         messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/cursor", payload);
     }
+
+    @MessageMapping("/session/{sessionId}/revert")
+    public void handleRevert(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
+        log.info("Revert in session {} for file {} by user {}", 
+            sessionId, payload.get("path"), payload.get("username"));
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/revert", payload);
+    }
 }

@@ -9,4 +9,5 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ErrorRepository extends JpaRepository<ErrorLog, String> {
+    ErrorLog findByExecutionId(String executionId);
 }

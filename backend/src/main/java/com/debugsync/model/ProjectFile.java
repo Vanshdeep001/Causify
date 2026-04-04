@@ -24,7 +24,8 @@ public class ProjectFile {
     private String content;
 
     @Column(nullable = false)
-    private LocalDateTime lastModified;
+    @com.fasterxml.jackson.annotation.JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    private java.time.LocalDateTime lastModified;
 
     public ProjectFile() {}
 

@@ -5,7 +5,6 @@ com\debugsync\repository\SessionRepository.class
 com\debugsync\websocket\CollaborationHandler.class
 com\debugsync\controller\ExecutionController.class
 com\debugsync\dto\ExecutionResponse$CausalityGraphData.class
-com\debugsync\service\ExecutionService.class
 com\debugsync\dto\RootCauseResponse.class
 com\debugsync\model\ProjectFile.class
 com\debugsync\dto\ExecutionResponse$GraphEdge.class

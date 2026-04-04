@@ -15,7 +15,18 @@ let stompClient = null;
 let subscriptions = {};
 
 // Connect to the WebSocket server
-export const connectWebSocket = (sessionId, userId, callbacks = {}) => {
+// userInfo = { id, username, color }
+export const connectWebSocket = (sessionId, userInfo, callbacks = {}) => {
+  // Disconnect any existing connection before creating a new one
+  if (stompClient) {
+    try {
+      Object.values(subscriptions).forEach(sub => { try { sub.unsubscribe(); } catch(e) {} });
+      subscriptions = {};
+      stompClient.deactivate();
+    } catch (e) { /* ignore */ }
+    stompClient = null;
+  }
+
   // Create a STOMP client over SockJS
   stompClient = new Client({
     // Use SockJS as the transport
@@ -70,10 +81,23 @@ export const connectWebSocket = (sessionId, userId, callbacks = {}) => {
         }
       );
 
-      // Announce our presence
+      // Subscribe to revert notifications
+      subscriptions.revert = stompClient.subscribe(
+        `/topic/session/${sessionId}/revert`,
+        (message) => {
+          const data = JSON.parse(message.body);
+          if (callbacks.onRevert) callbacks.onRevert(data);
+        }
+      );
+
+      // Announce our presence with full user info
       stompClient.publish({
         destination: `/app/session/${sessionId}/join`,
-        body: JSON.stringify({ userId }),
+        body: JSON.stringify({
+          userId: userInfo.id,
+          username: userInfo.username,
+          color: userInfo.color || '#6366f1',
+        }),
       });
 
       if (callbacks.onConnected) callbacks.onConnected();
@@ -113,6 +137,16 @@ export const sendCursorPosition = (sessionId, userId, position) => {
     stompClient.publish({
       destination: `/app/session/${sessionId}/cursor`,
       body: JSON.stringify({ userId, ...position }),
+    });
+  }
+};
+
+// Send a revert notification to all users
+export const sendRevert = (sessionId, userId, path, username, revertedUser) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/revert`,
+      body: JSON.stringify({ userId, path, username, revertedUser, timestamp: Date.now() }),
     });
   }
 };

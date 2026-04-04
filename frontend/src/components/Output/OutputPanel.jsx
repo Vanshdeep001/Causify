@@ -3,84 +3,118 @@
  * ------------------------------------------------------- */
 
 import React from 'react';
-import useEditorStore from '../../store/useEditorStore';
+import useEditorStore from '../../store/useEditorStore';const LogLine = ({ type, message, timestamp }) => {
+  const tagClass = 
+    type === 'stdout' ? 'tag-stdout' : 
+    type === 'stderr' ? 'tag-stderr' : 'tag-system';
+  
+  const tagLabel = 
+    type === 'stdout' ? 'out' : 
+    type === 'stderr' ? 'err' : 'sys';
+
+  // Highlight [Causify] or specific success/error keywords
+  const parts = message.split(/(\[Causify\]|Successfully|Error|Critical)/i);
+
+  return (
+    <div className="log-line-item">
+      <span className="log-timestamp">{timestamp}</span>
+      <span className={`log-tag ${tagClass}`}>{tagLabel}</span>
+      <div className="log-content">
+        {parts.map((part, i) => {
+          const isHighlight = /\[Causify\]|Successfully|Error|Critical/i.test(part);
+          return isHighlight ? <span key={i} className="content-highlight">{part}</span> : part;
+        })}
+      </div>
+    </div>
+  );
+};
 
 const OutputPanel = () => {
   const output = useEditorStore((s) => s.output);
   const error = useEditorStore((s) => s.error);
   const isRunning = useEditorStore((s) => s.isRunning);
   const rootCause = useEditorStore((s) => s.rootCause);
+  const sessionId = useEditorStore((s) => s.sessionId);
+
+  const timestamp = new Date().toLocaleTimeString([], { hour12: false });
 
   if (isRunning) {
     return (
-      <div className="output-placeholder">
-        <div className="loading-spinner" style={{ width: 24, height: 24 }}></div>
-        <div className="tech-label" style={{ marginTop: 12, color: '#888' }}>EXECUTING_FABRIC...</div>
+      <div className="output-placeholder terminal-window-pane" style={{ position: 'relative', overflow: 'hidden' }}>
+        <div className="terminal-scanlines"></div>
+        <div className="diagnostic-loading">
+          <div className="loading-spinner" style={{ width: 40, height: 40, borderWidth: '4px', borderColor: 'var(--accent-toxic-green) transparent' }}></div>
+          <div style={{ marginTop: 24, letterSpacing: '0.2em' }} className="ai-header-glitch">SCANNING EXECUTION FLOW...</div>
+          <div style={{ fontSize: '0.6rem', opacity: 0.5, marginTop: 8, fontFamily: 'var(--font-number)' }}>TRACE_ID: {Math.random().toString(36).substring(7).toUpperCase()}</div>
+        </div>
       </div>
     );
   }
 
   if (!output && !error) {
     return (
-      <div className="output-placeholder">
-        <div className="tech-label" style={{ color: '#444' }}>TERMINAL_READY</div>
+      <div className="output-placeholder terminal-window-pane">
+        <div className="terminal-scanlines" />
+        <div style={{ textAlign: 'center', opacity: 0.3 }}>
+          <div style={{ fontSize: '2rem', marginBottom: 12 }}>⚡</div>
+          <div className="tech-label" style={{ border: 'none', background: 'transparent' }}>SYSTEM_IDLE // AWAITING_SEQUENCE</div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="terminal-log-area" style={{ 
-      fontFamily: 'monospace', 
-      fontSize: '0.9rem', 
-      lineHeight: '1.4',
-      color: '#ddd'
-    }}>
-      {output && (
-        <div className="log-entry" style={{ marginBottom: '1rem' }}>
-          <span style={{ color: 'var(--accent-toxic-green)', marginRight: '8px' }}>[STDOUT]</span>
-          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', display: 'inline' }}>{output}</pre>
-        </div>
-      )}
+    <div className="terminal-window-pane">
+      <div className="terminal-scanlines" />
+      
+      {/* System Meta Header */}
+      <div className="terminal-meta-header">
+        <div><span className="status-pulse" /> TERMINAL_ACTIVE</div>
+        <div>SESSION_ID: {sessionId?.substring(0, 12)}</div>
+      </div>
 
-      {error && (
-        <div className="log-entry" style={{ marginBottom: '1rem' }}>
-          <span style={{ color: 'var(--accent-crimson)', marginRight: '8px' }}>[STDERR]</span>
-          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'var(--accent-crimson)', display: 'inline' }}>{error}</pre>
-        </div>
-      )}
+      <div className="terminal-log-area" style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
+        {output && output.split('\n').filter(l => l.trim()).map((line, idx) => (
+          <LogLine key={`out-${idx}`} type="stdout" message={line} timestamp={timestamp} />
+        ))}
 
-      {rootCause && (
-        <div className="terminal-analysis-card" style={{ 
-          marginTop: '2rem', 
-          border: '1px solid #333', 
-          padding: '1rem',
-          background: '#111'
-        }}>
-          <div className="impact-text" style={{ fontSize: '1.2rem', color: 'var(--accent-toxic-green)', marginBottom: '1rem' }}>
-            // ROOT_CAUSE_ANALYSIS
-          </div>
-          
-          <div style={{ color: '#fff', marginBottom: '1rem', background: '#222', padding: '8px' }}>
-            {rootCause.errorType}: {rootCause.errorMessage}
-          </div>
+        {error && error.split('\n').filter(l => l.trim()).map((line, idx) => (
+          <LogLine key={`err-${idx}`} type="stderr" message={line} timestamp={timestamp} />
+        ))}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {rootCause.steps?.map((step, idx) => (
-              <div key={idx} style={{ display: 'flex', gap: '12px', fontSize: '0.8rem' }}>
-                <span style={{ color: '#555' }}>[{step.step}]</span>
-                <span style={{ color: 'var(--accent-electric-blue)' }}>{step.label}:</span>
-                <span>{step.detail}</span>
+        {rootCause && (
+          <div style={{ padding: '0 12px', marginTop: '20px' }}>
+            <div className={rootCause.fullAiAnalysis ? "ai-analysis-card" : "terminal-analysis-card"}>
+              <div className={rootCause.fullAiAnalysis ? "ai-header-glitch" : "impact-text"} style={!rootCause.fullAiAnalysis ? { fontSize: '1.2rem', color: 'var(--accent-toxic-green)', marginBottom: '1rem' } : {}}>
+                {rootCause.fullAiAnalysis ? "✨ AI DIAGNOSTIC REPORT" : "ROOT CAUSE ANALYSIS"}
               </div>
-            ))}
-          </div>
-          
-          {rootCause.explanation && (
-            <div style={{ marginTop: '1rem', fontSize: '0.8rem', color: '#888', fontStyle: 'italic' }}>
-              &gt; {rootCause.explanation}
+
+              {/* AI Analysis Content remains same as previous but integrated into new theme */}
+              <div style={{ color: '#fff', marginBottom: '1.5rem', background: '#222', padding: '12px', border: '1px solid #333' }}>
+                <span style={{ color: 'var(--accent-crimson)', fontWeight: 'bold' }}>{rootCause.errorType}</span>: {rootCause.errorMessage}
+              </div>
+
+              {rootCause.whatHappened && (
+                <div className="ai-section">
+                  <div className="ai-section-title">🔍 DIAGNOSTIC OVERVIEW</div>
+                  <div className="ai-content" style={{ fontSize: '1.1rem', fontWeight: '500', color: '#fff' }}>
+                    {rootCause.whatHappened}
+                  </div>
+                </div>
+              )}
+
+              {rootCause.howToFix && (
+                <div className="ai-section">
+                  <div className="ai-section-title">🛠️ PROPOSED FIX</div>
+                  <div className="ai-fix-block">
+                    <pre>{rootCause.howToFix.replace(/```[a-z]*\n/g, '').replace(/```/g, '')}</pre>
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

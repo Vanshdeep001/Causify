@@ -7,6 +7,7 @@
 package com.debugsync.service;
 
 import com.debugsync.dto.ExecutionRequest;
+import com.debugsync.dto.CommitSuggestionDto;
 import com.debugsync.dto.ExecutionResponse;
 import com.debugsync.model.*;
 import com.debugsync.repository.*;
@@ -34,19 +35,22 @@ public class ExecutionService {
     private final RootCauseService rootCauseService;
     private final CausalityGraphService causalityGraphService;
     private final TimelineService timelineService;
+    private final GitAssistantService gitAssistantService;
 
     public ExecutionService(SnapshotRepository snapshotRepository,
                             ExecutionRepository executionRepository,
                             ErrorRepository errorRepository,
                             RootCauseService rootCauseService,
                             CausalityGraphService causalityGraphService,
-                            TimelineService timelineService) {
+                            TimelineService timelineService,
+                            GitAssistantService gitAssistantService) {
         this.snapshotRepository = snapshotRepository;
         this.executionRepository = executionRepository;
         this.errorRepository = errorRepository;
         this.rootCauseService = rootCauseService;
         this.causalityGraphService = causalityGraphService;
         this.timelineService = timelineService;
+        this.gitAssistantService = gitAssistantService;
     }
 
     public ExecutionResponse executeCode(ExecutionRequest request) {
@@ -209,6 +213,31 @@ public class ExecutionService {
 
         response.setRootCause(rootCauseData);
         response.setCausalityGraph(graphData);
+        
+        // Git Assistant Analysis
+        ExecutionLog prevExecutionLog = null;
+        if (lastSnapshot != null) {
+            prevExecutionLog = executionRepository.findBySnapshotId(lastSnapshot.getId());
+        }
+        
+        String lang = (request.getLanguage() == null) ? "javascript" : request.getLanguage().toLowerCase();
+        CommitSuggestionDto suggestion = gitAssistantService.analyze(lastSnapshot, prevExecutionLog, request.getCode(), hasError, diff, lang);
+        
+        if (suggestion != null) {
+            response.setCommitSuggestion(suggestion);
+            snapData.setSuggestion(suggestion);
+            
+            // Serialize to JSON and save to snapshot entity for persistence
+            try {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                String suggestionJson = mapper.writeValueAsString(suggestion);
+                snapshot.setSuggestionJson(suggestionJson);
+                snapshotRepository.save(snapshot);
+            } catch (Exception e) {
+                log.warn("Failed to serialize commit suggestion", e);
+            }
+        }
+        
         return response;
     }
 

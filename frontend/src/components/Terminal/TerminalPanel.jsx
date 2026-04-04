@@ -10,6 +10,7 @@ import OutputPanel from '../Output/OutputPanel';
 import TimelineSlider from '../Timeline/TimelineSlider';
 import CausalityGraph from '../Graph/CausalityGraph';
 import HtmlPreview from '../Preview/HtmlPreview';
+import GitAssistantPanel from './GitAssistantPanel';
 
 const DEFAULT_HEIGHT = 280;
 const MIN_HEIGHT     = 120;
@@ -18,52 +19,51 @@ const NAVBAR_H       = 40;
 const TerminalPanel = () => {
   const isTerminalOpen = useEditorStore((s) => s.isTerminalOpen);
   const terminalHeight = useEditorStore((s) => s.terminalHeight);
+  const terminalLayoutMode = useEditorStore((s) => s.terminalLayoutMode);
   const activeTab      = useEditorStore((s) => s.terminalActiveTab);
   const error          = useEditorStore((s) => s.error);
   const snapshots      = useEditorStore((s) => s.snapshots);
   const userRole       = useEditorStore((s) => s.userRole);
+  const commitSuggestion = useEditorStore((s) => s.commitSuggestion);
+
 
   const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
   const setTerminalHeight    = useEditorStore((s) => s.setTerminalHeight);
+  const setTerminalLayoutMode = useEditorStore((s) => s.setTerminalLayoutMode);
   const toggleTerminal       = useEditorStore((s) => s.toggleTerminal);
 
   const [isResizing,   setIsResizing]   = useState(false);
-  const [isMaximized,  setIsMaximized]  = useState(false);
-  const [isMinimized,  setIsMinimized]  = useState(false);
   const prevHeightRef = useRef(DEFAULT_HEIGHT);
 
   // Red dot badge on TIMELINE tab when error exists and not already viewing timeline
   const showTimelineBadge =
     Boolean(error && error.trim()) && snapshots.length > 0 && activeTab !== 'timeline';
 
-  // ── Maximize ──────────────────────────────────────────
+  // ── Maximize / Split / Normal Logic ──
   const handleMaximize = () => {
-    if (isMaximized) {
-      // Restore
+    if (terminalLayoutMode === 'maximized') {
+      setTerminalLayoutMode('normal');
       setTerminalHeight(prevHeightRef.current);
-      setIsMaximized(false);
-      setIsMinimized(false);
     } else {
       prevHeightRef.current = terminalHeight;
-      setTerminalHeight(Math.round(window.innerHeight * 0.72));
-      setIsMaximized(true);
-      setIsMinimized(false);
+      setTerminalLayoutMode('maximized');
     }
   };
 
-  // ── Minimize ──────────────────────────────────────────
-  const handleMinimize = () => {
-    if (isMinimized) {
-      // Restore
+  const handleSplit = () => {
+    if (terminalLayoutMode === 'split') {
+      setTerminalLayoutMode('normal');
       setTerminalHeight(prevHeightRef.current);
-      setIsMinimized(false);
     } else {
       prevHeightRef.current = terminalHeight;
-      setTerminalHeight(NAVBAR_H);
-      setIsMinimized(true);
-      setIsMaximized(false);
+      setTerminalLayoutMode('split');
     }
   };
+
+  const currentHeight = 
+    terminalLayoutMode === 'maximized' ? 'calc(100vh - 48px)' :
+    terminalLayoutMode === 'split' ? 'calc((100vh - 48px) / 2)' :
+    `${terminalHeight}px`;
 
   // ── Resize drag ───────────────────────────────────────
   useEffect(() => {
@@ -72,8 +72,7 @@ const TerminalPanel = () => {
       const newH = window.innerHeight - e.clientY;
       if (newH >= MIN_HEIGHT && newH <= window.innerHeight - 80) {
         setTerminalHeight(newH);
-        setIsMaximized(false);
-        setIsMinimized(false);
+        setTerminalLayoutMode('normal');
       }
     };
     const onUp = () => {
@@ -89,25 +88,21 @@ const TerminalPanel = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [isResizing, setTerminalHeight]);
-
-  // Reset maximized/minimized if terminal is toggled externally
-  useEffect(() => {
-    if (!isTerminalOpen) { setIsMaximized(false); setIsMinimized(false); }
-  }, [isTerminalOpen]);
+  }, [isResizing, setTerminalHeight, setTerminalLayoutMode]);
 
   if (!isTerminalOpen) return null;
 
   /* ── Shared icon-button style ─────── */
-  const iconBtn = (color = '#888') => ({
+  const iconBtn = (color = '#888', isActive = false) => ({
     width: '26px', height: '26px',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontFamily: 'var(--font-number)', fontWeight: 900, fontSize: '0.65rem',
-    background: 'transparent', color,
+    background: isActive ? color : 'transparent', color: isActive ? '#000' : color,
     border: `1.5px solid ${color}`,
     cursor: 'pointer', flexShrink: 0,
     transition: 'background 0.12s, color 0.12s',
     lineHeight: 1,
+    borderRadius: '2px'
   });
 
   const tabBtn = (isActive) => ({
@@ -126,14 +121,14 @@ const TerminalPanel = () => {
     <div
       style={{
         position: 'fixed', bottom: 0, left: 0, width: '100%',
-        height: `${terminalHeight}px`,
+        height: currentHeight,
         background: '#111', color: '#fff',
         borderTop: '2px solid #333',
         display: 'flex', flexDirection: 'column',
         zIndex: 1000,
         animation: 'slide-up 0.25s ease',
         overflow: 'hidden',
-        transition: 'height 0.2s ease',
+        transition: isResizing ? 'none' : 'height 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
       {/* ── Drag handle ── */}
@@ -155,28 +150,33 @@ const TerminalPanel = () => {
 
         {/* Tabs */}
         <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-          {['output', 'timeline', 'graph', 'preview']
+          {['output', 'timeline', 'graph', 'preview', 'git']
             .filter(t => t !== 'timeline' || userRole === 'owner')
             .map((t) => (
             <button
               key={t}
               onClick={() => {
                 setTerminalActiveTab(t);
-                // If panel is minimized (navbar only), restore to default height
-                if (isMinimized || terminalHeight <= NAVBAR_H) {
-                  setTerminalHeight(DEFAULT_HEIGHT);
-                  setIsMinimized(false);
-                }
               }}
               style={tabBtn(activeTab === t)}
             >
-              {t === 'output' ? '[ OUTPUT ]' : t === 'timeline' ? '[ TIMELINE ]' : t === 'graph' ? '[ GRAPH ]' : '[ PREVIEW ]'}
+              {t === 'output' ? '[ OUTPUT ]' : t === 'timeline' ? '[ TIMELINE ]' : t === 'graph' ? '[ GRAPH ]' : t === 'preview' ? '[ PREVIEW ]' : '[ GIT ]'}
+              
               {t === 'timeline' && showTimelineBadge && (
                 <span style={{
                   position: 'absolute', top: '8px', right: '6px',
                   width: '6px', height: '6px', borderRadius: '50%',
                   background: '#ff3e3e', boxShadow: '0 0 5px #ff3e3e',
                   animation: 'pulse-live 1.2s ease-in-out infinite',
+                }} />
+              )}
+
+              {t === 'git' && commitSuggestion && (
+                <span style={{
+                  position: 'absolute', top: '6px', right: '1px',
+                  width: '8px', height: '8px', borderRadius: '50%',
+                  background: '#c1ff72', boxShadow: '0 0 8px #c1ff72',
+                  animation: 'pulse-live 1.5s ease-in-out infinite',
                 }} />
               )}
             </button>
@@ -186,26 +186,30 @@ const TerminalPanel = () => {
         {/* Window controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
 
-          {/* Minimize ▬ */}
+          {/* Split ◓ */}
           <button
-            onClick={handleMinimize}
-            title={isMinimized ? 'Restore' : 'Minimize'}
-            style={iconBtn('#666')}
-            onMouseEnter={e => { e.currentTarget.style.background = '#666'; e.currentTarget.style.color = '#fff'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666'; }}
+            onClick={handleSplit}
+            title={terminalLayoutMode === 'split' ? 'Restore' : 'Split View'}
+            style={iconBtn('#888', terminalLayoutMode === 'split')}
+            onMouseEnter={e => { if (terminalLayoutMode !== 'split') { e.currentTarget.style.background = '#888'; e.currentTarget.style.color = '#fff'; } }}
+            onMouseLeave={e => { if (terminalLayoutMode !== 'split') { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; } }}
           >
-            {isMinimized ? '↑' : '—'}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
           </button>
 
           {/* Maximize □ */}
           <button
             onClick={handleMaximize}
-            title={isMaximized ? 'Restore' : 'Maximize'}
-            style={iconBtn('#888')}
-            onMouseEnter={e => { e.currentTarget.style.background = '#888'; e.currentTarget.style.color = '#fff'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; }}
+            title={terminalLayoutMode === 'maximized' ? 'Restore' : 'Maximize'}
+            style={iconBtn('#888', terminalLayoutMode === 'maximized')}
+            onMouseEnter={e => { if (terminalLayoutMode !== 'maximized') { e.currentTarget.style.background = '#888'; e.currentTarget.style.color = '#fff'; } }}
+            onMouseLeave={e => { if (terminalLayoutMode !== 'maximized') { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; } }}
           >
-            {isMaximized ? '⊡' : '□'}
+            {terminalLayoutMode === 'maximized' ? (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>
+            )}
           </button>
 
           {/* Close ✕ */}
@@ -221,15 +225,15 @@ const TerminalPanel = () => {
         </div>
       </div>
 
+
       {/* ── Content ── */}
-      {!isMinimized && (
-        <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px', minHeight: 0 }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px', minHeight: 0 }}>
           {activeTab === 'output'   && <OutputPanel />}
           {activeTab === 'timeline' && <TimelineSlider />}
           {activeTab === 'graph'    && <div style={{ position: 'relative', height: '100%' }}><CausalityGraph /></div>}
           {activeTab === 'preview'  && <HtmlPreview />}
-        </div>
-      )}
+          {activeTab === 'git'      && <GitAssistantPanel />}
+      </div>
     </div>
   );
 };

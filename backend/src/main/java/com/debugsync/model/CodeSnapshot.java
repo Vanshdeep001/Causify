@@ -30,6 +30,9 @@ public class CodeSnapshot {
 
     private boolean hasError;
 
+    @Column(columnDefinition = "TEXT")
+    private String suggestionJson;
+
     public CodeSnapshot() {}
 
     public CodeSnapshot(String id, String sessionId, String code, String userId,
@@ -62,4 +65,6 @@ public class CodeSnapshot {
     public void setDiff(String diff) { this.diff = diff; }
     public boolean isHasError() { return hasError; }
     public void setHasError(boolean hasError) { this.hasError = hasError; }
+    public String getSuggestionJson() { return suggestionJson; }
+    public void setSuggestionJson(String suggestionJson) { this.suggestionJson = suggestionJson; }
 }

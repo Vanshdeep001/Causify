@@ -1,8 +1,5 @@
 /* -------------------------------------------------------
  * api.js — API Service Layer
- * 
- * Handles all HTTP communication with the Spring Boot backend.
- * Uses Axios with a base URL configured for the dev proxy.
  * ------------------------------------------------------- */
 
 import axios from 'axios';
@@ -11,38 +8,53 @@ import axios from 'axios';
 const api = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
-  timeout: 30000, // 30 seconds (code execution can take time)
+  timeout: 30000, 
 });
 
 /* ---- Session APIs ---- */
 
-// Create a new debugging session
 export const createSession = async (name, username, password) => {
   const response = await api.post('/session/create', { name, username, password });
   return response.data;
 };
 
-// Join an existing session
-export const joinSession = async (id, password) => {
-  const response = await api.post('/session/join', { id, password });
+export const joinSession = async (id, password, username) => {
+  const response = await api.post('/session/join', { id, password, username });
   return response.data;
 };
 
-// Upload project files
+// Flattened Upload
 export const uploadProject = async (sessionId, files) => {
-  const response = await api.post(`/session/${sessionId}/upload`, files);
+  const response = await api.post(`/session/upload?sessionId=${sessionId}`, files);
   return response.data;
 };
 
-// Get session details by ID
+// Flattened Save
+export const saveFile = async (sessionId, path, content = '') => {
+  const response = await api.post('/session/save-file', { sessionId, path, content });
+  return response.data;
+};
+
+// Flattened Delete
+export const deleteFile = async (sessionId, path) => {
+  const response = await api.delete(`/session/delete-file?sessionId=${sessionId}&path=${encodeURIComponent(path)}`);
+  return response.data;
+};
+
+// Keep session lookup as is (GET /session/{id})
 export const getSession = async (sessionId) => {
   const response = await api.get(`/session/${sessionId}`);
   return response.data;
 };
 
+// Fetch all files for a session (used for reconnecting after refresh)
+export const getSessionFiles = async (sessionId) => {
+  const response = await api.get(`/session/${sessionId}/files`);
+  return response.data;
+};
+
 /* ---- Execution APIs ---- */
 
-// Execute code and get output + root cause analysis
 export const executeCode = async (sessionId, code, language = 'javascript') => {
   const response = await api.post('/execute', {
     sessionId,
@@ -54,13 +66,11 @@ export const executeCode = async (sessionId, code, language = 'javascript') => {
 
 /* ---- Timeline APIs ---- */
 
-// Get all snapshots for a session (timeline history)
 export const getTimeline = async (sessionId) => {
   const response = await api.get(`/timeline/${sessionId}`);
   return response.data;
 };
 
-// Create a manual snapshot
 export const createSnapshot = async (sessionId, code, userId) => {
   const response = await api.post('/timeline/snapshot', {
     sessionId,
@@ -72,13 +82,19 @@ export const createSnapshot = async (sessionId, code, userId) => {
 
 /* ---- Root Cause APIs ---- */
 
-// Request root cause analysis for a specific error
 export const analyzeRootCause = async (sessionId, error, code) => {
   const response = await api.post('/root-cause', {
     sessionId,
     error,
     code,
   });
+  return response.data;
+};
+
+/* ---- Git Assistant APIs ---- */
+
+export const executeGitCommit = async (payload) => {
+  const response = await api.post('/git/commit', payload);
   return response.data;
 };
 
