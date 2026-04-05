@@ -23,6 +23,7 @@ D:\DebugSync\backend\src\main\java\com\debugsync\dto\CommitSuggestionDto.java
 D:\DebugSync\backend\src\main\java\com\debugsync\repository\ExecutionRepository.java
 D:\DebugSync\backend\src\main\java\com\debugsync\service\RootCauseService.java
 D:\DebugSync\backend\src\main\java\com\debugsync\service\AiAnalysisService.java
+D:\DebugSync\backend\src\main\java\com\debugsync\service\GitWorkspaceService.java
 D:\DebugSync\backend\src\main\java\com\debugsync\controller\ExecutionController.java
 D:\DebugSync\backend\src\main\java\com\debugsync\controller\SessionController.java
 D:\DebugSync\backend\src\main\java\com\debugsync\controller\TimelineController.java

@@ -3,6 +3,9 @@
 
 server:
   port: 8080
+  error:
+    include-message: always
+    include-exception: true
 
 spring:
   application:
@@ -39,3 +42,6 @@ debugsync:
     openrouter-api-key: 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
   cors:
     allowed-origins: http://localhost:5173
+  git:
+    workspace-root: ./git-workspaces
+    timeout-seconds: 30
