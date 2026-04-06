@@ -66,10 +66,17 @@ public class ExecutionService {
                 return executeJava(request, startTime);
             }
 
-            // --- Fix for HTML/CSS: Prevent crash when "running" static files ---
-            if ("html".equals(lang) || "css".equals(lang)) {
+            // --- Fix for HTML/CSS/React: Prevent crash when "running" static files ---
+            boolean isReactCode = request.getCode().contains("import React") || request.getCode().contains("from 'react'") || request.getCode().contains("from \"react\"");
+            boolean isStaticLang = "html".equals(lang) || "css".equals(lang) || "react".equals(lang) || "jsx".equals(lang) || "tsx".equals(lang);
+
+            if (isStaticLang || isReactCode) {
+                String msg = ("react".equals(lang) || "jsx".equals(lang) || "tsx".equals(lang) || isReactCode)
+                    ? "[Causify] React file loaded.\n\n→ This is a UI frontend component, not a backend Node script!\n→ Please use the DEV SERVER tab (🚀) below to run frontend React apps."
+                    : String.format("[Causify] Loaded %s file successfully.\nPreview is available in the web view.", lang.toUpperCase());
+
                 return buildResponse(
-                    String.format("[Causify] Loaded %s file successfully.\nPreview is available in the web view.", lang.toUpperCase()),
+                    msg,
                     null, 
                     request, 
                     System.currentTimeMillis() - startTime
@@ -247,6 +254,7 @@ public class ExecutionService {
         if (trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html") || trimmed.startsWith("<head") || trimmed.startsWith("<body")) return "html";
         if (code.contains("public static void main") || code.contains("System.out.println")) return "java";
         if (code.contains("def ") && code.contains(":")) return "python";
+        if (code.contains("import react") || code.contains("from 'react'") || code.contains("from \"react\"") || (code.contains("export default") && code.contains("<div"))) return "react";
         return "javascript";
     }
 

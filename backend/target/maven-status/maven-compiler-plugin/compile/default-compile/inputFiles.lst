@@ -3,10 +3,12 @@ D:\DebugSync\backend\src\main\java\com\debugsync\repository\SnapshotRepository.j
 D:\DebugSync\backend\src\main\java\com\debugsync\config\CorsConfig.java
 D:\DebugSync\backend\src\main\java\com\debugsync\repository\SessionRepository.java
 D:\DebugSync\backend\src\main\java\com\debugsync\websocket\CollaborationHandler.java
+D:\DebugSync\backend\src\main\java\com\debugsync\dto\DevServerDto.java
 D:\DebugSync\backend\src\main\java\com\debugsync\model\ProjectFile.java
 D:\DebugSync\backend\src\main\java\com\debugsync\controller\RootCauseController.java
 D:\DebugSync\backend\src\main\java\com\debugsync\repository\ProjectFileRepository.java
 D:\DebugSync\backend\src\main\java\com\debugsync\service\ExecutionService.java
+D:\DebugSync\backend\src\main\java\com\debugsync\service\ProjectDetectorService.java
 D:\DebugSync\backend\src\main\java\com\debugsync\dto\ExecutionRequest.java
 D:\DebugSync\backend\src\main\java\com\debugsync\service\FileService.java
 D:\DebugSync\backend\src\main\java\com\debugsync\model\User.java
@@ -30,6 +32,8 @@ D:\DebugSync\backend\src\main\java\com\debugsync\controller\TimelineController.j
 D:\DebugSync\backend\src\main\java\com\debugsync\util\DiffUtil.java
 D:\DebugSync\backend\src\main\java\com\debugsync\model\ExecutionLog.java
 D:\DebugSync\backend\src\main\java\com\debugsync\model\CodeSnapshot.java
+D:\DebugSync\backend\src\main\java\com\debugsync\controller\DevServerController.java
+D:\DebugSync\backend\src\main\java\com\debugsync\service\DevServerService.java
 D:\DebugSync\backend\src\main\java\com\debugsync\service\GitAssistantService.java
 D:\DebugSync\backend\src\main\java\com\debugsync\repository\ErrorRepository.java
 D:\DebugSync\backend\src\main\java\com\debugsync\DebugSyncApplication.java
