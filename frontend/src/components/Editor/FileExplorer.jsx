@@ -6,6 +6,7 @@ import React, { useState, useRef } from 'react';
 import useEditorStore from '../../store/useEditorStore';
 import { createSession, joinSession, uploadProject, saveFile, deleteFile } from '../../services/api';
 import { connectWebSocket, sendCodeChange } from '../../services/socket';
+import { detectProject } from '../../services/devserver';
 
 const FileExplorer = ({ onToggle }) => {
   const files = useEditorStore((s) => s.files);
@@ -29,6 +30,10 @@ const FileExplorer = ({ onToggle }) => {
   const addFile = useEditorStore((s) => s.addFile);
   const removeFile = useEditorStore((s) => s.removeFile);
   const impactWarnings = useEditorStore((s) => s.impactWarnings);
+  const setDetectedProjects = useEditorStore((s) => s.setDetectedProjects);
+  const setDevServerNotification = useEditorStore((s) => s.setDevServerNotification);
+  const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
+  const setTerminalOpen = useEditorStore((s) => s.setTerminalOpen);
 
   // Compute set of file paths that are affected by active impacts
   const affectedPaths = new Set();
@@ -54,9 +59,6 @@ const FileExplorer = ({ onToggle }) => {
   const folderInputRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  const addChangeNotification = useEditorStore((s) => s.addChangeNotification);
-  const updateRemoteCursor = useEditorStore((s) => s.updateRemoteCursor);
-
   const initSocket = (sessId, user) => {
     connectWebSocket(sessId, user, {
       onCodeChange: (d) => {
@@ -70,12 +72,11 @@ const FileExplorer = ({ onToggle }) => {
       onCursorUpdate: (d) => {
         const currentU = useEditorStore.getState().currentUser;
         if (d.userId !== currentU?.id) {
-          updateRemoteCursor(d.userId, d);
+          useEditorStore.getState().updateRemoteCursor(d.userId, d);
         }
       },
       onRevert: (d) => {
         const currentU = useEditorStore.getState().currentUser;
-        // Notify if we are the user whose change was reverted
         if (d.revertedUser === currentU?.username || d.revertedUser === currentU?.id) {
           useEditorStore.getState().setRevertNotification({
             username: d.username,
@@ -141,10 +142,36 @@ const FileExplorer = ({ onToggle }) => {
         projectFiles.push({ path: file.webkitRelativePath || file.name, content: event.target.result });
         processed++;
         if (processed === allFiles.length) {
+          const afterUpload = (sid) => {
+            // Auto-detect project type after upload
+            if (sid) {
+              setTimeout(() => {
+                detectProject(sid).then((result) => {
+                  if (result?.projects?.length > 0) {
+                    setDetectedProjects(result.projects);
+                    setDevServerNotification({
+                      message: `🚀 ${result.projects.map(p => p.displayName).join(' + ')} project detected!`,
+                      type: 'success',
+                    });
+                    // Auto-open DEV SERVER tab
+                    setTerminalActiveTab('devserver');
+                    setTerminalOpen(true);
+                  }
+                }).catch(() => { /* detection is best-effort */ });
+              }, 500);
+            }
+          };
+
           if (sessionId) {
-            uploadProject(sessionId, projectFiles).then(() => setProject(projectFiles));
+            uploadProject(sessionId, projectFiles).then(() => {
+              setProject(projectFiles);
+              afterUpload(sessionId);
+            });
           } else {
-            handleCreate(projectFiles);
+            handleCreate(projectFiles).then(() => {
+              const sid = useEditorStore.getState().sessionId;
+              afterUpload(sid);
+            });
           }
         }
       };
@@ -182,7 +209,6 @@ const FileExplorer = ({ onToggle }) => {
       try {
         await saveFile(sessionId, pathToSave, '');
         addFile(pathToSave, '');
-        // Broadcast to collaborators so they see the new file
         if (currentUser) {
           sendCodeChange(sessionId, currentUser.id, pathToSave, '');
         }
@@ -221,30 +247,70 @@ const FileExplorer = ({ onToggle }) => {
     });
   };
 
-  // ── File Icons ──
-  const FileIcon = ({ name, isFolder, isOpen }) => {
+  // ── Ultra-Premium Blueprint Icons ──
+  const FileIcon = ({ name, isFolder, isOpen, size = 16 }) => {
+    const colorToxic = 'var(--accent-toxic-green)';
+    const colorBlue = 'var(--accent-electric-blue)';
+    const colorRed = '#e34f26';
+    const colorJS = '#f7df1e';
+
     if (isFolder) {
       return (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill={isOpen ? "rgba(193,255,114,0.4)" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: isOpen ? '#c1ff72' : '#888' }}>
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ transition: 'all 0.3s' }}>
+          <path d="M20 18H4V7H20V18Z" fill={isOpen ? colorToxic : "none"} fillOpacity="0.1" stroke={isOpen ? colorToxic : "#666"} strokeWidth="2" strokeLinejoin="round" />
+          <path d="M10 4L12 7H20V9H4V4H10Z" fill={isOpen ? colorToxic : "#333"} />
+          {isOpen && <path d="M4 9L2 19H22L20 9H4Z" fill={colorToxic} fillOpacity="0.2" stroke={colorToxic} strokeWidth="1.5" />}
         </svg>
       );
     }
+
     const ext = name.split('.').pop()?.toLowerCase();
     switch (ext) {
       case 'html':
-        return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#e34f26" strokeWidth="2.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>;
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2L2 7L12 12L22 7L12 2Z" fill={colorRed} fillOpacity="0.8" />
+            <path d="M2 12L12 17L22 12" stroke={colorRed} strokeWidth="2" />
+            <path d="M2 17L12 22L22 17" stroke={colorRed} strokeWidth="2" />
+          </svg>
+        );
       case 'css':
-        return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1572b6" strokeWidth="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="7.5 10 12 12.5 16.5 10"/><polyline points="7.5 15 12 17.5 16.5 15"/><line x1="12" y1="22" x2="12" y2="12.5"/></svg>;
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 22L3 17V7L12 2L21 7V17L12 22Z" stroke={colorBlue} strokeWidth="2" fill={colorBlue} fillOpacity="0.1" />
+            <path d="M12 22V12M12 12L21 7M12 12L3 7" stroke={colorBlue} strokeWidth="1.5" />
+            <circle cx="12" cy="12" r="3" fill={colorBlue} fillOpacity="0.4" />
+          </svg>
+        );
       case 'js':
-        return <svg width="14" height="14" viewBox="0 0 24 24" fill="#f7df1e" stroke="#000" strokeWidth="1"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><text x="12" y="17" fontSize="11" fontWeight="900" textAnchor="middle" fill="#000" fontFamily="Arial">JS</text></svg>;
+        return (
+          <div style={{ width: size, height: size, background: colorJS, borderRadius: '3px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 12px rgba(247, 223, 30, 0.3)' }}>
+            <span style={{ fontSize: '8px', fontWeight: 900, color: '#000', fontFamily: 'var(--font-number)' }}>JS</span>
+          </div>
+        );
       case 'jsx':
       case 'tsx':
-        return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#61dafb" strokeWidth="2"><circle cx="12" cy="12" r="2"/><path d="M12 7c3.97 0 7.18 2.24 7.18 5s-3.21 5-7.18 5c-3.97 0-7.18-2.24-7.18-5s3.21-5 7.18-5z" transform="rotate(0 12 12)"/><path d="M12 7c3.97 0 7.18 2.24 7.18 5s-3.21 5-7.18 5c-3.97 0-7.18-2.24-7.18-5s3.21-5 7.18-5z" transform="rotate(60 12 12)"/><path d="M12 7c3.97 0 7.18 2.24 7.18 5s-3.21 5-7.18 5c-3.97 0-7.18-2.24-7.18-5s3.21-5 7.18-5z" transform="rotate(120 12 12)"/></svg>;
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="2.5" fill="#61dafb" />
+            <ellipse cx="12" cy="12" rx="10" ry="4" stroke="#61dafb" strokeWidth="1.5" transform="rotate(0 12 12)" strokeOpacity="0.6" />
+            <ellipse cx="12" cy="12" rx="10" ry="4" stroke="#61dafb" strokeWidth="1.5" transform="rotate(60 12 12)" />
+            <ellipse cx="12" cy="12" rx="10" ry="4" stroke="#61dafb" strokeWidth="1.5" transform="rotate(120 12 12)" />
+          </svg>
+        );
       case 'json':
-        return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbc02d" strokeWidth="2.5"><path d="M21 12V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h7"/><path d="M16 19h6"/><path d="M19 16v6"/></svg>;
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fbc02d" strokeWidth="2.5">
+            <path d="M7 11c0-2-1-3-3-3m0 0c2 0 3-1 3-3M7 11c0 2 1 3 3 3m0 0c-2 0-3 1-3 3M17 11c0-2 1-3 3-3m0 0c-2 0-3-1-3-3M17 11c0 2-1 3-3 3m0 0c2 0 3 1 3 3" />
+          </svg>
+        );
       default:
-        return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>;
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+            <polyline points="13 2 13 9 20 9" />
+          </svg>
+        );
     }
   };
 
@@ -253,7 +319,6 @@ const FileExplorer = ({ onToggle }) => {
     const hiddenEntries = new Set(['.git', 'node_modules', '.DS_Store']);
     const allPaths = Object.keys(filesObj);
     
-    // Auto-expand all folders on initial load if expandedPaths is empty
     if (expandedPaths.size === 0 && allPaths.length > 0) {
       const initialExpanded = new Set();
       allPaths.forEach(p => {
@@ -268,9 +333,7 @@ const FileExplorer = ({ onToggle }) => {
     }
     
     allPaths.forEach((path) => {
-      // Filter out hidden entries
       if (path.split('/').some(p => hiddenEntries.has(p))) return;
-      
       const parts = path.split('/');
       let current = tree;
       parts.forEach((part, index) => {
@@ -290,84 +353,77 @@ const FileExplorer = ({ onToggle }) => {
     const [isHovered, setIsHovered] = useState(false);
     
     const isExpanded = expandedPaths.has(path);
+    const nameOnly = name.includes('.') ? name.split('.').slice(0, -1).join('.') : name;
+    const extension = name.includes('.') ? '.' + name.split('.').pop() : '';
 
     return (
       <div
         onClick={(e) => { 
           e.stopPropagation(); 
-          if (isFolder) togglePath(path);
+          if (isFolder) toggleFolder(path);
           else openFile(path); 
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        className={`file-shelf-item ${isActive ? 'file-shelf-active' : 'file-shelf-hover'}`}
         style={{
-          padding: '6px 12px 6px 8px', cursor: 'pointer',
-          background: isActive ? 'rgba(193,255,114,0.12)' : 'transparent',
-          color: isActive ? '#c1ff72' : '#e0e0e0', 
-          fontSize: '0.85rem', 
-          fontFamily: 'var(--font-body)',
-          display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.15s ease',
+          padding: '8px 12px 8px 10px', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: '10px', 
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          borderLeft: isActive ? '3px solid #c1ff72' : '3px solid transparent',
-          position: 'relative',
-          opacity: isHovered || isActive ? 1 : 0.9,
+          margin: '1px 8px',
           borderRadius: '4px',
-          margin: '2px 6px'
+          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+          background: isActive ? 'rgba(193, 255, 114, 0.1)' : 'transparent',
+          color: isActive ? 'var(--accent-toxic-green)' : '#ddd',
         }}
       >
         {isFolder && (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.1s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', opacity: 0.6, flexShrink: 0 }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.2s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', opacity: 0.5, flexShrink: 0 }}>
             <polyline points="9 18 15 12 9 6" />
           </svg>
         )}
-        {!isFolder && <div style={{ minWidth: '12px' }} />}
+        {!isFolder && <div style={{ minWidth: '10px' }} />}
         
-        <div style={{ display: 'flex', alignItems: 'center', minWidth: '22px', justifyContent: 'center', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', minWidth: '20px', justifyContent: 'center', flexShrink: 0 }}>
           <FileIcon name={name} isFolder={isFolder} isOpen={isExpanded} size={16} />
         </div>
         
-        <span style={{ 
-          fontWeight: isActive ? 700 : 500, 
+        <span className="font-modern" style={{ 
+          fontWeight: isFolder ? 700 : (isActive ? 700 : 500), 
           flex: 1, 
-          letterSpacing: '-0.015em',
-          color: isActive ? '#c1ff72' : isAffected ? '#ff3e3e' : '#fff',
-          overflow: 'hidden', textOverflow: 'ellipsis'
-        }}>{name}</span>
+          fontSize: '0.8rem',
+          overflow: 'hidden', textOverflow: 'ellipsis',
+          display: 'flex', alignItems: 'baseline', gap: '1px'
+        }}>
+          {isFolder ? name : (
+            <>
+              {nameOnly}
+              <span className="font-tech" style={{ opacity: 0.4, fontSize: '0.65rem' }}>{extension}</span>
+            </>
+          )}
+        </span>
         
         {isAffected && !isFolder && (
-          <span title="Affected by a cross-file change" style={{
-            fontSize: '0.75rem', color: '#ff3e3e',
-            animation: 'impact-icon-pulse 1.5s ease-in-out infinite',
+          <span title="Affected by code change" style={{
+            fontSize: '0.7rem', color: 'var(--accent-crimson)',
+            animation: 'shelf-glow-pulse 2s infinite',
             marginRight: '6px'
           }}>⚡</span>
         )}
         
-        {userRole === 'owner' && (
-          <div style={{ 
-            display: 'flex', gap: '4px', opacity: isHovered ? 1 : 0, 
-            pointerEvents: isHovered ? 'auto' : 'none', transition: 'opacity 0.1s' 
-          }}>
-            {isFolder && (
-              <>
-                <button onClick={(e) => { e.stopPropagation(); setNewItem({ type: 'file', parent: path, name: '' }); }} title="New File" style={inlineActionBtnSty}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); setNewItem({ type: 'folder', parent: path, name: '' }); }} title="New Folder" style={inlineActionBtnSty}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
-                </button>
-              </>
-            )}
-            <button onClick={(e) => { e.stopPropagation(); handleDelete(path, isFolder); }} title="Delete" style={{ ...inlineActionBtnSty, color: '#ff3e3e' }}>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+        {userRole === 'owner' && isHovered && (
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button onClick={(e) => { e.stopPropagation(); handleDelete(path, isFolder); }} style={{ ...inlineActionBtnSty, color: 'var(--accent-crimson)' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             </button>
           </div>
         )}
 
         {activeEditor && !isFolder && (
-          <span title={`${activeEditor.username} is editing...`} style={{ 
-            fontSize: '0.75rem', color: activeEditor.color, fontWeight: 900,
-            textShadow: '0 0 8px currentColor'
-          }}>✎</span>
+          <div style={{ 
+            width: '8px', height: '8px', borderRadius: '50%', background: activeEditor.color,
+            boxShadow: `0 0 10px ${activeEditor.color}`, animation: 'hud-pulse 1.5s infinite'
+          }} />
         )}
       </div>
     );
@@ -504,7 +560,7 @@ const FileExplorer = ({ onToggle }) => {
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                   </button>
                   <button onClick={() => fileInputRef.current?.click()} title="Add Files" className="explorer-action-btn" style={explorerActionBtnSty}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" i1="12" x2="16" y2="12"/></svg>
                   </button>
                 </div>
               )}

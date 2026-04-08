@@ -91,10 +91,46 @@ export const analyzeRootCause = async (sessionId, error, code) => {
   return response.data;
 };
 
-/* ---- Git Assistant APIs ---- */
+/* ---- Git Workspace APIs ---- */
+
+export const cloneGitRepo = async (sessionId, repoUrl) => {
+  const response = await api.post('/git/clone', { sessionId, repoUrl });
+  return response.data;
+};
 
 export const executeGitCommit = async (payload) => {
+  // payload: { sessionId, message, files: [{ path, content }, ...] }
   const response = await api.post('/git/commit', payload);
+  return response.data;
+};
+
+export const gitPush = async (sessionId) => {
+  const response = await api.post('/git/push', { sessionId });
+  return response.data;
+};
+
+export const gitPull = async (sessionId) => {
+  const response = await api.post('/git/pull', { sessionId });
+  return response.data;
+};
+
+export const gitStatus = async (sessionId) => {
+  const response = await api.get(`/git/status?sessionId=${sessionId}`);
+  return response.data;
+};
+
+export const gitLog = async (sessionId, count = 10) => {
+  const response = await api.get(`/git/log?sessionId=${sessionId}&count=${count}`);
+  return response.data;
+};
+
+export const gitIsConnected = async (sessionId) => {
+  const response = await api.get(`/git/connected?sessionId=${sessionId}`);
+  return response.data;
+};
+
+export const gitDisconnect = async (sessionId) => {
+  const response = await api.post('/git/disconnect', { sessionId });
   return response.data;
 };
 

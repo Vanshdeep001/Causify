@@ -3,14 +3,18 @@
  * ------------------------------------------------------- */
 
 import React from 'react';
-import useEditorStore from '../../store/useEditorStore';const LogLine = ({ type, message, timestamp }) => {
-  const tagClass = 
-    type === 'stdout' ? 'tag-stdout' : 
-    type === 'stderr' ? 'tag-stderr' : 'tag-system';
-  
-  const tagLabel = 
-    type === 'stdout' ? 'out' : 
-    type === 'stderr' ? 'err' : 'sys';
+import useEditorStore from '../../store/useEditorStore';
+import HtmlPreview from '../Preview/HtmlPreview';
+import DevServerPanel from '../Terminal/DevServerPanel';
+
+const LogLine = ({ type, message, timestamp }) => {
+  const tagClass =
+    type === 'stdout' ? 'tag-stdout' :
+      type === 'stderr' ? 'tag-stderr' : 'tag-system';
+
+  const tagLabel =
+    type === 'stdout' ? 'out' :
+      type === 'stderr' ? 'err' : 'sys';
 
   // Highlight [Causify] or specific success/error keywords
   const parts = message.split(/(\[Causify\]|Successfully|Error|Critical)/i);
@@ -35,8 +39,21 @@ const OutputPanel = () => {
   const isRunning = useEditorStore((s) => s.isRunning);
   const rootCause = useEditorStore((s) => s.rootCause);
   const sessionId = useEditorStore((s) => s.sessionId);
+  const files = useEditorStore((s) => s.files);
+  const detectedProjects = useEditorStore((s) => s.detectedProjects);
 
   const timestamp = new Date().toLocaleTimeString([], { hour12: false });
+
+  // ── Render Dev Server for React/Node projects ──
+  if (detectedProjects && detectedProjects.length > 0) {
+    return <DevServerPanel />;
+  }
+
+  // ── Render HTML Preview for Static Web projects ──
+  const hasHtmlFile = files && Object.keys(files).some(p => p.toLowerCase().endsWith('.html'));
+  if (hasHtmlFile) {
+    return <HtmlPreview />;
+  }
 
   if (isRunning) {
     return (
@@ -66,7 +83,7 @@ const OutputPanel = () => {
   return (
     <div className="terminal-window-pane">
       <div className="terminal-scanlines" />
-      
+
       {/* System Meta Header */}
       <div className="terminal-meta-header">
         <div><span className="status-pulse" /> TERMINAL_ACTIVE</div>

@@ -9,7 +9,6 @@ import useEditorStore from '../../store/useEditorStore';
 import OutputPanel from '../Output/OutputPanel';
 import TimelineSlider from '../Timeline/TimelineSlider';
 import CausalityGraph from '../Graph/CausalityGraph';
-import HtmlPreview from '../Preview/HtmlPreview';
 import GitAssistantPanel from './GitAssistantPanel';
 
 const DEFAULT_HEIGHT = 280;
@@ -25,7 +24,7 @@ const TerminalPanel = () => {
   const snapshots      = useEditorStore((s) => s.snapshots);
   const userRole       = useEditorStore((s) => s.userRole);
   const commitSuggestion = useEditorStore((s) => s.commitSuggestion);
-
+  const detectedProjects = useEditorStore((s) => s.detectedProjects);
 
   const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
   const setTerminalHeight    = useEditorStore((s) => s.setTerminalHeight);
@@ -106,15 +105,18 @@ const TerminalPanel = () => {
   });
 
   const tabBtn = (isActive) => ({
-    height: NAVBAR_H + 'px', padding: '0 16px',
-    fontFamily: 'var(--font-number)', fontWeight: 700, fontSize: '0.65rem',
-    color: isActive ? '#fff' : '#666',
+    height: NAVBAR_H + 'px', padding: '0 24px',
+    fontFamily: 'var(--font-number)', fontWeight: 800, fontSize: '0.7rem',
+    color: isActive ? '#c1ff72' : '#666',
     background: 'transparent',
     border: 'none',
-    borderBottom: isActive ? '2px solid #c1ff72' : '2px solid transparent',
-    cursor: 'pointer', letterSpacing: '0.05em',
-    transition: 'color 0.12s, border-color 0.12s',
+    cursor: 'pointer', letterSpacing: '0.15em',
+    textTransform: 'uppercase',
+    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
     position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   });
 
   return (
@@ -143,14 +145,18 @@ const TerminalPanel = () => {
 
       {/* ── Navbar ── */}
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        display: 'grid', gridTemplateColumns: '120px 1fr 120px', alignItems: 'center',
         height: `${NAVBAR_H}px`, flexShrink: 0,
-        borderBottom: '1px solid #222', paddingRight: '12px',
+        borderBottom: '1px solid #222',
       }}>
+        {/* Left Side (Empty/Logo) */}
+        <div style={{ paddingLeft: '12px', opacity: 0.5 }}>
+           <div style={{ width: '4px', height: '4px', background: '#333' }} />
+        </div>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
-          {['output', 'timeline', 'graph', 'preview', 'git']
+        {/* Tabs (Centered) */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '10px' }}>
+          {['output', 'timeline', 'graph', 'git']
             .filter(t => t !== 'timeline' || userRole === 'owner')
             .map((t) => (
             <button
@@ -160,7 +166,16 @@ const TerminalPanel = () => {
               }}
               style={tabBtn(activeTab === t)}
             >
-              {t === 'output' ? '[ OUTPUT ]' : t === 'timeline' ? '[ TIMELINE ]' : t === 'graph' ? '[ GRAPH ]' : t === 'preview' ? '[ PREVIEW ]' : '[ GIT ]'}
+              {t === 'output' ? 'Output' : t === 'timeline' ? 'Timeline' : t === 'graph' ? 'Graph' : 'Git'}
+              
+              {/* Active Indicator Underline */}
+              <div style={{ 
+                position: 'absolute', bottom: '0', left: '50%', 
+                width: activeTab === t ? '40%' : '0%', height: '2px', 
+                background: '#c1ff72', transform: 'translateX(-50%)',
+                transition: 'width 0.3s ease',
+                boxShadow: activeTab === t ? '0 0 10px #c1ff72' : 'none'
+              }} />
               
               {t === 'timeline' && showTimelineBadge && (
                 <span style={{
@@ -183,8 +198,8 @@ const TerminalPanel = () => {
           ))}
         </div>
 
-        {/* Window controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        {/* Window controls (Right Aligned) */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px', paddingRight: '12px' }}>
 
           {/* Split ◓ */}
           <button
@@ -226,12 +241,10 @@ const TerminalPanel = () => {
       </div>
 
 
-      {/* ── Content ── */}
       <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px', minHeight: 0 }}>
           {activeTab === 'output'   && <OutputPanel />}
           {activeTab === 'timeline' && <TimelineSlider />}
           {activeTab === 'graph'    && <div style={{ position: 'relative', height: '100%' }}><CausalityGraph /></div>}
-          {activeTab === 'preview'  && <HtmlPreview />}
           {activeTab === 'git'      && <GitAssistantPanel />}
       </div>
     </div>

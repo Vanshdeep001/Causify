@@ -125,8 +125,9 @@ const App = () => {
         position: 'relative',
         zIndex: 10
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-          <h1 className="logo-text" style={{ margin: 0, fontSize: '1.1rem', letterSpacing: '-0.02em' }}>CAUSIFY</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <img src="/icon (1).png" alt="Causify Logo" style={{ height: '32px', width: 'auto' }} />
+          <h1 className="logo-text" style={{ margin: 0, fontSize: '1.2rem', letterSpacing: '-0.02em', fontWeight: 900 }}>CAUSIFY</h1>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>

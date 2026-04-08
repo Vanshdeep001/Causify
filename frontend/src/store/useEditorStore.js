@@ -88,8 +88,22 @@ const useEditorStore = create(persist((set, get) => ({
   impactDebounceTimer: null,   // Timer for debouncing self-impact checks
   commitSuggestion: null,      // { type, message, files, confidence, reason }
 
+  // ---- Git Workspace State ----
+  gitRepoConnected: false,     // Whether a repo is cloned for this session
+  gitRepoUrl: '',              // Display URL (token stripped)
+  gitStatus: '',               // Parsed git status output string
+  gitLog: '',                  // Recent commit log string
+  gitLoading: false,           // Whether a git operation is in progress
+  gitError: null,              // Last git operation error
+
+  // ---- Dev Server State ----
+  detectedProjects: [],          // Array of detected projects from upload
+  devServers: {},                // { [type]: { state, logs, port, url, framework, displayName } }
+  projectDetected: false,        // Whether detection has been run
+  devServerNotification: null,   // Notification banner for project detection
+
   // ---- UI Layout State ----
-  terminalActiveTab: 'output', // 'output' | 'timeline' | 'graph' | 'preview'
+  terminalActiveTab: 'output', // 'output' | 'timeline' | 'graph' | 'git'
   isTerminalOpen: false,       // Whether terminal is visible
   terminalHeight: 300,         // Height in pixels (normal mode)
   terminalLayoutMode: 'normal', // 'normal' | 'split' | 'maximized'
@@ -147,9 +161,9 @@ const useEditorStore = create(persist((set, get) => ({
     fileArray.forEach(f => { fileMap[f.path] = f.content; });
     const firstPath = fileArray.length > 0 ? fileArray[0].path : 'index.js';
     const firstContent = fileArray.length > 0 ? fileArray[0].content : '';
-    set({ 
-      files: fileMap, 
-      activePath: firstPath, 
+    set({
+      files: fileMap,
+      activePath: firstPath,
       code: firstContent,
       language: get().detectLanguage(firstPath)
     });
@@ -158,8 +172,8 @@ const useEditorStore = create(persist((set, get) => ({
   openFile: (path) => {
     const { files, isReplaying } = get();
     if (isReplaying) return; // Disable switching during replay for now
-    set({ 
-      activePath: path, 
+    set({
+      activePath: path,
       code: files[path] || '',
       language: get().detectLanguage(path)
     });
@@ -178,26 +192,26 @@ const useEditorStore = create(persist((set, get) => ({
   removeFile: (path) => {
     const { files, activePath } = get();
     const newFiles = { ...files };
-    
+
     // Recursive delete: remove exact path or any path starting with "path/"
     Object.keys(newFiles).forEach(f => {
       if (f === path || f.startsWith(path + '/')) {
         delete newFiles[f];
       }
     });
-    
+
     let newActive = activePath;
     let newCode = get().code;
-    
+
     // If the active file was deleted or its parent folder was deleted
     if (activePath === path || activePath.startsWith(path + '/')) {
       const remainingPaths = Object.keys(newFiles);
       newActive = remainingPaths.length > 0 ? remainingPaths[0] : '';
       newCode = remainingPaths.length > 0 ? newFiles[newActive] : '';
-      
-      set({ 
-        files: newFiles, 
-        activePath: newActive, 
+
+      set({
+        files: newFiles,
+        activePath: newActive,
         code: newCode,
         language: get().detectLanguage(newActive)
       });
@@ -216,7 +230,7 @@ const useEditorStore = create(persist((set, get) => ({
 
   setCode: (code, remote = false) => {
     const { activePath } = get();
-    set((s) => ({ 
+    set((s) => ({
       code,
       files: { ...s.files, [activePath]: code }
     }));
@@ -254,7 +268,7 @@ const useEditorStore = create(persist((set, get) => ({
       for (let i = top; i <= bottomNew; i++) {
         const oldLine = i <= bottomOld ? oldLines[i] : undefined;
         const newLine = newLines[i];
-        
+
         existingPathChanges[i + 1] = {
           userId,
           username: user?.username || userId,
@@ -413,22 +427,21 @@ const useEditorStore = create(persist((set, get) => ({
     const { code, language, sessionId, isRunning, isReplaying, files } = get();
     if (isRunning || isReplaying) return;
 
-    // For HTML/CSS files, show the preview tab directly
-    const isStaticFile = language === 'html' || language === 'css';
+    const isStaticWebProject = files && Object.keys(files).some(p => p.toLowerCase().endsWith('.html'));
 
-    set({ 
-      isRunning: true, 
+    set({
+      isRunning: true,
       isTerminalOpen: true,
-      terminalHeight: isStaticFile ? 400 : 280,
-      terminalActiveTab: isStaticFile ? 'preview' : 'output',
+      terminalHeight: isStaticWebProject ? 400 : 280,
+      terminalActiveTab: 'output',
       layoutMode: 'default',
-      error: '' 
+      error: ''
     });
 
     try {
       // For static projects, send ALL files combined so the graph can analyze JS/CSS too
       let codeToSend = code;
-      if (isStaticFile && files && Object.keys(files).length > 1) {
+      if (isStaticWebProject && files && Object.keys(files).length > 1) {
         codeToSend = Object.entries(files)
           .map(([path, content]) => `// ── FILE: ${path} ──\n${content}`)
           .join('\n\n');
@@ -436,24 +449,24 @@ const useEditorStore = create(persist((set, get) => ({
 
       const result = await executeCode(sessionId, codeToSend, language);
       get().handleExecutionResult(result);
-      // Keep preview tab active for static files
-      if (isStaticFile) {
-        set({ terminalActiveTab: 'preview' });
+      // Keep output tab active for static files
+      if (isStaticWebProject) {
+        set({ terminalActiveTab: 'output' });
       }
     } catch (err) {
-      set({ 
+      set({
         error: err.request?.status === 0 ? "Backend server unavailable." : (err.response?.data?.message || err.message || 'Execution failed'),
-        isRunning: false 
+        isRunning: false
       });
     }
   },
   setTerminalActiveTab: (tab) => {
-    set({ 
-      terminalActiveTab: tab, 
+    set({
+      terminalActiveTab: tab,
       isTerminalOpen: true // Auto-open when switching tabs
     });
   },
-  toggleTerminal: () => set((s) => ({ 
+  toggleTerminal: () => set((s) => ({
     isTerminalOpen: !s.isTerminalOpen,
     terminalLayoutMode: 'normal' // Reset to normal if closing
   })),
@@ -466,12 +479,35 @@ const useEditorStore = create(persist((set, get) => ({
 
   // Called after successful execution
   handleExecutionResult: (result) => {
+    const files = get().files;
+    const isStaticWebProject = files && Object.keys(files).some(p => p.toLowerCase().endsWith('.html'));
+
+    let finalOutput = result.output || '';
+    let finalError = result.error || '';
+    let finalRootCause = result.rootCause || null;
+    let finalGraph = result.causalityGraph ? JSON.parse(JSON.stringify(result.causalityGraph)) : null;
+
+    // For HTML/CSS, ignore Node.js execution errors (like ReferenceError: document is not defined)
+    // because execution happens in the Preview iframe browser context instead.
+    if (isStaticWebProject) {
+      finalError = '';
+      finalRootCause = null;
+      if (finalGraph && finalGraph.nodes) {
+        // Strip out false-positive error nodes
+        finalGraph.nodes = finalGraph.nodes.filter(n => n.type !== 'error');
+        const validNodeIds = new Set(finalGraph.nodes.map(n => n.id));
+        if (finalGraph.edges) {
+          finalGraph.edges = finalGraph.edges.filter(e => validNodeIds.has(e.source) && validNodeIds.has(e.target));
+        }
+      }
+    }
+
     set({
-      output: result.output || '',
-      error: result.error || '',
+      output: finalOutput,
+      error: finalError,
       isRunning: false,
-      rootCause: result.rootCause || null,
-      causalityGraph: result.causalityGraph || null,
+      rootCause: finalRootCause,
+      causalityGraph: finalGraph,
       commitSuggestion: result.commitSuggestion || null,
       // Auto-open terminal on result
       isTerminalOpen: true,
@@ -479,12 +515,51 @@ const useEditorStore = create(persist((set, get) => ({
       terminalLayoutMode: 'normal'
     });
     if (result.snapshot) {
+      const files = get().files;
+      const isStaticWebProject = files && Object.keys(files).some(p => p.toLowerCase().endsWith('.html'));
+      if (isStaticWebProject) {
+        result.snapshot.hasError = false;
+        result.snapshot.error = '';
+      }
       get().addSnapshot(result.snapshot);
     }
   },
 
   setCommitSuggestion: (suggestion) => set({ commitSuggestion: suggestion }),
 
+  // ---- Actions: Git Workspace ----
+  setGitRepoConnected: (connected, url) => set({
+    gitRepoConnected: connected,
+    gitRepoUrl: url || ''
+  }),
+  setGitStatus: (status) => set({ gitStatus: status }),
+  setGitLog: (log) => set({ gitLog: log }),
+  setGitLoading: (loading) => set({ gitLoading: loading }),
+  setGitError: (error) => {
+    set({ gitError: error });
+    if (error) {
+      setTimeout(() => set({ gitError: null }), 8000);
+    }
+  },
+  resetGit: () => set({
+    gitRepoConnected: false, gitRepoUrl: '',
+    gitStatus: '', gitLog: '', gitLoading: false, gitError: null
+  }),
+
+  // ---- Actions: Dev Server ----
+  setDetectedProjects: (projects) => set({ detectedProjects: projects, projectDetected: true }),
+  updateDevServer: (type, data) => {
+    set((s) => ({
+      devServers: { ...s.devServers, [type]: { ...(s.devServers[type] || {}), ...data } }
+    }));
+  },
+  clearDevServers: () => set({ devServers: {}, detectedProjects: [], projectDetected: false }),
+  setDevServerNotification: (notif) => {
+    set({ devServerNotification: notif });
+    if (notif) {
+      setTimeout(() => set({ devServerNotification: null }), 8000);
+    }
+  },
 
   // ---- Actions: Impact Detection ----
   addImpactWarning: (warning) => {
@@ -583,3 +658,4 @@ const useEditorStore = create(persist((set, get) => ({
 }));
 
 export default useEditorStore;
+

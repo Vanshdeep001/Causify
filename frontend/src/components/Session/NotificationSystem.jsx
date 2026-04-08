@@ -12,6 +12,7 @@ import useEditorStore from '../../store/useEditorStore';
 const NotificationSystem = () => {
   const lastChange = useEditorStore((s) => s.lastChange);
   const revertNotification = useEditorStore((s) => s.revertNotification);
+  const devServerNotification = useEditorStore((s) => s.devServerNotification);
   const [toast, setToast] = useState(null);       // Single toast, not an array
   const [exiting, setExiting] = useState(false);   // For exit animation
   const timerRef = useRef(null);
@@ -39,6 +40,17 @@ const NotificationSystem = () => {
       isRevert: true,
     });
   }, [revertNotification]);
+
+  // Show dev server detection notification
+  useEffect(() => {
+    if (!devServerNotification) return;
+    showToast({
+      msg: devServerNotification.message,
+      color: '#c1ff72',
+      icon: '🚀',
+      duration: 6000,
+    });
+  }, [devServerNotification]);
 
   const showToast = ({ msg, color, icon, duration = 3500, isRevert = false }) => {
     if (timerRef.current) clearTimeout(timerRef.current);

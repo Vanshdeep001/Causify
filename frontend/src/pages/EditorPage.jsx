@@ -2,7 +2,7 @@
  * EditorPage.jsx — Main Application Workspace
  * ------------------------------------------------------- */
 
-import React from 'react';
+import React, { useState } from 'react';
 import MonacoEditor from '../components/Editor/MonacoEditor';
 import TerminalPanel from '../components/Terminal/TerminalPanel';
 import useEditorStore from '../store/useEditorStore';
@@ -13,6 +13,7 @@ import ImpactWarningBanner from '../components/Editor/ImpactWarningBanner';
 
 
 const EditorPage = () => {
+  const [copied, setCopied] = useState(false);
   const isTerminalOpen       = useEditorStore((s) => s.isTerminalOpen);
   const terminalHeight       = useEditorStore((s) => s.terminalHeight);
   const isRunning            = useEditorStore((s) => s.isRunning);
@@ -126,9 +127,33 @@ const EditorPage = () => {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             {sessionId && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', height: '28px', background: '#eee', border: '1px dashed #aaa', borderRadius: '4px' }}>
+              <div 
+                onClick={() => {
+                  navigator.clipboard.writeText(sessionId);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                style={{ 
+                  display: 'flex', alignItems: 'center', gap: '8px', padding: '0 12px', height: '28px', 
+                  background: '#eee', border: '1px dashed #aaa', borderRadius: '4px',
+                  cursor: 'pointer', transition: 'all 0.15s ease',
+                  userSelect: 'none',
+                  position: 'relative'
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#e8e8e8'; e.currentTarget.style.borderColor = '#999'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#eee'; e.currentTarget.style.borderColor = '#aaa'; }}
+                title="Click to copy Session ID"
+              >
                 <span style={{ fontSize: '0.5rem', fontWeight: 900, color: userRole === 'owner' ? '#16a34a' : '#6366f1' }}>{userRole?.toUpperCase()}</span>
-                <span style={{ fontSize: '0.6rem', fontWeight: 900, color: '#777' }}>ID: {sessionId?.substring(0,6)}</span>
+                <span style={{ fontSize: '0.6rem', fontWeight: 900, color: '#777', minWidth: '50px' }}>
+                  {copied ? 'COPIED!' : `ID: ${sessionId?.substring(0,6)}`}
+                </span>
+                {!copied && (
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2.5" style={{ opacity: 0.8 }}>
+                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                    <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+                  </svg>
+                )}
               </div>
             )}
             <select value={language} onChange={(e) => setLanguage(e.target.value)} style={{ height: H, padding: '0 28px 0 10px', fontFamily: 'var(--font-number)', fontWeight: 700, fontSize: '0.7rem', background: '#fff', border: '2px solid #080808', cursor: 'pointer', appearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M0 2l4 4 4-4z'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}>

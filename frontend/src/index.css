@@ -5,7 +5,7 @@
    Typography: Syne, Unbounded, Plus Jakarta Sans.
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&family=Unbounded:wght@400;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&family=Unbounded:wght@400;700;900&family=JetBrains+Mono:wght@400;700;800&display=swap');
 
 :root {
   /* Avant-Garde Organic Palette */
@@ -839,4 +839,143 @@ body {
   );
   background-size: 100% 4px, 3px 100%;
   pointer-events: none;
+}
+/* --- Refined File Item Styles --- */
+@keyframes shelf-glow-pulse {
+  0%, 100% { background: rgba(193, 255, 114, 0.05); }
+  50% { background: rgba(193, 255, 114, 0.12); }
+}
+
+@keyframes laser-trace {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.file-shelf-item {
+  position: relative;
+  transition: all 0.25s cubic-bezier(0.2, 1, 0.2, 1);
+}
+
+.file-shelf-hover:hover {
+  background: rgba(193, 255, 114, 0.03) !important;
+  color: #fff !important;
+}
+
+.file-shelf-active {
+  background: rgba(193, 255, 114, 0.08) !important;
+  color: var(--accent-toxic-green) !important;
+  box-shadow: inset 2px 0 0 var(--accent-toxic-green);
+}
+
+.file-shelf-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent-toxic-green);
+  box-shadow: 0 0 10px var(--accent-toxic-green);
+}
+
+.font-modern {
+  font-family: 'Unbounded', sans-serif !important;
+  letter-spacing: -0.02em;
+}
+
+.font-tech {
+  font-family: 'JetBrains Mono', monospace !important;
+}
+
+/* ---------- Dev Server Hud Animations ---------- */
+@keyframes pulse-live {
+  0% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+
+@keyframes hud-flicker {
+  0% { opacity: 0.95; }
+  2% { opacity: 0.8; }
+  4% { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Blueprint Utilities */
+.hud-module {
+  position: relative;
+  background: rgba(0, 0, 0, 0.4);
+  border: 4px solid var(--color-black);
+  box-shadow: 6px 6px 0px var(--color-black);
+  padding: 1.5rem;
+  overflow: hidden;
+}
+
+.hud-corner-l {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 20px;
+  height: 20px;
+  border-top: 4px solid var(--accent-toxic-green);
+  border-left: 4px solid var(--accent-toxic-green);
+  opacity: 0.6;
+}
+
+.hud-corner-r {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 20px;
+  height: 20px;
+  border-bottom: 4px solid var(--accent-toxic-green);
+  border-right: 4px solid var(--accent-toxic-green);
+  opacity: 0.6;
+}
+
+.hud-scanlines::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+  z-index: 2;
+  background-size: 100% 4px, 3px 100%;
+  pointer-events: none;
+}
+
+.hud-glitch-text {
+  animation: hud-flicker 3s infinite;
+}
+
+.hud-ticker {
+  background: #111;
+  color: var(--accent-toxic-green);
+  font-family: var(--font-number);
+  font-size: 10px;
+  padding: 4px 8px;
+  border: 1px solid #222;
+  white-space: nowrap;
+}
+
+/* Dev Server notification banner slide-in */
+@keyframes devserver-notify-in {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.devserver-notification {
+  animation: devserver-notify-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
