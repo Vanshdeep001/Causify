@@ -241,10 +241,10 @@ const TerminalPanel = () => {
       </div>
 
 
-      <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px', minHeight: 0 }}>
+      <div style={{ flex: 1, overflow: activeTab === 'graph' ? 'hidden' : 'auto', padding: activeTab === 'graph' ? 0 : '16px 20px', minHeight: 0 }}>
           {activeTab === 'output'   && <OutputPanel />}
           {activeTab === 'timeline' && <TimelineSlider />}
-          {activeTab === 'graph'    && <div style={{ position: 'relative', height: '100%' }}><CausalityGraph /></div>}
+          {activeTab === 'graph'    && <CausalityGraph />}
           {activeTab === 'git'      && <GitAssistantPanel />}
       </div>
     </div>

@@ -20,7 +20,6 @@ const EditorPage = () => {
   const isReplaying          = useEditorStore((s) => s.isReplaying);
   const error                = useEditorStore((s) => s.error);
   const snapshots            = useEditorStore((s) => s.snapshots);
-  const language             = useEditorStore((s) => s.language);
   const currentSnapshotIndex = useEditorStore((s) => s.currentSnapshotIndex);
   const sessionId            = useEditorStore((s) => s.sessionId);
   const sessionName          = useEditorStore((s) => s.sessionName);
@@ -31,7 +30,6 @@ const EditorPage = () => {
 
   const runCode              = useEditorStore((s) => s.runCode);
   const goToLive             = useEditorStore((s) => s.goToLive);
-  const setLanguage          = useEditorStore((s) => s.setLanguage);
   const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
   const setFileExplorerOpen  = useEditorStore((s) => s.setFileExplorerOpen);
   const activePath           = useEditorStore((s) => s.activePath);
@@ -156,12 +154,6 @@ const EditorPage = () => {
                 )}
               </div>
             )}
-            <select value={language} onChange={(e) => setLanguage(e.target.value)} style={{ height: H, padding: '0 28px 0 10px', fontFamily: 'var(--font-number)', fontWeight: 700, fontSize: '0.7rem', background: '#fff', border: '2px solid #080808', cursor: 'pointer', appearance: 'none', backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M0 2l4 4 4-4z'/%3E%3C/svg%3E\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}>
-              <option value="javascript">JS</option>
-              <option value="java">JAVA</option>
-              <option value="html">HTML</option>
-              <option value="css">CSS</option>
-            </select>
             <button onClick={runCode} disabled={isRunning} style={{ height: H, padding: '0 20px', fontFamily: 'var(--font-number)', fontWeight: 900, fontSize: '0.7rem', background: isRunning ? '#eee' : '#c1ff72', border: '2px solid #080808', cursor: isRunning ? 'not-allowed' : 'pointer' }}>
               {isRunning ? 'RUNNING...' : '▶ RUN'}
             </button>

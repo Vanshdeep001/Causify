@@ -4,6 +4,7 @@
 package com.debugsync.websocket;
 
 import com.debugsync.service.CollaborationService;
+import com.debugsync.service.FileService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.handler.annotation.*;
@@ -18,16 +19,25 @@ public class CollaborationHandler {
     private static final Logger log = LoggerFactory.getLogger(CollaborationHandler.class);
     private final CollaborationService collaborationService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final FileService fileService;
 
-    public CollaborationHandler(CollaborationService collaborationService, SimpMessagingTemplate messagingTemplate) {
+    public CollaborationHandler(CollaborationService collaborationService, SimpMessagingTemplate messagingTemplate, FileService fileService) {
         this.collaborationService = collaborationService;
         this.messagingTemplate = messagingTemplate;
+        this.fileService = fileService;
     }
 
     @MessageMapping("/session/{sessionId}/code")
     public void handleCodeChange(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
         log.debug("Code change in session {} for file {} from user {}", 
             sessionId, payload.get("path"), payload.get("userId"));
+        
+        String path = (String) payload.get("path");
+        String code = (String) payload.get("code");
+        if (path != null && code != null) {
+            fileService.saveFile(sessionId, path, code);
+        }
+        
         messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/code", payload);
     }
 

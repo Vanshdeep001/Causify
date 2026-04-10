@@ -65,6 +65,9 @@ public class ExecutionService {
             if ("java".equals(lang)) {
                 return executeJava(request, startTime);
             }
+            if ("c".equals(lang) || "cpp".equals(lang)) {
+                return executeC(request, startTime, "cpp".equals(lang));
+            }
 
             // --- Fix for HTML/CSS/React: Prevent crash when "running" static files ---
             boolean isReactCode = request.getCode().contains("import React") || request.getCode().contains("from 'react'") || request.getCode().contains("from \"react\"");
@@ -135,6 +138,37 @@ public class ExecutionService {
                  .sorted(Comparator.reverseOrder())
                  .map(Path::toFile)
                  .forEach(File::delete);
+        }
+    }
+
+    private ExecutionResponse executeC(ExecutionRequest request, long startTime, boolean isCpp) throws Exception {
+        Path tempDir = Files.createTempDirectory("debugsync_c_");
+        try {
+            String ext = isCpp ? ".cpp" : ".c";
+            Path srcFile = tempDir.resolve("main" + ext);
+            Files.writeString(srcFile, request.getCode());
+
+            Path outFile = tempDir.resolve("main.exe");
+            String compiler = isCpp ? "g++" : "gcc";
+
+            // Compile
+            Process compileProcess = new ProcessBuilder(compiler, srcFile.toString(), "-o", outFile.toString()).start();
+            String compileError = readStream(compileProcess.getErrorStream());
+            int compileCode = compileProcess.waitFor();
+
+            if (compileCode != 0) {
+                return buildResponse(null, compileError, request, System.currentTimeMillis() - startTime);
+            }
+
+            // Run
+            String[] command = { outFile.toString() };
+            return runProcess(command, request, startTime, null);
+
+        } finally {
+            Files.walk(tempDir)
+                .sorted(Comparator.reverseOrder())
+                .map(Path::toFile)
+                .forEach(File::delete);
         }
     }
 
@@ -254,6 +288,8 @@ public class ExecutionService {
         if (trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html") || trimmed.startsWith("<head") || trimmed.startsWith("<body")) return "html";
         if (code.contains("public static void main") || code.contains("System.out.println")) return "java";
         if (code.contains("def ") && code.contains(":")) return "python";
+        if (code.contains("#include <stdio.h>") || code.contains("#include <stdlib.h>") || (code.contains("int main(") && code.contains("printf"))) return "c";
+        if (code.contains("#include <iostream>") || code.contains("#include <string>") || code.contains("using namespace std") || code.contains("cout") || code.contains("std::")) return "cpp";
         if (code.contains("import react") || code.contains("from 'react'") || code.contains("from \"react\"") || (code.contains("export default") && code.contains("<div"))) return "react";
         return "javascript";
     }

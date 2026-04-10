@@ -61,7 +61,7 @@ public class ProjectDetectorService {
         for (Map.Entry<String, String> entry : packageJsons.entrySet()) {
             String dir = entry.getKey();
             String content = entry.getValue();
-            
+
             try {
                 JsonNode pkg = objectMapper.readTree(content);
                 JsonNode deps = mergeObjects(pkg.get("dependencies"), pkg.get("devDependencies"));
@@ -82,9 +82,8 @@ public class ProjectDetectorService {
             // Root-level package.json with no clear frontend/backend marker
             // Treat as a generic Node.js project
             projects.add(new DetectedProject(
-                "backend", "node", "",
-                "Node.js App", 3000, "npm start", "🟢"
-            ));
+                    "backend", "node", "",
+                    "Node.js App", 3000, "npm start", "🟢"));
         }
 
         // Determine if fullstack
@@ -103,7 +102,8 @@ public class ProjectDetectorService {
      * Analyze a single package.json and determine its project type.
      */
     private DetectedProject analyzePackage(String dir, String name, JsonNode deps, JsonNode scripts) {
-        if (deps == null) return null;
+        if (deps == null)
+            return null;
 
         boolean hasReact = deps.has("react") || deps.has("react-dom");
         boolean hasVite = deps.has("vite");
@@ -122,67 +122,63 @@ public class ProjectDetectorService {
         // Determine start command from scripts
         String devCmd = "npm run dev";
         if (scripts != null) {
-            if (scripts.has("dev")) devCmd = "npm run dev";
-            else if (scripts.has("start")) devCmd = "npm start";
-            else if (scripts.has("serve")) devCmd = "npm run serve";
+            if (scripts.has("dev"))
+                devCmd = "npm run dev";
+            else if (scripts.has("start"))
+                devCmd = "npm start";
+            else if (scripts.has("serve"))
+                devCmd = "npm run serve";
         }
 
         // ── Frontend Detection ──
         if (hasReact || hasVue || hasAngular || hasSvelte) {
             if (hasNext) {
                 return new DetectedProject(
-                    "frontend", "nextjs", dir,
-                    "Next.js", 3000, devCmd, "▲"
-                );
+                        "frontend", "nextjs", dir,
+                        "Next.js", 3000, devCmd, "▲");
             }
             if (hasVite) {
                 return new DetectedProject(
-                    "frontend", "react-vite", dir,
-                    "React (Vite)", 5173, devCmd, "⚛️"
-                );
+                        "frontend", "react-vite", dir,
+                        "React (Vite)", 5173, devCmd, "⚛️");
             }
             if (hasCra) {
                 return new DetectedProject(
-                    "frontend", "react-cra", dir,
-                    "React (CRA)", 3000, "npm start", "⚛️"
-                );
+                        "frontend", "react-cra", dir,
+                        "React (CRA)", 3000, "npm start", "⚛️");
             }
             if (hasVue) {
                 return new DetectedProject(
-                    "frontend", "vue", dir,
-                    "Vue.js", hasVite ? 5173 : 8080, devCmd, "💚"
-                );
+                        "frontend", "vue", dir,
+                        "Vue.js", hasVite ? 5173 : 8080, devCmd, "💚");
             }
             if (hasAngular) {
                 return new DetectedProject(
-                    "frontend", "angular", dir,
-                    "Angular", 4200, "npm start", "🅰️"
-                );
+                        "frontend", "angular", dir,
+                        "Angular", 4200, "npm start", "🅰️");
             }
             if (hasSvelte) {
                 return new DetectedProject(
-                    "frontend", "svelte", dir,
-                    "Svelte", hasVite ? 5173 : 3000, devCmd, "🔥"
-                );
+                        "frontend", "svelte", dir,
+                        "Svelte", hasVite ? 5173 : 3000, devCmd, "🔥");
             }
             // Generic React without recognized bundler
             return new DetectedProject(
-                "frontend", "react", dir,
-                "React", 3000, devCmd, "⚛️"
-            );
+                    "frontend", "react", dir,
+                    "React", 3000, devCmd, "⚛️");
         }
 
         // ── Backend Detection ──
         if (hasExpress || hasFastify || hasKoa || hasNest || hasHapi) {
             String fw = hasExpress ? "express" : hasFastify ? "fastify" : hasKoa ? "koa" : hasNest ? "nestjs" : "hapi";
-            String display = hasExpress ? "Express.js" : hasFastify ? "Fastify" : hasKoa ? "Koa" : hasNest ? "NestJS" : "Hapi";
+            String display = hasExpress ? "Express.js"
+                    : hasFastify ? "Fastify" : hasKoa ? "Koa" : hasNest ? "NestJS" : "Hapi";
             int port = hasNest ? 3000 : 8081;
             String icon = hasNest ? "🐈" : "🟢";
 
             return new DetectedProject(
-                "backend", fw, dir,
-                display, port, devCmd, icon
-            );
+                    "backend", fw, dir,
+                    display, port, devCmd, icon);
         }
 
         // ── Generic Node.js app (has package.json but no recognized framework) ──
@@ -192,7 +188,7 @@ public class ProjectDetectorService {
             String scriptsStr = scripts.toString().toLowerCase();
             looksLikeServer = scriptsStr.contains("server") || scriptsStr.contains("nodemon");
         }
-        
+
         // Check directory name hints
         String dirLower = dir.toLowerCase();
         if (dirLower.contains("backend") || dirLower.contains("server") || dirLower.contains("api")) {
@@ -201,24 +197,23 @@ public class ProjectDetectorService {
 
         if (looksLikeServer) {
             return new DetectedProject(
-                "backend", "node", dir,
-                "Node.js Server", 3000, devCmd, "🟢"
-            );
+                    "backend", "node", dir,
+                    "Node.js Server", 3000, devCmd, "🟢");
         }
 
         // Check if it's a frontend by directory name
         if (dirLower.contains("frontend") || dirLower.contains("client") || dirLower.contains("web")) {
             return new DetectedProject(
-                "frontend", "node", dir,
-                "Frontend App", 3000, devCmd, "🌐"
-            );
+                    "frontend", "node", dir,
+                    "Frontend App", 3000, devCmd, "🌐");
         }
 
         return null;
     }
 
     /**
-     * Extract directory from a file path (e.g., "myapp/frontend/package.json" → "myapp/frontend")
+     * Extract directory from a file path (e.g., "myapp/frontend/package.json" →
+     * "myapp/frontend")
      */
     private String extractDirectory(String path) {
         int lastSlash = path.lastIndexOf('/');

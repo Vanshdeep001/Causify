@@ -90,11 +90,20 @@ public class GitWorkspaceService {
      * Stage all files and commit with sanitized message.
      */
     public Map<String, Object> commitAll(String sessionId, String message) throws Exception {
+        return commitAll(sessionId, message, null);
+    }
+
+    /**
+     * Stage files and commit with sanitized message.
+     * If 'files' is null, content is synced from DB.
+     * If 'files' is provided, those files are written to workspace directly.
+     */
+    public Map<String, Object> commitAll(String sessionId, String message, List<Map<String, String>> files) throws Exception {
         validateSessionId(sessionId);
         Path workspace = ensureWorkspaceExists(sessionId);
 
-        // Sync DB files to workspace before committing
-        syncFilesToWorkspace(sessionId, workspace);
+        // Sync files to workspace before committing
+        syncFilesToWorkspace(sessionId, workspace, files);
 
         // Sanitize commit message
         String safeMessage = sanitizeCommitMessage(message);
@@ -140,13 +149,20 @@ public class GitWorkspaceService {
      * Get the porcelain status of the workspace.
      */
     public Map<String, Object> getStatus(String sessionId) throws Exception {
+        return getStatus(sessionId, null);
+    }
+
+    /**
+     * Get the porcelain status of the workspace, optionally syncing provided files first.
+     */
+    public Map<String, Object> getStatus(String sessionId, List<Map<String, String>> files) throws Exception {
         validateSessionId(sessionId);
         Path workspace = ensureWorkspaceExists(sessionId);
 
         // Sync files before checking status so changed files are detected
-        syncFilesToWorkspace(sessionId, workspace);
+        syncFilesToWorkspace(sessionId, workspace, files);
 
-        return executeGitCommand(workspace, new String[]{"git", "status", "--porcelain"});
+        return executeGitCommand(workspace, new String[]{"git", "status", "--porcelain", "-b"});
     }
 
     /**
@@ -188,22 +204,46 @@ public class GitWorkspaceService {
      * Synchronize files from the database to the Git sandbox.
      */
     private void syncFilesToWorkspace(String sessionId, Path workspace) {
-        List<ProjectFile> files = projectFileRepository.findBySessionId(sessionId);
-        for (ProjectFile pf : files) {
+        syncFilesToWorkspace(sessionId, workspace, null);
+    }
+
+    /**
+     * Synchronize files from provided list OR database to the Git sandbox.
+     */
+    private void syncFilesToWorkspace(String sessionId, Path workspace, List<Map<String, String>> providedFiles) {
+        List<Map<String, String>> filesToSync = new ArrayList<>();
+
+        if (providedFiles != null && !providedFiles.isEmpty()) {
+            filesToSync = providedFiles;
+        } else {
+            List<ProjectFile> dbFiles = projectFileRepository.findBySessionId(sessionId);
+            for (ProjectFile pf : dbFiles) {
+                Map<String, String> fileMap = new HashMap<>();
+                fileMap.put("path", pf.getPath());
+                fileMap.put("content", pf.getContent());
+                filesToSync.add(fileMap);
+            }
+        }
+
+        for (Map<String, String> fileData : filesToSync) {
+            String pathStr = fileData.get("path");
+            String content = fileData.get("content");
+
             try {
-                String normalizedPathStr = pf.getPath().replace("\\", "/");
+                if (pathStr == null) continue;
+                String normalizedPathStr = pathStr.replace("\\", "/");
                 Path filePath = workspace.resolve(normalizedPathStr).normalize();
                 
                 // Path traversal protection
                 if (!filePath.startsWith(workspace)) {
-                    log.warn("[GitWorkspace] Path traversal attempt in DB file: {}", pf.getPath());
+                    log.warn("[GitWorkspace] Path traversal attempt in sync: {}", pathStr);
                     continue; 
                 }
                 
                 Files.createDirectories(filePath.getParent());
-                Files.writeString(filePath, pf.getContent() != null ? pf.getContent() : "");
+                Files.writeString(filePath, content != null ? content : "");
             } catch (IOException e) {
-                log.error("[GitWorkspace] Failed to sync file to workspace: {}", pf.getPath(), e);
+                log.error("[GitWorkspace] Failed to sync file to workspace: {}", pathStr, e);
             }
         }
     }
@@ -262,12 +302,12 @@ public class GitWorkspaceService {
 
         // Filter output to remove any token leakage
         String safeStdout = filterTokens(stdout);
-        String safeStderr = filterTokens(stderr);
+        // stderr is merged into stdout, so safeStderr would be empty.
 
         Map<String, Object> result = new HashMap<>();
         result.put("success", success);
         result.put("output", safeStdout);
-        result.put("error", success ? "" : safeStderr);
+        result.put("error", success ? "" : safeStdout);
         result.put("exitCode", exitCode);
 
         return result;

@@ -221,10 +221,17 @@ const useEditorStore = create(persist((set, get) => ({
   },
 
   detectLanguage: (path) => {
-    if (path.endsWith('.java')) return 'java';
-    if (path.endsWith('.py')) return 'python';
-    if (path.endsWith('.html')) return 'html';
-    if (path.endsWith('.css')) return 'css';
+    if (!path) return 'javascript';
+    const lower = path.toLowerCase();
+    if (lower.endsWith('.java')) return 'java';
+    if (lower.endsWith('.py') || lower.endsWith('.pyw')) return 'python';
+    if (lower.endsWith('.c') || lower.endsWith('.h')) return 'c';
+    if (lower.endsWith('.cpp') || lower.endsWith('.cc') || lower.endsWith('.cxx') || lower.endsWith('.hpp')) return 'cpp';
+    if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
+    if (lower.endsWith('.css')) return 'css';
+    if (lower.endsWith('.json')) return 'json';
+    if (lower.endsWith('.ts') || lower.endsWith('.tsx')) return 'typescript';
+    if (lower.endsWith('.jsx')) return 'javascript';
     return 'javascript';
   },
 

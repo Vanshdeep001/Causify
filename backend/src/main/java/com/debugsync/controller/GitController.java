@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -61,10 +62,11 @@ public class GitController {
         try {
             String sessionId = (String) payload.get("sessionId");
             String message = (String) payload.get("message");
+            List<Map<String, String>> files = (List<Map<String, String>>) payload.get("files");
 
             log.info("[Git] Commit requested for session {}: '{}'", sessionId, message);
 
-            Map<String, Object> result = gitWorkspaceService.commitAll(sessionId, message);
+            Map<String, Object> result = gitWorkspaceService.commitAll(sessionId, message, files);
             return ResponseEntity.ok(result);
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", e.getMessage()));
