@@ -2,7 +2,7 @@
  * FileExplorer.jsx — Sidebar with Session + File Management
  * ------------------------------------------------------- */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import useEditorStore from '../../store/useEditorStore';
 import { createSession, joinSession, uploadProject, saveFile, deleteFile } from '../../services/api';
 import { connectWebSocket, sendCodeChange } from '../../services/socket';
@@ -180,12 +180,12 @@ const FileExplorer = ({ onToggle }) => {
   };
 
   const handleFolderUpload = (e) => {
-    const filesArray = Array.from(e.target.files).filter(f => !f.webkitRelativePath.includes('/node_modules/') && f.size < 1024*1024);
+    const filesArray = Array.from(e.target.files).filter(f => !f.webkitRelativePath.includes('/node_modules/') && f.size < 1024 * 1024);
     if (filesArray.length > 0) readAndProcess(filesArray);
   };
 
   const handleFileUpload = (e) => {
-    const filesArray = Array.from(e.target.files).filter(f => f.size < 1024*1024);
+    const filesArray = Array.from(e.target.files).filter(f => f.size < 1024 * 1024);
     if (filesArray.length > 0) readAndProcess(filesArray);
   };
 
@@ -237,6 +237,7 @@ const FileExplorer = ({ onToggle }) => {
   };
 
   const [expandedPaths, setExpandedPaths] = useState(new Set());
+  const expandedInitRef = useRef(false);
 
   const toggleFolder = (path) => {
     setExpandedPaths((prev) => {
@@ -314,12 +315,11 @@ const FileExplorer = ({ onToggle }) => {
     }
   };
 
-  const buildTree = (filesObj) => {
-    const tree = {};
-    const hiddenEntries = new Set(['.git', 'node_modules', '.DS_Store']);
-    const allPaths = Object.keys(filesObj);
-    
-    if (expandedPaths.size === 0 && allPaths.length > 0) {
+  // Auto-expand all folders on first load (moved out of render to avoid infinite loop)
+  useEffect(() => {
+    const allPaths = Object.keys(files);
+    if (!expandedInitRef.current && allPaths.length > 0) {
+      expandedInitRef.current = true;
       const initialExpanded = new Set();
       allPaths.forEach(p => {
         const parts = p.split('/');
@@ -331,7 +331,13 @@ const FileExplorer = ({ onToggle }) => {
       });
       setExpandedPaths(initialExpanded);
     }
-    
+  }, [files]);
+
+  const buildTree = (filesObj) => {
+    const tree = {};
+    const hiddenEntries = new Set(['.git', 'node_modules', '.DS_Store']);
+    const allPaths = Object.keys(filesObj);
+
     allPaths.forEach((path) => {
       if (path.split('/').some(p => hiddenEntries.has(p))) return;
       const parts = path.split('/');
@@ -351,24 +357,24 @@ const FileExplorer = ({ onToggle }) => {
     const activeEditor = fileActivity[path];
     const isAffected = affectedPaths.has(path) || affectedPaths.has(name);
     const [isHovered, setIsHovered] = useState(false);
-    
+
     const isExpanded = expandedPaths.has(path);
     const nameOnly = name.includes('.') ? name.split('.').slice(0, -1).join('.') : name;
     const extension = name.includes('.') ? '.' + name.split('.').pop() : '';
 
     return (
       <div
-        onClick={(e) => { 
-          e.stopPropagation(); 
+        onClick={(e) => {
+          e.stopPropagation();
           if (isFolder) toggleFolder(path);
-          else openFile(path); 
+          else openFile(path);
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         className={`file-shelf-item ${isActive ? 'file-shelf-active' : 'file-shelf-hover'}`}
         style={{
           padding: '8px 12px 8px 10px', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', gap: '10px', 
+          display: 'flex', alignItems: 'center', gap: '10px',
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           margin: '1px 8px',
           borderRadius: '4px',
@@ -383,14 +389,14 @@ const FileExplorer = ({ onToggle }) => {
           </svg>
         )}
         {!isFolder && <div style={{ minWidth: '10px' }} />}
-        
+
         <div style={{ display: 'flex', alignItems: 'center', minWidth: '20px', justifyContent: 'center', flexShrink: 0 }}>
           <FileIcon name={name} isFolder={isFolder} isOpen={isExpanded} size={16} />
         </div>
-        
-        <span className="font-modern" style={{ 
-          fontWeight: isFolder ? 700 : (isActive ? 700 : 500), 
-          flex: 1, 
+
+        <span className="font-modern" style={{
+          fontWeight: isFolder ? 700 : (isActive ? 700 : 500),
+          flex: 1,
           fontSize: '0.8rem',
           overflow: 'hidden', textOverflow: 'ellipsis',
           display: 'flex', alignItems: 'baseline', gap: '1px'
@@ -402,7 +408,7 @@ const FileExplorer = ({ onToggle }) => {
             </>
           )}
         </span>
-        
+
         {isAffected && !isFolder && (
           <span title="Affected by code change" style={{
             fontSize: '0.7rem', color: 'var(--accent-crimson)',
@@ -410,17 +416,17 @@ const FileExplorer = ({ onToggle }) => {
             marginRight: '6px'
           }}>⚡</span>
         )}
-        
+
         {userRole === 'owner' && isHovered && (
           <div style={{ display: 'flex', gap: '4px' }}>
             <button onClick={(e) => { e.stopPropagation(); handleDelete(path, isFolder); }} style={{ ...inlineActionBtnSty, color: 'var(--accent-crimson)' }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
             </button>
           </div>
         )}
 
         {activeEditor && !isFolder && (
-          <div style={{ 
+          <div style={{
             width: '8px', height: '8px', borderRadius: '50%', background: activeEditor.color,
             boxShadow: `0 0 10px ${activeEditor.color}`, animation: 'hud-pulse 1.5s infinite'
           }} />
@@ -432,11 +438,11 @@ const FileExplorer = ({ onToggle }) => {
   const renderTree = (node, name = '', currentPath = '', depth = 0) => {
     const path = currentPath ? `${currentPath}/${name}` : name;
     if (node === null) return <FileItem key={path} name={name} path={path} isFolder={false} />;
-    
+
     const isExpanded = depth === 0 || expandedPaths.has(path);
 
     return (
-      <div key={path} style={{ 
+      <div key={path} style={{
         marginLeft: depth > 0 ? '12px' : '0',
         borderLeft: depth > 0 ? '1px dashed rgba(255,255,255,0.08)' : 'none',
         paddingLeft: depth > 0 ? '2px' : '0'
@@ -446,10 +452,10 @@ const FileExplorer = ({ onToggle }) => {
           <div style={{ marginLeft: name ? '4px' : '0' }}>
             {newItem && newItem.parent === path && name && (
               <div style={{ padding: '4px 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                 <FileIcon name={newItem.name || 'newfile'} isFolder={newItem.type === 'folder'} />
-                <input 
-                  autoFocus 
-                  onKeyDown={handleCreateNew} 
+                <FileIcon name={newItem.name || 'newfile'} isFolder={newItem.type === 'folder'} />
+                <input
+                  autoFocus
+                  onKeyDown={handleCreateNew}
                   onBlur={() => setNewItem(null)}
                   style={{ ...inputStyle, marginBottom: 0, height: '22px', flex: 1, border: 'none', background: '#222', borderRadius: '2px' }}
                   placeholder={newItem.type === 'folder' ? 'Folder...' : 'File...'}
@@ -512,25 +518,25 @@ const FileExplorer = ({ onToggle }) => {
             {panel === 'create' && (
               <div>
                 <label style={{ fontSize: '0.55rem', color: '#666' }}>YOUR NAME</label>
-                <input style={inputStyle} value={username} onChange={e=>setUsername(e.target.value)} placeholder="Enter your name" />
+                <input style={inputStyle} value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter your name" />
                 <label style={{ fontSize: '0.55rem', color: '#666' }}>PROJECT NAME</label>
-                <input style={inputStyle} value={projName} onChange={e=>setProjName(e.target.value)} />
+                <input style={inputStyle} value={projName} onChange={e => setProjName(e.target.value)} />
                 <label style={{ fontSize: '0.55rem', color: '#666' }}>PASSWORD (REQUIRED)</label>
-                <input style={inputStyle} type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="0000" />
-                <button style={btnStyle(true)} onClick={()=>handleCreate()}>{isLoading ? 'INIT...' : 'CREATE & START'}</button>
-                <button style={{ background: 'none', border: 'none', color: '#555', fontSize: '0.6rem', cursor: 'pointer', width: '100%', marginTop: '5px' }} onClick={()=>setPanel(null)}>← BACK</button>
+                <input style={inputStyle} type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="0000" />
+                <button style={btnStyle(true)} onClick={() => handleCreate()}>{isLoading ? 'INIT...' : 'CREATE & START'}</button>
+                <button style={{ background: 'none', border: 'none', color: '#555', fontSize: '0.6rem', cursor: 'pointer', width: '100%', marginTop: '5px' }} onClick={() => setPanel(null)}>← BACK</button>
               </div>
             )}
             {panel === 'join' && (
               <div>
                 <label style={{ fontSize: '0.55rem', color: '#666' }}>YOUR NAME</label>
-                <input style={inputStyle} value={joinUsername} onChange={e=>setJoinUsername(e.target.value)} placeholder="Enter your name" />
+                <input style={inputStyle} value={joinUsername} onChange={e => setJoinUsername(e.target.value)} placeholder="Enter your name" />
                 <label style={{ fontSize: '0.55rem', color: '#666' }}>SESSION ID</label>
-                <input style={inputStyle} value={joinId} onChange={e=>setJoinId(e.target.value)} placeholder="XYZ..." />
+                <input style={inputStyle} value={joinId} onChange={e => setJoinId(e.target.value)} placeholder="XYZ..." />
                 <label style={{ fontSize: '0.55rem', color: '#666' }}>PASSWORD</label>
-                <input style={inputStyle} type="password" value={joinPwd} onChange={e=>setJoinPwd(e.target.value)} />
+                <input style={inputStyle} type="password" value={joinPwd} onChange={e => setJoinPwd(e.target.value)} />
                 <button style={btnStyle(true)} onClick={handleJoin}>{isLoading ? 'JOINING...' : 'CONNECT'}</button>
-                <button style={{ background: 'none', border: 'none', color: '#555', fontSize: '0.6rem', cursor: 'pointer', width: '100%', marginTop: '5px' }} onClick={()=>setPanel(null)}>← BACK</button>
+                <button style={{ background: 'none', border: 'none', color: '#555', fontSize: '0.6rem', cursor: 'pointer', width: '100%', marginTop: '5px' }} onClick={() => setPanel(null)}>← BACK</button>
               </div>
             )}
           </div>
@@ -550,17 +556,17 @@ const FileExplorer = ({ onToggle }) => {
                 <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
                   <div style={{ display: 'flex', gap: '2px', marginRight: '6px', borderRight: '1px solid #333', paddingRight: '6px' }}>
                     <button onClick={() => setNewItem({ type: 'file', parent: '', name: '' })} title="New File" className="explorer-action-btn" style={explorerActionBtnSty}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="13 2 13 9 20 9" /><line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" /></svg>
                     </button>
                     <button onClick={() => setNewItem({ type: 'folder', parent: '', name: '' })} title="New Folder" className="explorer-action-btn" style={explorerActionBtnSty}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /><line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" /></svg>
                     </button>
                   </div>
                   <button onClick={() => folderInputRef.current?.click()} title="Upload Folder" className="explorer-action-btn" style={explorerActionBtnSty}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
                   </button>
                   <button onClick={() => fileInputRef.current?.click()} title="Add Files" className="explorer-action-btn" style={explorerActionBtnSty}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" i1="12" x2="16" y2="12"/></svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" i1="12" x2="16" y2="12" /></svg>
                   </button>
                 </div>
               )}

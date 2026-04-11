@@ -8,7 +8,7 @@ import UserPresence from './components/Session/UserPresence';
 import NotificationSystem from './components/Session/NotificationSystem';
 import useEditorStore from './store/useEditorStore';
 import { connectWebSocket, disconnectWebSocket } from './services/socket';
-import { getSessionFiles } from './services/api';
+import { getSessionFiles, saveFile } from './services/api';
 
 const App = () => {
   const sessionId = useEditorStore((s) => s.sessionId);
@@ -80,6 +80,16 @@ const App = () => {
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Ctrl + S -> Save current file
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        const state = useEditorStore.getState();
+        if (state.sessionId && state.activePath) {
+          saveFile(state.sessionId, state.activePath, state.code)
+            .then(() => console.log('[Causify] File saved:', state.activePath))
+            .catch((err) => console.error('[Causify] Save failed:', err));
+        }
+      }
       // Ctrl + ` (backtick) -> Toggle Terminal
       if (e.ctrlKey && e.key === '`') {
         e.preventDefault();

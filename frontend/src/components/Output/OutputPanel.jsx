@@ -1,8 +1,8 @@
 /* -------------------------------------------------------
- * OutputPanel.jsx — Execution Output
+ * OutputPanel.jsx — Execution Output with Smart Root Cause Analysis
  * ------------------------------------------------------- */
 
-import React from 'react';
+import React, { useState } from 'react';
 import useEditorStore from '../../store/useEditorStore';
 import HtmlPreview from '../Preview/HtmlPreview';
 import DevServerPanel from '../Terminal/DevServerPanel';
@@ -16,7 +16,6 @@ const LogLine = ({ type, message, timestamp }) => {
     type === 'stdout' ? 'out' :
       type === 'stderr' ? 'err' : 'sys';
 
-  // Highlight [Causify] or specific success/error keywords
   const parts = message.split(/(\[Causify\]|Successfully|Error|Critical)/i);
 
   return (
@@ -33,12 +32,194 @@ const LogLine = ({ type, message, timestamp }) => {
   );
 };
 
+/* ── Smart Root Cause Analysis Card ── */
+const RootCauseCard = ({ rootCause, code }) => {
+  const [isExpanded, setIsExpanded] = useState(true);
+
+  if (!rootCause) return null;
+
+  const hasAi = rootCause.fullAiAnalysis || rootCause.whatHappened;
+  const confidence = rootCause.confidence || 0;
+  const confidencePercent = Math.round(confidence * 100);
+  const confidenceColor = confidence >= 0.8 ? '#c1ff72' : confidence >= 0.5 ? '#fbbf24' : '#ff3e3e';
+
+  // Get the failing line from code
+  const getCodeLine = (lineNum) => {
+    if (!code || !lineNum || lineNum <= 0) return null;
+    const lines = code.split('\n');
+    return lineNum <= lines.length ? lines[lineNum - 1] : null;
+  };
+
+  const errorLine = rootCause.errorLine;
+  const failingCode = getCodeLine(errorLine);
+
+  // Parse howToFix to extract code blocks
+  const parseFixContent = (text) => {
+    if (!text) return { explanation: '', code: '' };
+    const codeMatch = text.match(/```[\w]*\n?([\s\S]*?)```/);
+    if (codeMatch) {
+      const explanation = text.substring(0, text.indexOf('```')).trim();
+      const codeBlock = codeMatch[1].trim();
+      return { explanation, code: codeBlock };
+    }
+    return { explanation: text, code: '' };
+  };
+
+  const fixContent = parseFixContent(rootCause.howToFix);
+
+  // Parse rootCauseChain into steps
+  const parseChain = (text) => {
+    if (!text) return [];
+    return text.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0)
+      .map(l => l.replace(/^\d+[\.\)]\s*/, '').replace(/^\*\s*/, '').replace(/^-\s*/, ''));
+  };
+
+  const chainSteps = parseChain(rootCause.rootCauseChain);
+
+  return (
+    <div className="rca-card">
+      {/* Accent top bar */}
+      <div className="rca-accent-bar" />
+
+      {/* Header */}
+      <div className="rca-header" onClick={() => setIsExpanded(!isExpanded)}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+          <div className="rca-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c1ff72" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </div>
+          <div>
+            <div className="rca-title">
+              ROOT CAUSE ANALYSIS
+            </div>
+            <div className="rca-subtitle">
+              {rootCause.errorType}
+              {errorLine > 0 && <span> · Line {errorLine}</span>}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* Confidence badge */}
+          <div className="rca-confidence" style={{ borderColor: confidenceColor, color: confidenceColor }}>
+            <div className="rca-confidence-bar" style={{ width: `${confidencePercent}%`, background: confidenceColor }} />
+            <span>{confidencePercent}%</span>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2"
+            style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="rca-body">
+
+          {/* ── Section 1: What Happened ── */}
+          {rootCause.whatHappened && (
+            <div className="rca-section" style={{ animationDelay: '0.05s' }}>
+              <div className="rca-section-label">
+                <span className="rca-section-icon">»</span> WHAT HAPPENED
+              </div>
+              <div className="rca-what-happened">
+                {rootCause.whatHappened}
+              </div>
+            </div>
+          )}
+
+          {/* ── Section 2: Error Location (code snippet) ── */}
+          {failingCode && (
+            <div className="rca-section" style={{ animationDelay: '0.1s' }}>
+              <div className="rca-section-label">
+                <span className="rca-section-icon">&gt;</span> ERROR LOCATION
+              </div>
+              <div className="rca-code-viewer">
+                {errorLine > 1 && getCodeLine(errorLine - 1) && (
+                  <div className="rca-code-line rca-code-context">
+                    <span className="rca-line-num">{errorLine - 1}</span>
+                    <span className="rca-line-code">{getCodeLine(errorLine - 1)}</span>
+                  </div>
+                )}
+                <div className="rca-code-line rca-code-error">
+                  <span className="rca-line-num">{errorLine}</span>
+                  <span className="rca-line-code">{failingCode}</span>
+                  <span className="rca-error-tag">← {rootCause.errorMessage?.length > 40 ? rootCause.errorMessage.substring(0, 40) + '...' : rootCause.errorMessage}</span>
+                </div>
+                {getCodeLine(errorLine + 1) && (
+                  <div className="rca-code-line rca-code-context">
+                    <span className="rca-line-num">{errorLine + 1}</span>
+                    <span className="rca-line-code">{getCodeLine(errorLine + 1)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Section 3: Root Cause Chain ── */}
+          {chainSteps.length > 0 && (
+            <div className="rca-section" style={{ animationDelay: '0.15s' }}>
+              <div className="rca-section-label">
+                <span className="rca-section-icon">&gt;</span> ROOT CAUSE CHAIN
+              </div>
+              <div className="rca-chain">
+                {chainSteps.map((step, i) => (
+                  <div key={i} className="rca-chain-step">
+                    <div className="rca-chain-num">{i + 1}</div>
+                    <div className="rca-chain-text">{step}</div>
+                    {i < chainSteps.length - 1 && (
+                      <div className="rca-chain-arrow">↓</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Section 4: Suggested Fix ── */}
+          {(fixContent.code || fixContent.explanation) && (
+            <div className="rca-section" style={{ animationDelay: '0.2s' }}>
+              <div className="rca-section-label">
+                <span className="rca-section-icon">&gt;</span> SUGGESTED FIX
+              </div>
+              {fixContent.explanation && (
+                <div className="rca-fix-explanation">{fixContent.explanation}</div>
+              )}
+              {fixContent.code && (
+                <div className="rca-fix-code">
+                  <div className="rca-fix-code-header">
+                    <span>CORRECTED CODE</span>
+                  </div>
+                  <pre className="rca-fix-pre">{fixContent.code}</pre>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Section 5: Pro Tip ── */}
+          {rootCause.proTip && (
+            <div className="rca-section" style={{ animationDelay: '0.25s' }}>
+              <div className="rca-pro-tip">
+                <span className="rca-pro-tip-icon">TIP</span>
+                <span>{rootCause.proTip}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const OutputPanel = () => {
   const output = useEditorStore((s) => s.output);
   const error = useEditorStore((s) => s.error);
   const isRunning = useEditorStore((s) => s.isRunning);
   const rootCause = useEditorStore((s) => s.rootCause);
   const sessionId = useEditorStore((s) => s.sessionId);
+  const code = useEditorStore((s) => s.code);
   const files = useEditorStore((s) => s.files);
   const detectedProjects = useEditorStore((s) => s.detectedProjects);
 
@@ -100,35 +281,8 @@ const OutputPanel = () => {
         ))}
 
         {rootCause && (
-          <div style={{ padding: '0 12px', marginTop: '20px' }}>
-            <div className={rootCause.fullAiAnalysis ? "ai-analysis-card" : "terminal-analysis-card"}>
-              <div className={rootCause.fullAiAnalysis ? "ai-header-glitch" : "impact-text"} style={!rootCause.fullAiAnalysis ? { fontSize: '1.2rem', color: 'var(--accent-toxic-green)', marginBottom: '1rem' } : {}}>
-                {rootCause.fullAiAnalysis ? "✨ AI DIAGNOSTIC REPORT" : "ROOT CAUSE ANALYSIS"}
-              </div>
-
-              {/* AI Analysis Content remains same as previous but integrated into new theme */}
-              <div style={{ color: '#fff', marginBottom: '1.5rem', background: '#222', padding: '12px', border: '1px solid #333' }}>
-                <span style={{ color: 'var(--accent-crimson)', fontWeight: 'bold' }}>{rootCause.errorType}</span>: {rootCause.errorMessage}
-              </div>
-
-              {rootCause.whatHappened && (
-                <div className="ai-section">
-                  <div className="ai-section-title">🔍 DIAGNOSTIC OVERVIEW</div>
-                  <div className="ai-content" style={{ fontSize: '1.1rem', fontWeight: '500', color: '#fff' }}>
-                    {rootCause.whatHappened}
-                  </div>
-                </div>
-              )}
-
-              {rootCause.howToFix && (
-                <div className="ai-section">
-                  <div className="ai-section-title">🛠️ PROPOSED FIX</div>
-                  <div className="ai-fix-block">
-                    <pre>{rootCause.howToFix.replace(/```[a-z]*\n/g, '').replace(/```/g, '')}</pre>
-                  </div>
-                </div>
-              )}
-            </div>
+          <div style={{ padding: '0 12px', marginTop: '16px' }}>
+            <RootCauseCard rootCause={rootCause} code={code} />
           </div>
         )}
       </div>

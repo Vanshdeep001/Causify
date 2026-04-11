@@ -20,7 +20,7 @@ export const connectWebSocket = (sessionId, userInfo, callbacks = {}) => {
   // Disconnect any existing connection before creating a new one
   if (stompClient) {
     try {
-      Object.values(subscriptions).forEach(sub => { try { sub.unsubscribe(); } catch(e) {} });
+      Object.values(subscriptions).forEach(sub => { try { sub.unsubscribe(); } catch (e) { } });
       subscriptions = {};
       stompClient.deactivate();
     } catch (e) { /* ignore */ }

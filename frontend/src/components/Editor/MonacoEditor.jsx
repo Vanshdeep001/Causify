@@ -79,6 +79,23 @@ const MonacoEditor = () => {
       run: () => handleRun(),
     });
 
+    // Ctrl+S → Save current file
+    editor.addAction({
+      id: 'save-file',
+      label: 'Save File',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+      run: () => {
+        const state = useEditorStore.getState();
+        if (state.sessionId && state.activePath) {
+          import('../../services/api').then(({ saveFile }) => {
+            saveFile(state.sessionId, state.activePath, state.code)
+              .then(() => console.log('[Causify] File saved from editor:', state.activePath))
+              .catch((err) => console.error('[Causify] Save failed:', err));
+          });
+        }
+      },
+    });
+
     // Send cursor position
     editor.onDidChangeCursorPosition((e) => {
       if (sessionId && currentUser) {
