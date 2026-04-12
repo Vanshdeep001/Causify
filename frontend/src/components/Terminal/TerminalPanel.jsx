@@ -179,7 +179,7 @@ const TerminalPanel = () => {
 
                 {t === 'timeline' && showTimelineBadge && (
                   <span style={{
-                    position: 'absolute', top: '6px', right: '-18px',
+                    marginLeft: '6px',
                     fontFamily: 'var(--font-number)', fontWeight: 900,
                     fontSize: '0.4rem', letterSpacing: '0.05em',
                     color: '#fff', background: '#ff3e3e',
@@ -192,7 +192,7 @@ const TerminalPanel = () => {
 
                 {t === 'git' && commitSuggestion && (
                   <span style={{
-                    position: 'absolute', top: '6px', right: '-4px',
+                    marginLeft: '6px',
                     fontFamily: 'var(--font-number)', fontWeight: 900,
                     fontSize: '0.5rem',
                     color: '#000', background: '#c1ff72',

@@ -227,7 +227,19 @@ const FileExplorer = ({ onToggle }) => {
   };
 
   const handleDelete = async (path, isFolder) => {
-    if (!window.confirm(`Delete ${isFolder ? 'folder' : 'file'} "${path}"?`)) return;
+    // Check if the file has unsaved changes
+    const isDirty = !isFolder && useEditorStore.getState().isFileDirty(path);
+
+    if (isDirty) {
+      // Three-way dialog: Save / Don't Save / Cancel
+      const choice = window.confirm(
+        `"${path.split('/').pop()}" has unsaved changes.\n\nClick OK to delete anyway, or Cancel to go back.`
+      );
+      if (!choice) return; // Cancel
+    } else {
+      if (!window.confirm(`Delete ${isFolder ? 'folder' : 'file'} "${path}"?`)) return;
+    }
+
     try {
       await deleteFile(sessionId, path);
       removeFile(path);

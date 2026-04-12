@@ -37,6 +37,11 @@ const useEditorStore = create(persist((set, get) => ({
   code: '',                 // Code content
   language: 'javascript',  // Editor language mode
 
+  // ---- Save State ----
+  fileHandles: {},          // { [path]: FileSystemFileHandle } — for silent re-saves
+  savedContents: {},        // { [path]: string } — last-saved content, for dirty detection
+  fileSavedPaths: {},       // { [path]: string } — on-disk path chosen in Save dialog
+
   // ---- Execution State ----
   output: '',               // Stdout from last execution
   error: '',                // Stderr from last execution
@@ -158,20 +163,26 @@ const useEditorStore = create(persist((set, get) => ({
   // ---- Actions: Editor ----
   setProject: (fileArray) => {
     const fileMap = {};
-    fileArray.forEach(f => { fileMap[f.path] = f.content; });
+    const savedMap = {};
+    fileArray.forEach(f => {
+      fileMap[f.path] = f.content;
+      savedMap[f.path] = f.content; // Seed baseline for dirty tracking
+    });
     const firstPath = fileArray.length > 0 ? fileArray[0].path : 'index.js';
     const firstContent = fileArray.length > 0 ? fileArray[0].content : '';
     set({
       files: fileMap,
       activePath: firstPath,
       code: firstContent,
-      language: get().detectLanguage(firstPath)
+      language: get().detectLanguage(firstPath),
+      savedContents: savedMap,
     });
   },
 
   openFile: (path) => {
     const { files, isReplaying } = get();
-    if (isReplaying) return; // Disable switching during replay for now
+    if (isReplaying) return;
+    get().markFileOpened(path, files[path] || '');
     set({
       activePath: path,
       code: files[path] || '',
@@ -180,9 +191,9 @@ const useEditorStore = create(persist((set, get) => ({
   },
 
   addFile: (path, content = '') => {
-    const { files } = get();
     set((s) => ({
       files: { ...s.files, [path]: content },
+      savedContents: { ...s.savedContents, [path]: content }, // Seed baseline
       activePath: path,
       code: content,
       language: get().detectLanguage(path)
@@ -193,10 +204,18 @@ const useEditorStore = create(persist((set, get) => ({
     const { files, activePath } = get();
     const newFiles = { ...files };
 
+    // Clean up save metadata for deleted files
+    const newHandles = { ...get().fileHandles };
+    const newSaved = { ...get().savedContents };
+    const newDiskPaths = { ...get().fileSavedPaths };
+
     // Recursive delete: remove exact path or any path starting with "path/"
     Object.keys(newFiles).forEach(f => {
       if (f === path || f.startsWith(path + '/')) {
         delete newFiles[f];
+        delete newHandles[f];
+        delete newSaved[f];
+        delete newDiskPaths[f];
       }
     });
 
@@ -213,10 +232,18 @@ const useEditorStore = create(persist((set, get) => ({
         files: newFiles,
         activePath: newActive,
         code: newCode,
-        language: get().detectLanguage(newActive)
+        language: get().detectLanguage(newActive),
+        fileHandles: newHandles,
+        savedContents: newSaved,
+        fileSavedPaths: newDiskPaths,
       });
     } else {
-      set({ files: newFiles });
+      set({
+        files: newFiles,
+        fileHandles: newHandles,
+        savedContents: newSaved,
+        fileSavedPaths: newDiskPaths,
+      });
     }
   },
 
@@ -377,6 +404,56 @@ const useEditorStore = create(persist((set, get) => ({
 
   setLanguage: (language) => set({ language }),
   setFileExplorerOpen: (isOpen) => set({ isFileExplorerOpen: isOpen }),
+
+  // ---- Actions: File Save ----
+
+  /** Store a FileSystemFileHandle for silent future saves */
+  setFileHandle: (path, handle) => {
+    set((s) => ({
+      fileHandles: { ...s.fileHandles, [path]: handle }
+    }));
+  },
+
+  /** Mark a file as "just saved" — snapshot its content for dirty tracking */
+  markFileSaved: (path, content) => {
+    set((s) => ({
+      savedContents: { ...s.savedContents, [path]: content }
+    }));
+  },
+
+  /** When a file is first opened/created, seed its savedContents baseline */
+  markFileOpened: (path, content) => {
+    set((s) => {
+      // Only seed if not already tracked
+      if (s.savedContents[path] !== undefined) return {};
+      return { savedContents: { ...s.savedContents, [path]: content } };
+    });
+  },
+
+  /** Store the on-disk path (for display in toolbar after Save) */
+  setFileSavedPath: (path, diskPath) => {
+    set((s) => ({
+      fileSavedPaths: { ...s.fileSavedPaths, [path]: diskPath }
+    }));
+  },
+
+  /** Check if a specific file has unsaved changes */
+  isFileDirty: (path) => {
+    const { files, savedContents } = get();
+    const current = files[path];
+    const saved = savedContents[path];
+    if (saved === undefined) return false; // never tracked — treat as clean
+    return current !== saved;
+  },
+
+  /** Return list of paths that have unsaved changes */
+  getAnyDirtyFiles: () => {
+    const { files, savedContents } = get();
+    return Object.keys(files).filter((path) => {
+      const saved = savedContents[path];
+      return saved !== undefined && files[path] !== saved;
+    });
+  },
 
   // ---- Actions: Execution ----
   setOutput: (output) => set({ output }),
@@ -638,6 +715,10 @@ const useEditorStore = create(persist((set, get) => ({
       isReplaying: false,
       rootCause: null,
       causalityGraph: null,
+      // Save state
+      fileHandles: {},
+      savedContents: {},
+      fileSavedPaths: {},
     });
   },
 }), {

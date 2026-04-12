@@ -79,19 +79,81 @@ const MonacoEditor = () => {
       run: () => handleRun(),
     });
 
-    // Ctrl+S → Save current file
+    // Ctrl+S → Save (silent re-save if handle exists, else open OS Save dialog)
     editor.addAction({
       id: 'save-file',
       label: 'Save File',
       keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
-      run: () => {
+      run: async () => {
         const state = useEditorStore.getState();
-        if (state.sessionId && state.activePath) {
-          import('../../services/api').then(({ saveFile }) => {
-            saveFile(state.sessionId, state.activePath, state.code)
-              .then(() => console.log('[Causify] File saved from editor:', state.activePath))
-              .catch((err) => console.error('[Causify] Save failed:', err));
-          });
+        const path = state.activePath;
+        const content = state.code;
+        if (!path) return;
+
+        const { saveFileAs, saveFileToHandle } = await import('../../services/fileSave');
+
+        const existingHandle = state.fileHandles[path];
+        if (existingHandle) {
+          // Silent re-save to the same location
+          const ok = await saveFileToHandle(existingHandle, content);
+          if (ok) {
+            state.markFileSaved(path, content);
+            console.log('[Causify] Saved silently:', path);
+          } else {
+            // Handle invalidated — fall through to Save As
+            const result = await saveFileAs(path.split('/').pop(), content);
+            if (result) {
+              if (result.handle) state.setFileHandle(path, result.handle);
+              state.markFileSaved(path, content);
+              state.setFileSavedPath(path, result.name);
+            }
+          }
+        } else {
+          // First save — open OS Save dialog
+          const result = await saveFileAs(path.split('/').pop(), content);
+          if (result) {
+            if (result.handle) state.setFileHandle(path, result.handle);
+            state.markFileSaved(path, content);
+            state.setFileSavedPath(path, result.name);
+          }
+        }
+
+        // Also persist to backend session
+        if (state.sessionId) {
+          const { saveFile } = await import('../../services/api');
+          saveFile(state.sessionId, path, content).catch((err) =>
+            console.error('[Causify] Backend save failed:', err)
+          );
+        }
+      },
+    });
+
+    // Ctrl+Shift+S → Save As (always opens OS Save dialog)
+    editor.addAction({
+      id: 'save-file-as',
+      label: 'Save File As',
+      keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyS],
+      run: async () => {
+        const state = useEditorStore.getState();
+        const path = state.activePath;
+        const content = state.code;
+        if (!path) return;
+
+        const { saveFileAs } = await import('../../services/fileSave');
+        const result = await saveFileAs(path.split('/').pop(), content);
+        if (result) {
+          if (result.handle) state.setFileHandle(path, result.handle);
+          state.markFileSaved(path, content);
+          state.setFileSavedPath(path, result.name);
+          console.log('[Causify] Saved As:', result.name);
+        }
+
+        // Also persist to backend session
+        if (state.sessionId) {
+          const { saveFile } = await import('../../services/api');
+          saveFile(state.sessionId, path, content).catch((err) =>
+            console.error('[Causify] Backend save failed:', err)
+          );
         }
       },
     });

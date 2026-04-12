@@ -2,12 +2,13 @@
  * EditorPage.jsx — Main Application Workspace
  * ------------------------------------------------------- */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import MonacoEditor from '../components/Editor/MonacoEditor';
 import TerminalPanel from '../components/Terminal/TerminalPanel';
 import useEditorStore from '../store/useEditorStore';
 import { saveFile } from '../services/api';
 import { sendCodeChange } from '../services/socket';
+import { saveFileAs, saveFileToHandle } from '../services/fileSave';
 
 import FileExplorer from '../components/Editor/FileExplorer';
 import EmptyEditorState from '../components/Editor/EmptyEditorState';
@@ -163,18 +164,62 @@ const EditorPage = () => {
 
   const terminalLayoutMode = useEditorStore((s) => s.terminalLayoutMode);
 
+  // Save state selectors
+  const fileHandles = useEditorStore((s) => s.fileHandles);
+  const savedContents = useEditorStore((s) => s.savedContents);
+  const fileSavedPaths = useEditorStore((s) => s.fileSavedPaths);
+  const markFileSaved = useEditorStore((s) => s.markFileSaved);
+  const setFileHandle = useEditorStore((s) => s.setFileHandle);
+  const setFileSavedPath = useEditorStore((s) => s.setFileSavedPath);
+
+  // Dirty state for active file
+  const isCurrentDirty = activePath
+    ? (savedContents[activePath] !== undefined && code !== savedContents[activePath])
+    : false;
+  const hasDiskHandle = activePath ? !!fileHandles[activePath] : false;
+  const diskName = activePath ? fileSavedPaths[activePath] : null;
+
   const hasError = Boolean(error && error.trim());
   const hasSnapshots = snapshots.length > 0;
 
   const openReplay = () => setTerminalActiveTab('timeline');
 
-  /* ── Save current file ── */
+  /* ── Save current file (to disk via OS dialog + backend) ── */
   const handleSave = useCallback(async () => {
-    if (!sessionId || !activePath || isSaving) return;
+    if (!activePath || isSaving) return;
     setIsSaving(true);
     try {
       const currentCode = useEditorStore.getState().code;
-      await saveFile(sessionId, activePath, currentCode);
+      const existingHandle = useEditorStore.getState().fileHandles[activePath];
+
+      if (existingHandle) {
+        // Silent re-save
+        const ok = await saveFileToHandle(existingHandle, currentCode);
+        if (ok) {
+          markFileSaved(activePath, currentCode);
+        } else {
+          // Handle invalidated — open Save As
+          const result = await saveFileAs(activePath.split('/').pop(), currentCode);
+          if (result) {
+            if (result.handle) setFileHandle(activePath, result.handle);
+            markFileSaved(activePath, currentCode);
+            setFileSavedPath(activePath, result.name);
+          }
+        }
+      } else {
+        // First save — open OS dialog
+        const result = await saveFileAs(activePath.split('/').pop(), currentCode);
+        if (result) {
+          if (result.handle) setFileHandle(activePath, result.handle);
+          markFileSaved(activePath, currentCode);
+          setFileSavedPath(activePath, result.name);
+        }
+      }
+
+      // Also persist to backend session
+      if (sessionId) {
+        await saveFile(sessionId, activePath, currentCode);
+      }
       setSaveFlash(true);
       setTimeout(() => setSaveFlash(false), 1500);
     } catch (err) {
@@ -182,7 +227,45 @@ const EditorPage = () => {
     } finally {
       setIsSaving(false);
     }
-  }, [sessionId, activePath, isSaving]);
+  }, [activePath, isSaving, sessionId, markFileSaved, setFileHandle, setFileSavedPath]);
+
+  /* ── Save As (always opens OS dialog) ── */
+  const handleSaveAs = useCallback(async () => {
+    if (!activePath || isSaving) return;
+    setIsSaving(true);
+    try {
+      const currentCode = useEditorStore.getState().code;
+      const result = await saveFileAs(activePath.split('/').pop(), currentCode);
+      if (result) {
+        if (result.handle) setFileHandle(activePath, result.handle);
+        markFileSaved(activePath, currentCode);
+        setFileSavedPath(activePath, result.name);
+      }
+      // Also persist to backend
+      if (sessionId) {
+        await saveFile(sessionId, activePath, currentCode);
+      }
+      setSaveFlash(true);
+      setTimeout(() => setSaveFlash(false), 1500);
+    } catch (err) {
+      console.error('[Causify] Save As failed:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [activePath, isSaving, sessionId, markFileSaved, setFileHandle, setFileSavedPath]);
+
+  /* ── Protect against closing with unsaved changes ── */
+  useEffect(() => {
+    const handler = (e) => {
+      const dirty = useEditorStore.getState().getAnyDirtyFiles();
+      if (dirty.length > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, []);
 
   /* ── Shared toolbar button base styles ── */
   const H = '28px'; // uniform height for all toolbar controls
@@ -250,34 +333,79 @@ const EditorPage = () => {
                   {activePath.split('/').pop().toUpperCase()}
                   <span style={{ fontWeight: 400, color: '#999', fontSize: '0.7rem' }}>— {activePath}</span>
                 </span>
-                {/* Save Button */}
-                {sessionId && (
-                  <button
-                    onClick={handleSave}
-                    disabled={isSaving}
-                    title="Save File (Ctrl+S)"
-                    style={{
-                      height: '26px', padding: '0 12px',
-                      fontFamily: 'var(--font-number)', fontWeight: 800, fontSize: '0.6rem',
-                      background: saveFlash ? '#c1ff72' : isSaving ? '#eee' : '#fff',
-                      border: '1.5px solid #ccc', borderRadius: '4px',
-                      cursor: isSaving ? 'not-allowed' : 'pointer',
-                      display: 'flex', alignItems: 'center', gap: '5px',
-                      transition: 'all 0.2s ease',
-                      color: saveFlash ? '#080808' : '#555',
-                      boxShadow: saveFlash ? '0 0 12px rgba(193,255,114,0.5)' : 'none',
-                    }}
-                    onMouseEnter={e => { if (!isSaving && !saveFlash) e.currentTarget.style.borderColor = '#080808'; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = '#ccc'; }}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                      <polyline points="17 21 17 13 7 13 7 21" />
-                      <polyline points="7 3 7 8 15 8" />
-                    </svg>
-                    {isSaving ? 'SAVING...' : saveFlash ? 'SAVED ✓' : 'SAVE'}
-                  </button>
+                {/* Unsaved changes dot */}
+                {isCurrentDirty && (
+                  <span title="Unsaved changes" style={{
+                    width: '8px', height: '8px', borderRadius: '50%',
+                    background: '#ff3e3e',
+                    boxShadow: '0 0 8px rgba(255,62,62,0.6)',
+                    flexShrink: 0,
+                    animation: 'hud-pulse 2s infinite',
+                  }} />
                 )}
+                {/* Disk path badge */}
+                {diskName && (
+                  <span title={`Saved to: ${diskName}`} style={{
+                    fontSize: '0.55rem', fontWeight: 700, color: '#16a34a',
+                    fontFamily: 'var(--font-number)', letterSpacing: '0.03em',
+                    display: 'flex', alignItems: 'center', gap: '3px',
+                  }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                      <polyline points="22 4 12 14.01 9 11.01" />
+                    </svg>
+                    {diskName}
+                  </span>
+                )}
+                {/* Save Button */}
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  title={hasDiskHandle ? 'Save (Ctrl+S)' : 'Save to disk (Ctrl+S)'}
+                  style={{
+                    height: '26px', padding: '0 12px',
+                    fontFamily: 'var(--font-number)', fontWeight: 800, fontSize: '0.6rem',
+                    background: saveFlash ? '#c1ff72' : isSaving ? '#eee' : '#fff',
+                    border: '1.5px solid #ccc', borderRadius: '4px',
+                    cursor: isSaving ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '5px',
+                    transition: 'all 0.2s ease',
+                    color: saveFlash ? '#080808' : '#555',
+                    boxShadow: saveFlash ? '0 0 12px rgba(193,255,114,0.5)' : 'none',
+                  }}
+                  onMouseEnter={e => { if (!isSaving && !saveFlash) e.currentTarget.style.borderColor = '#080808'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#ccc'; }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                    <polyline points="17 21 17 13 7 13 7 21" />
+                    <polyline points="7 3 7 8 15 8" />
+                  </svg>
+                  {isSaving ? 'SAVING...' : saveFlash ? 'SAVED ✓' : 'SAVE'}
+                </button>
+                {/* Save As Button */}
+                <button
+                  onClick={handleSaveAs}
+                  disabled={isSaving}
+                  title="Save As (Ctrl+Shift+S)"
+                  style={{
+                    height: '26px', padding: '0 8px',
+                    fontFamily: 'var(--font-number)', fontWeight: 800, fontSize: '0.55rem',
+                    background: '#fff',
+                    border: '1.5px solid #ccc', borderRadius: '4px',
+                    cursor: isSaving ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: '4px',
+                    transition: 'all 0.2s ease',
+                    color: '#888',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#080808'; e.currentTarget.style.color = '#080808'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#ccc'; e.currentTarget.style.color = '#888'; }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                  </svg>
+                  AS
+                </button>
               </div>
             ) : (
               <span style={{ fontFamily: 'var(--font-header)', fontWeight: 900, fontSize: '0.9rem', letterSpacing: '-0.02em', color: '#aaa' }}>NO FILE OPEN</span>
