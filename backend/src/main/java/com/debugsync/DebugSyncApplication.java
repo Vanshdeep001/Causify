@@ -16,4 +16,5 @@ public class DebugSyncApplication {
     public static void main(String[] args) {
         SpringApplication.run(DebugSyncApplication.class, args);
     }
+
 }

@@ -29,8 +29,12 @@ public class DevServerController {
     }
 
     @PostMapping("/detect")
-    public ResponseEntity<DetectionResult> detectProject(@RequestBody DetectRequest request) {
-        DetectionResult result = devServerService.detectProjects(request.getSessionId());
+    public ResponseEntity<?> detectProject(@RequestBody DetectRequest request) {
+        String sessionId = request.getSessionId();
+        if (sessionId == null || sessionId.trim().isEmpty() || "null".equals(sessionId) || "undefined".equals(sessionId)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Invalid Session ID"));
+        }
+        DetectionResult result = devServerService.detectProjects(sessionId);
         return ResponseEntity.ok(result);
     }
 

@@ -146,90 +146,89 @@ const GitAssistantPanel = () => {
     return (
       <div style={{ 
         height: '100%', display: 'flex', flexDirection: 'column', 
-        alignItems: 'center', justifyContent: 'center', padding: '40px',
-        background: '#0a0a0a'
+        alignItems: 'flex-start', justifyContent: 'flex-start', padding: '30px 20px',
+        background: '#0a0a0a', overflow: 'hidden'
       }}>
-        <div style={{ maxWidth: '520px', width: '100%' }}>
-          {/* Header */}
-          <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+        <div style={{ width: '100%', maxWidth: 'none', animation: 'fade-in 0.5s ease-out' }}>
+          {/* Compact Header */}
+          <div style={{ marginBottom: '30px', borderLeft: '3px solid #c1ff72', paddingLeft: '20px' }}>
             <div style={{ 
-              fontFamily: 'var(--font-number)', fontSize: '0.65rem', color: '#555',
-              letterSpacing: '0.3em', marginBottom: '12px'
+              fontFamily: 'var(--font-number)', fontSize: '0.6rem', color: '#555',
+              letterSpacing: '0.5em', marginBottom: '8px', opacity: 0.8
             }}>
-              GIT WORKSPACE
+              GIT WORKSPACE MODULE
             </div>
             <div style={{ 
-              fontFamily: 'var(--font-header)', fontSize: '1.8rem', fontWeight: 900,
-              color: '#fff', letterSpacing: '-0.02em'
+              fontFamily: 'var(--font-header)', fontSize: '1.6rem', fontWeight: 900,
+              color: '#fff', letterSpacing: '0.05em', lineHeight: 1.1, textTransform: 'uppercase'
             }}>
-              Connect Repository
-            </div>
-            <div style={{ width: '60px', height: '2px', background: '#c1ff72', margin: '16px auto 0' }} />
-          </div>
-
-          {/* URL Input */}
-          <div style={{ 
-            border: '2px solid #222', padding: '20px',
-            position: 'relative', background: '#111'
-          }}>
-            <div style={{ position: 'absolute', top: '-1px', left: '-1px', width: '12px', height: '12px', borderTop: '3px solid #c1ff72', borderLeft: '3px solid #c1ff72' }} />
-            <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '12px', height: '12px', borderBottom: '3px solid #c1ff72', borderRight: '3px solid #c1ff72' }} />
-            
-            <HudLabel>Repository URL</HudLabel>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: '#c1ff72', fontFamily: 'var(--font-number)', fontSize: '0.85rem', fontWeight: 700 }}>▶</span>
-              <input
-                type="text"
-                value={repoUrlInput}
-                onChange={(e) => setRepoUrlInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
-                placeholder="https://<token>@github.com/user/repo.git"
-                spellCheck={false}
-                style={{
-                  flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                  color: '#fff', fontSize: '0.95rem', fontFamily: 'var(--font-header)',
-                  fontWeight: 700, letterSpacing: '-0.01em'
-                }}
-              />
+              Connect Remote Repository
             </div>
           </div>
 
-          {/* Hint */}
-          <div style={{ 
-            fontFamily: 'var(--font-number)', fontSize: '0.6rem', color: '#444',
-            letterSpacing: '0.1em', marginTop: '12px', lineHeight: 1.8
-          }}>
-            🔒 TOKEN NEVER PERSISTED — Held in memory only for this session
-          </div>
-
-          {/* Error */}
-          {gitError && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
+            {/* Horizontal Input HUD */}
             <div style={{ 
-              marginTop: '16px', padding: '12px', background: 'rgba(255,62,62,0.08)',
-              border: '1px solid rgba(255,62,62,0.3)', color: '#ff3e3e',
-              fontFamily: 'var(--font-number)', fontSize: '0.75rem', fontWeight: 700
+              position: 'relative', background: 'rgba(255,255,255,0.01)',
+              border: '1px solid #1a1a1a', padding: '20px 24px',
+              display: 'flex', flexDirection: 'column', gap: '15px'
             }}>
-              ✕ {gitError}
-            </div>
-          )}
+              <div style={{ position: 'absolute', top: '-1px', left: '-1px', width: '10px', height: '10px', borderTop: '2px solid #c1ff72', borderLeft: '2px solid #c1ff72' }} />
+              <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '10px', height: '10px', borderBottom: '2px solid #c1ff72', borderRight: '2px solid #c1ff72' }} />
+              
+              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                <HudLabel>Endpoint URL [SSH/HTTPS]</HudLabel>
+              </div>
 
-          {/* Connect Button */}
-          <button
-            onClick={handleConnect}
-            disabled={gitLoading || !repoUrlInput.trim()}
-            style={{
-              width: '100%', marginTop: '24px', padding: '14px',
-              background: gitLoading ? '#333' : '#c1ff72', color: '#000',
-              border: 'none', cursor: gitLoading ? 'wait' : 'pointer',
-              fontFamily: 'var(--font-number)', fontSize: '0.85rem', fontWeight: 900,
-              letterSpacing: '0.1em',
-              boxShadow: gitLoading ? 'none' : '0 0 30px rgba(193, 255, 114, 0.15)',
-              opacity: gitLoading || !repoUrlInput.trim() ? 0.5 : 1,
-              transition: 'all 0.15s ease',
-            }}
-          >
-            {gitLoading ? '⠿ CLONING REPOSITORY...' : 'CONNECT'}
-          </button>
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid #222', paddingBottom: '8px' }}>
+                  <span style={{ color: '#c1ff72', fontFamily: 'var(--font-number)', fontSize: '0.9rem', fontWeight: 900, opacity: 0.6 }}>▶</span>
+                  <input
+                    type="text"
+                    value={repoUrlInput}
+                    onChange={(e) => setRepoUrlInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
+                    placeholder="https://github.com/user/repository.git"
+                    spellCheck={false}
+                    style={{
+                      flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                      color: '#fff', fontSize: '1.05rem', fontFamily: 'var(--font-header)',
+                      fontWeight: 700, letterSpacing: '-0.01em'
+                    }}
+                  />
+                </div>
+                
+                <button
+                  onClick={handleConnect}
+                  disabled={gitLoading || !repoUrlInput.trim()}
+                  style={{
+                    height: '42px', padding: '0 30px',
+                    background: gitLoading ? '#111' : '#c1ff72', color: '#000',
+                    border: 'none', cursor: gitLoading ? 'wait' : 'pointer',
+                    fontFamily: 'var(--font-number)', fontSize: '0.75rem', fontWeight: 900,
+                    letterSpacing: '0.15em', transition: 'all 0.2s',
+                    opacity: gitLoading || !repoUrlInput.trim() ? 0.3 : 1
+                  }}
+                  onMouseEnter={e => { if(!gitLoading) e.currentTarget.style.filter = 'brightness(1.1)'; }}
+                  onMouseLeave={e => { if(!gitLoading) e.currentTarget.style.filter = 'none'; }}
+                >
+                  {gitLoading ? 'CONNECTING...' : 'CONNECT'}
+                </button>
+              </div>
+            </div>
+
+            {/* Compact Error HUD */}
+            {gitError && (
+              <div style={{ 
+                padding: '12px 18px', background: 'rgba(255,62,62,0.03)',
+                borderLeft: '3px solid #ff3e3e', color: '#ff3e3e',
+                fontFamily: 'var(--font-number)', fontSize: '0.7rem', fontWeight: 800,
+                letterSpacing: '0.04em', animation: 'scale-in 0.2s ease'
+              }}>
+                [LINK_FAILURE]: {gitError.toUpperCase()}
+              </div>
+            )}
+          </div>
         </div>
 
         <style>{`

@@ -2,13 +2,15 @@
  * App.jsx — DebugSync Application Shell
  * ------------------------------------------------------- */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import EditorPage from './pages/EditorPage';
 import UserPresence from './components/Session/UserPresence';
 import NotificationSystem from './components/Session/NotificationSystem';
+import SetupWizard from './components/Session/SetupWizard';
 import useEditorStore from './store/useEditorStore';
 import { connectWebSocket, disconnectWebSocket } from './services/socket';
 import { getSessionFiles, saveFile } from './services/api';
+import causifyLogo from './assets/causify-logo.png';
 
 const App = () => {
   const sessionId = useEditorStore((s) => s.sessionId);
@@ -16,6 +18,21 @@ const App = () => {
   const toggleTerminal = useEditorStore((s) => s.toggleTerminal);
   const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
   const reconnectedRef = useRef(false);
+
+  // ── First-launch setup wizard (Electron only) ──
+  const [showSetup, setShowSetup] = useState(false);
+  const [setupChecked, setSetupChecked] = useState(false);
+
+  useEffect(() => {
+    const checkFirstLaunch = async () => {
+      if (window.electronAPI && window.electronAPI.isFirstLaunch) {
+        const isFirst = await window.electronAPI.isFirstLaunch();
+        setShowSetup(isFirst);
+      }
+      setSetupChecked(true);
+    };
+    checkFirstLaunch();
+  }, []);
 
   // ── Auto-reconnect WebSocket after page refresh ──
   useEffect(() => {
@@ -119,6 +136,11 @@ const App = () => {
     };
   }, [toggleTerminal, setTerminalActiveTab]);
 
+  // Show Setup Wizard before the main app if this is first launch
+  if (showSetup) {
+    return <SetupWizard onComplete={() => setShowSetup(false)} />;
+  }
+
   return (
     <div className="app-container">
       {/* Texture overlay with pointer-events: none */}
@@ -136,7 +158,7 @@ const App = () => {
         zIndex: 10
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <img src="/icon (1).png" alt="Causify Logo" style={{ height: '32px', width: 'auto' }} />
+          <img src={causifyLogo} alt="Causify Logo" style={{ height: '32px', width: 'auto' }} />
           <h1 className="logo-text" style={{ margin: 0, fontSize: '1.2rem', letterSpacing: '-0.02em', fontWeight: 900 }}>CAUSIFY</h1>
         </div>
 

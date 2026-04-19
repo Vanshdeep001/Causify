@@ -108,10 +108,11 @@ const useEditorStore = create(persist((set, get) => ({
   devServerNotification: null,   // Notification banner for project detection
 
   // ---- UI Layout State ----
-  terminalActiveTab: 'output', // 'output' | 'timeline' | 'graph' | 'git'
-  isTerminalOpen: false,       // Whether terminal is visible
-  terminalHeight: 300,         // Height in pixels (normal mode)
-  terminalLayoutMode: 'normal', // 'normal' | 'split' | 'maximized'
+  terminalActiveTab: 'output',      // Active tab in primary (left) pane
+  terminalSecondActiveTab: 'graph', // Active tab in secondary (right) pane in split mode
+  isTerminalOpen: false,            // Whether terminal is visible
+  terminalHeight: 300,              // Height in pixels (normal mode)
+  terminalLayoutMode: 'normal',      // 'normal' | 'split' | 'maximized'
   isFileExplorerOpen: true,    // File explorer visibility
 
   // ---- Actions: Session ----
@@ -547,12 +548,18 @@ const useEditorStore = create(persist((set, get) => ({
   setTerminalActiveTab: (tab) => {
     set({
       terminalActiveTab: tab,
-      isTerminalOpen: true // Auto-open when switching tabs
+      isTerminalOpen: true
+    });
+  },
+  setTerminalSecondActiveTab: (tab) => {
+    set({
+      terminalSecondActiveTab: tab,
+      isTerminalOpen: true,
+      terminalLayoutMode: 'split'
     });
   },
   toggleTerminal: () => set((s) => ({
     isTerminalOpen: !s.isTerminalOpen,
-    terminalLayoutMode: 'normal' // Reset to normal if closing
   })),
   setTerminalOpen: (isOpen) => set({ isTerminalOpen: isOpen }),
   setTerminalHeight: (height) => set({ terminalHeight: height }),
@@ -732,15 +739,13 @@ const useEditorStore = create(persist((set, get) => ({
     setItem: (name, value) => sessionStorage.setItem(name, JSON.stringify(value)),
     removeItem: (name) => sessionStorage.removeItem(name),
   },
-  // Only persist the essential session state — not transient UI data
+  // Only persist the essential session state — not transient UI data or large file content
   partialize: (state) => ({
     sessionId: state.sessionId,
     sessionName: state.sessionName,
     currentUser: state.currentUser,
     userRole: state.userRole,
-    files: state.files,
     activePath: state.activePath,
-    code: state.code,
     language: state.language,
   }),
 }));

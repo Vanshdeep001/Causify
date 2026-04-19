@@ -29,7 +29,8 @@ public class Session {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
-    public Session() {}
+    public Session() {
+    }
 
     public Session(String id, String name, String currentCode, LocalDateTime createdAt) {
         this.id = id;
@@ -44,14 +45,43 @@ public class Session {
     }
 
     // Getters and Setters
-    public String getId() { return id; }
-    public void setId(String id) { this.id = id; }
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public String getPassword() { return password; }
-    public void setPassword(String password) { this.password = password; }
-    public String getCurrentCode() { return currentCode; }
-    public void setCurrentCode(String currentCode) { this.currentCode = currentCode; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
+    public String getCurrentCode() {
+        return currentCode;
+    }
+
+    public void setCurrentCode(String currentCode) {
+        this.currentCode = currentCode;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
 }

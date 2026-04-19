@@ -291,11 +291,14 @@ const OutputPanel = () => {
   const timestamp = new Date().toLocaleTimeString([], { hour12: false });
 
   // ── Render Dev Server for React/Node projects ──
-  if (detectedProjects && detectedProjects.length > 0) {
+  // If we have detected projects, OR it looks like a Node project (has package.json)
+  const hasPackageJson = files && Object.keys(files).some(p => p.toLowerCase().endsWith('package.json'));
+  
+  if ((detectedProjects && detectedProjects.length > 0) || hasPackageJson) {
     return <DevServerPanel />;
   }
-
-  // ── Render HTML Preview for Static Web projects ──
+  
+  // ── Render HTML Preview for Static Web projects (only if no package.json) ──
   const hasHtmlFile = files && Object.keys(files).some(p => p.toLowerCase().endsWith('.html'));
   if (hasHtmlFile) {
     return <HtmlPreview />;

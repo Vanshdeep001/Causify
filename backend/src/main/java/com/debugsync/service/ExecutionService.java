@@ -38,12 +38,12 @@ public class ExecutionService {
     private final GitAssistantService gitAssistantService;
 
     public ExecutionService(SnapshotRepository snapshotRepository,
-                            ExecutionRepository executionRepository,
-                            ErrorRepository errorRepository,
-                            RootCauseService rootCauseService,
-                            CausalityGraphService causalityGraphService,
-                            TimelineService timelineService,
-                            GitAssistantService gitAssistantService) {
+            ExecutionRepository executionRepository,
+            ErrorRepository errorRepository,
+            RootCauseService rootCauseService,
+            CausalityGraphService causalityGraphService,
+            TimelineService timelineService,
+            GitAssistantService gitAssistantService) {
         this.snapshotRepository = snapshotRepository;
         this.executionRepository = executionRepository;
         this.errorRepository = errorRepository;
@@ -60,7 +60,8 @@ public class ExecutionService {
         try {
             // Step 1: Handle Language Dispatching
             String lang = (request.getLanguage() == null || "javascript".equals(request.getLanguage()))
-                ? guessLanguage(request.getCode()) : request.getLanguage().toLowerCase();
+                    ? guessLanguage(request.getCode())
+                    : request.getLanguage().toLowerCase();
 
             if ("java".equals(lang)) {
                 return executeJava(request, startTime);
@@ -70,32 +71,35 @@ public class ExecutionService {
             }
 
             // --- Fix for HTML/CSS/React: Prevent crash when "running" static files ---
-            boolean isReactCode = request.getCode().contains("import React") || request.getCode().contains("from 'react'") || request.getCode().contains("from \"react\"");
-            boolean isStaticLang = "html".equals(lang) || "css".equals(lang) || "react".equals(lang) || "jsx".equals(lang) || "tsx".equals(lang);
+            boolean isReactCode = request.getCode().contains("import React")
+                    || request.getCode().contains("from 'react'") || request.getCode().contains("from \"react\"");
+            boolean isStaticLang = "html".equals(lang) || "css".equals(lang) || "react".equals(lang)
+                    || "jsx".equals(lang) || "tsx".equals(lang);
 
             if (isStaticLang || isReactCode) {
                 String msg = ("react".equals(lang) || "jsx".equals(lang) || "tsx".equals(lang) || isReactCode)
-                    ? "[Causify] React file loaded.\n\n→ This is a UI frontend component, not a backend Node script!\n→ Please use the DEV SERVER tab (🚀) below to run frontend React apps."
-                    : String.format("[Causify] Loaded %s file successfully.\nPreview is available in the web view.", lang.toUpperCase());
+                        ? "[Causify] React file loaded.\n\n→ This is a UI frontend component, not a backend Node script!\n→ Please use the DEV SERVER tab (🚀) below to run frontend React apps."
+                        : String.format("[Causify] Loaded %s file successfully.\nPreview is available in the web view.",
+                                lang.toUpperCase());
 
                 return buildResponse(
-                    msg,
-                    null, 
-                    request, 
-                    System.currentTimeMillis() - startTime
-                );
+                        msg,
+                        null,
+                        request,
+                        System.currentTimeMillis() - startTime);
             }
 
             // Default behavior for other languages (Python, JS)
             String ext = ".js";
-            if ("python".equals(lang)) ext = ".py";
-            
+            if ("python".equals(lang))
+                ext = ".py";
+
             tempFile = Files.createTempFile("debugsync_", ext);
             Files.writeString(tempFile, request.getCode());
 
-            String[] command = ("python".equals(lang)) 
-                ? new String[]{"python", tempFile.toString()}
-                : new String[]{"node", tempFile.toString()};
+            String[] command = ("python".equals(lang))
+                    ? new String[] { "python", tempFile.toString() }
+                    : new String[] { "node", tempFile.toString() };
 
             return runProcess(command, request, startTime, tempFile);
 
@@ -106,7 +110,12 @@ public class ExecutionService {
             response.setExecutionTimeMs(System.currentTimeMillis() - startTime);
             return response;
         } finally {
-            if (tempFile != null) { try { Files.deleteIfExists(tempFile); } catch (IOException ignored) {} }
+            if (tempFile != null) {
+                try {
+                    Files.deleteIfExists(tempFile);
+                } catch (IOException ignored) {
+                }
+            }
         }
     }
 
@@ -114,8 +123,9 @@ public class ExecutionService {
         Path tempDir = Files.createTempDirectory("debugsync_java_");
         try {
             String mainClass = findMainClass(request.getCode());
-            if (mainClass == null) mainClass = "Main";
-            
+            if (mainClass == null)
+                mainClass = "Main";
+
             Path javaFile = tempDir.resolve(mainClass + ".java");
             Files.writeString(javaFile, request.getCode());
 
@@ -129,15 +139,15 @@ public class ExecutionService {
             }
 
             // Run
-            String[] command = {"java", "-cp", tempDir.toString(), mainClass};
+            String[] command = { "java", "-cp", tempDir.toString(), mainClass };
             return runProcess(command, request, startTime, null);
 
         } finally {
-             // Cleanup directory
-             Files.walk(tempDir)
-                 .sorted(Comparator.reverseOrder())
-                 .map(Path::toFile)
-                 .forEach(File::delete);
+            // Cleanup directory
+            Files.walk(tempDir)
+                    .sorted(Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .forEach(File::delete);
         }
     }
 
@@ -166,16 +176,17 @@ public class ExecutionService {
 
         } finally {
             Files.walk(tempDir)
-                .sorted(Comparator.reverseOrder())
-                .map(Path::toFile)
-                .forEach(File::delete);
+                    .sorted(Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .forEach(File::delete);
         }
     }
 
     private String findMainClass(String code) {
         int mainIndex = code.indexOf("public static void main");
-        if (mainIndex == -1) return null;
-        
+        if (mainIndex == -1)
+            return null;
+
         String beforeMain = code.substring(0, mainIndex);
         Pattern classPattern = Pattern.compile("class\\s+(\\w+)");
         Matcher matcher = classPattern.matcher(beforeMain);
@@ -186,7 +197,8 @@ public class ExecutionService {
         return lastClass;
     }
 
-    private ExecutionResponse runProcess(String[] command, ExecutionRequest request, long startTime, Path tempFile) throws Exception {
+    private ExecutionResponse runProcess(String[] command, ExecutionRequest request, long startTime, Path tempFile)
+            throws Exception {
         ProcessBuilder pb = new ProcessBuilder(command);
         pb.redirectErrorStream(false);
         Process process = pb.start();
@@ -195,13 +207,17 @@ public class ExecutionService {
         String stderr = readStream(process.getErrorStream());
 
         boolean finished = process.waitFor(10, TimeUnit.SECONDS);
-        if (!finished) { process.destroyForcibly(); stderr = "Execution timed out (10 second limit)"; }
+        if (!finished) {
+            process.destroyForcibly();
+            stderr = "Execution timed out (10 second limit)";
+        }
 
         long executionTime = System.currentTimeMillis() - startTime;
         return buildResponse(stdout, stderr, request, executionTime);
     }
 
-    private ExecutionResponse buildResponse(String stdout, String stderr, ExecutionRequest request, long executionTime) {
+    private ExecutionResponse buildResponse(String stdout, String stderr, ExecutionRequest request,
+            long executionTime) {
         // Create snapshot
         CodeSnapshot lastSnapshot = snapshotRepository.findTopBySessionIdOrderByTimestampDesc(request.getSessionId());
         String previousCode = lastSnapshot != null ? lastSnapshot.getCode() : "";
@@ -209,7 +225,7 @@ public class ExecutionService {
         boolean hasError = stderr != null && !stderr.isEmpty();
 
         CodeSnapshot snapshot = timelineService.createSnapshot(
-            request.getSessionId(), request.getCode(), "system", diff, hasError);
+                request.getSessionId(), request.getCode(), "system", diff, hasError);
 
         // Save execution log
         ExecutionLog execLog = new ExecutionLog();
@@ -224,13 +240,17 @@ public class ExecutionService {
         ExecutionResponse.CausalityGraphData graphData = null;
 
         if (hasError) {
-            ErrorLog parsedError = ErrorParser.parse(stderr, request.getCode());
+            String lang = (request.getLanguage() == null || "javascript".equals(request.getLanguage()))
+                    ? guessLanguage(request.getCode())
+                    : request.getLanguage().toLowerCase();
+            ErrorLog parsedError = ErrorParser.parse(stderr, request.getCode(), lang);
             if (parsedError != null) {
                 parsedError.setExecutionId(execLog.getId());
                 errorRepository.save(parsedError);
                 rootCauseData = rootCauseService.analyze(parsedError, request.getCode(), request.getSessionId());
                 if (rootCauseData != null)
-                    graphData = causalityGraphService.buildCausalityGraph(parsedError, rootCauseData, request.getCode());
+                    graphData = causalityGraphService.buildCausalityGraph(parsedError, rootCauseData,
+                            request.getCode());
             }
         } else {
             // Generate interaction graph for successful execution
@@ -254,20 +274,21 @@ public class ExecutionService {
 
         response.setRootCause(rootCauseData);
         response.setCausalityGraph(graphData);
-        
+
         // Git Assistant Analysis
         ExecutionLog prevExecutionLog = null;
         if (lastSnapshot != null) {
             prevExecutionLog = executionRepository.findBySnapshotId(lastSnapshot.getId());
         }
-        
+
         String lang = (request.getLanguage() == null) ? "javascript" : request.getLanguage().toLowerCase();
-        CommitSuggestionDto suggestion = gitAssistantService.analyze(lastSnapshot, prevExecutionLog, request.getCode(), hasError, diff, lang);
-        
+        CommitSuggestionDto suggestion = gitAssistantService.analyze(lastSnapshot, prevExecutionLog, request.getCode(),
+                hasError, diff, lang);
+
         if (suggestion != null) {
             response.setCommitSuggestion(suggestion);
             snapData.setSuggestion(suggestion);
-            
+
             // Serialize to JSON and save to snapshot entity for persistence
             try {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
@@ -278,19 +299,30 @@ public class ExecutionService {
                 log.warn("Failed to serialize commit suggestion", e);
             }
         }
-        
+
         return response;
     }
 
     private String guessLanguage(String code) {
-        if (code == null) return "javascript";
+        if (code == null)
+            return "javascript";
         String trimmed = code.trim().toLowerCase();
-        if (trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html") || trimmed.startsWith("<head") || trimmed.startsWith("<body")) return "html";
-        if (code.contains("public static void main") || code.contains("System.out.println")) return "java";
-        if (code.contains("def ") && code.contains(":")) return "python";
-        if (code.contains("#include <stdio.h>") || code.contains("#include <stdlib.h>") || (code.contains("int main(") && code.contains("printf"))) return "c";
-        if (code.contains("#include <iostream>") || code.contains("#include <string>") || code.contains("using namespace std") || code.contains("cout") || code.contains("std::")) return "cpp";
-        if (code.contains("import react") || code.contains("from 'react'") || code.contains("from \"react\"") || (code.contains("export default") && code.contains("<div"))) return "react";
+        if (trimmed.startsWith("<!doctype html") || trimmed.startsWith("<html") || trimmed.startsWith("<head")
+                || trimmed.startsWith("<body"))
+            return "html";
+        if (code.contains("public static void main") || code.contains("System.out.println"))
+            return "java";
+        if (code.contains("def ") && code.contains(":"))
+            return "python";
+        if (code.contains("#include <stdio.h>") || code.contains("#include <stdlib.h>")
+                || (code.contains("int main(") && code.contains("printf")))
+            return "c";
+        if (code.contains("#include <iostream>") || code.contains("#include <string>")
+                || code.contains("using namespace std") || code.contains("cout") || code.contains("std::"))
+            return "cpp";
+        if (code.contains("import react") || code.contains("from 'react'") || code.contains("from \"react\"")
+                || (code.contains("export default") && code.contains("<div")))
+            return "react";
         return "javascript";
     }
 
@@ -298,7 +330,8 @@ public class ExecutionService {
         StringBuilder sb = new StringBuilder();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
             String line;
-            while ((line = reader.readLine()) != null) sb.append(line).append("\n");
+            while ((line = reader.readLine()) != null)
+                sb.append(line).append("\n");
         }
         return sb.toString().trim();
     }

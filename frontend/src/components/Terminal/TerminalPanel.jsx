@@ -20,6 +20,7 @@ const TerminalPanel = () => {
   const terminalHeight = useEditorStore((s) => s.terminalHeight);
   const terminalLayoutMode = useEditorStore((s) => s.terminalLayoutMode);
   const activeTab = useEditorStore((s) => s.terminalActiveTab);
+  const terminalSecondActiveTab = useEditorStore((s) => s.terminalSecondActiveTab);
   const error = useEditorStore((s) => s.error);
   const snapshots = useEditorStore((s) => s.snapshots);
   const userRole = useEditorStore((s) => s.userRole);
@@ -27,6 +28,7 @@ const TerminalPanel = () => {
   const detectedProjects = useEditorStore((s) => s.detectedProjects);
 
   const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
+  const setTerminalSecondActiveTab = useEditorStore((s) => s.setTerminalSecondActiveTab);
   const setTerminalHeight = useEditorStore((s) => s.setTerminalHeight);
   const setTerminalLayoutMode = useEditorStore((s) => s.setTerminalLayoutMode);
   const toggleTerminal = useEditorStore((s) => s.toggleTerminal);
@@ -104,6 +106,17 @@ const TerminalPanel = () => {
     borderRadius: '2px'
   });
 
+  const errorBadge = {
+    marginLeft: '6px',
+    fontFamily: 'var(--font-number)', fontWeight: 900,
+    fontSize: '0.4rem', letterSpacing: '0.05em',
+    color: '#fff', background: '#ff3e3e',
+    padding: '1px 4px', borderRadius: '2px',
+    lineHeight: 1.2,
+    boxShadow: '0 0 6px rgba(255,62,62,0.5)',
+    animation: 'pulse-live 1.5s ease-in-out infinite',
+  };
+
   const tabBtn = (isActive) => ({
     height: NAVBAR_H + 'px', padding: '0 24px',
     fontFamily: 'var(--font-number)', fontWeight: 800, fontSize: '0.7rem',
@@ -130,7 +143,7 @@ const TerminalPanel = () => {
         zIndex: 1000,
         animation: 'slide-up 0.25s ease',
         overflow: 'hidden',
-        transition: isResizing ? 'none' : 'height 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: isResizing ? 'none' : 'height 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
       {/* ── Drag handle ── */}
@@ -154,61 +167,49 @@ const TerminalPanel = () => {
           <div style={{ width: '4px', height: '4px', background: '#333' }} />
         </div>
 
-        {/* Tabs (Centered) */}
+        {/* Tabs (Pane 1) */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '10px' }}>
           {['output', 'timeline', 'graph', 'git']
             .filter(t => t !== 'timeline' || userRole === 'owner')
             .map((t) => (
               <button
                 key={t}
-                onClick={() => {
-                  setTerminalActiveTab(t);
-                }}
+                onClick={() => setTerminalActiveTab(t)}
                 style={tabBtn(activeTab === t)}
               >
-                {t === 'output' ? 'Output' : t === 'timeline' ? 'Timeline' : t === 'graph' ? 'Graph' : 'Git'}
-
-                {/* Active Indicator Underline */}
-                <div style={{
-                  position: 'absolute', bottom: '0', left: '50%',
-                  width: activeTab === t ? '40%' : '0%', height: '2px',
-                  background: '#c1ff72', transform: 'translateX(-50%)',
-                  transition: 'width 0.3s ease',
-                  boxShadow: activeTab === t ? '0 0 10px #c1ff72' : 'none'
-                }} />
-
-                {t === 'timeline' && showTimelineBadge && (
-                  <span style={{
-                    marginLeft: '6px',
-                    fontFamily: 'var(--font-number)', fontWeight: 900,
-                    fontSize: '0.4rem', letterSpacing: '0.05em',
-                    color: '#fff', background: '#ff3e3e',
-                    padding: '1px 4px', borderRadius: '2px',
-                    lineHeight: 1.2,
-                    boxShadow: '0 0 6px rgba(255,62,62,0.5)',
-                    animation: 'pulse-live 1.5s ease-in-out infinite',
-                  }}>ERR</span>
+                {t.toUpperCase()}
+                {activeTab === t && (
+                  <div style={{
+                    position: 'absolute', bottom: '0', left: '50%',
+                    width: '40%', height: '2px', background: '#c1ff72',
+                    transform: 'translateX(-50%)', boxShadow: '0 0 10px #c1ff72'
+                  }} />
                 )}
-
-                {t === 'git' && commitSuggestion && (
-                  <span style={{
-                    marginLeft: '6px',
-                    fontFamily: 'var(--font-number)', fontWeight: 900,
-                    fontSize: '0.5rem',
-                    color: '#000', background: '#c1ff72',
-                    width: '14px', height: '14px',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    borderRadius: '3px', lineHeight: 1,
-                    boxShadow: '0 0 8px rgba(193,255,114,0.5)',
-                    animation: 'pulse-live 2s ease-in-out infinite',
-                  }}>!</span>
-                )}
+                {t === 'timeline' && showTimelineBadge && <span style={errorBadge}>ERR</span>}
               </button>
             ))}
         </div>
 
-        {/* Window controls (Right Aligned) */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px', paddingRight: '12px' }}>
+        {/* Window controls & Pane 2 Tabs if split */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '15px', paddingRight: '12px' }}>
+          {terminalLayoutMode === 'split' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderRight: '1px solid #333', paddingRight: '15px' }}>
+               {['output', 'timeline', 'graph', 'git']
+                .filter(t => t !== 'timeline' || userRole === 'owner')
+                .map((t) => (
+                  <button
+                    key={'s-'+t}
+                    onClick={() => setTerminalSecondActiveTab(t)}
+                    style={{
+                      ...iconBtn('#c1ff72', terminalSecondActiveTab === t),
+                      width: 'auto', padding: '0 8px', fontSize: '0.55rem'
+                    }}
+                  >
+                    {t.substring(0, 1).toUpperCase()}
+                  </button>
+                ))}
+            </div>
+          )}
 
           {/* Split ◓ */}
           <button
@@ -250,11 +251,47 @@ const TerminalPanel = () => {
       </div>
 
 
-      <div style={{ flex: 1, overflow: activeTab === 'graph' ? 'hidden' : 'auto', padding: activeTab === 'graph' ? 0 : '16px 20px', minHeight: 0 }}>
-        {activeTab === 'output' && <OutputPanel />}
-        {activeTab === 'timeline' && <TimelineSlider />}
-        {activeTab === 'graph' && <CausalityGraph />}
-        {activeTab === 'git' && <GitAssistantPanel />}
+      <div style={{ 
+        flex: 1, 
+        display: 'flex', 
+        overflow: 'hidden',
+        background: '#080808'
+      }}>
+        {/* Lpane */}
+        <div style={{ 
+          flex: 1, 
+          overflow: activeTab === 'graph' ? 'hidden' : 'auto', 
+          padding: activeTab === 'graph' ? 0 : '16px 20px',
+          borderRight: terminalLayoutMode === 'split' ? '2px solid #222' : 'none',
+          position: 'relative'
+        }}>
+          {activeTab === 'output' && <OutputPanel />}
+          {activeTab === 'timeline' && <TimelineSlider />}
+          {activeTab === 'graph' && <CausalityGraph />}
+          {activeTab === 'git' && <GitAssistantPanel />}
+          
+          {terminalLayoutMode === 'split' && (
+            <div style={{ position: 'absolute', top: 0, right: 0, padding: '4px 8px', background: '#333', fontSize: '0.5rem', color: '#888', fontFamily: 'var(--font-number)' }}>PANE 1</div>
+          )}
+        </div>
+
+        {/* Rpane (only if split) */}
+        {terminalLayoutMode === 'split' && (
+           <div style={{ 
+            flex: 1, 
+            overflow: terminalSecondActiveTab === 'graph' ? 'hidden' : 'auto', 
+            padding: terminalSecondActiveTab === 'graph' ? 0 : '16px 20px',
+            position: 'relative',
+            background: '#0a0a0a'
+          }}>
+            {terminalSecondActiveTab === 'output' && <OutputPanel />}
+            {terminalSecondActiveTab === 'timeline' && <TimelineSlider />}
+            {terminalSecondActiveTab === 'graph' && <CausalityGraph />}
+            {terminalSecondActiveTab === 'git' && <GitAssistantPanel />}
+
+            <div style={{ position: 'absolute', top: 0, right: 0, padding: '4px 8px', background: '#c1ff72', fontSize: '0.5rem', color: '#000', fontFamily: 'var(--font-number)', fontWeight: 900 }}>PANE 2</div>
+          </div>
+        )}
       </div>
     </div>
   );

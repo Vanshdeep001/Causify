@@ -183,51 +183,55 @@ public class DevServerService {
             server.addLog("✓ Files written to: " + workspaceDir.toString());
             server.addLog("");
 
-            // Step 2: npm install
+            // Step 2: Dependencies / Setup
             server.state = "INSTALLING";
-            server.addLog("📦 PHASE 1 — INSTALLING DEPENDENCIES");
+            String setupCmd = getSetupCommand(server.framework);
+            server.addLog("📦 PHASE 1 — SETTING UP ENVIRONMENT");
             server.addLog("─────────────────────────────────────");
-            server.addLog("$ npm install");
+            server.addLog("$ " + setupCmd);
             server.addLog("");
 
-            boolean installOk = runCommand(workspaceDir, getNpmCommand(), "install", server, 300);
-            if (!installOk) {
+            String[] setupParts = setupCmd.split("\\s+");
+            boolean setupOk = runCommand(workspaceDir, setupParts[0], Arrays.copyOfRange(setupParts, 1, setupParts.length), server, 600);
+            
+            if (!setupOk) {
                 server.state = "ERROR";
                 server.addLog("");
-                server.addLog("✗ npm install failed. Check logs above.");
+                server.addLog("✗ Setup failed. Check logs above.");
                 return;
             }
 
             server.addLog("");
-            server.addLog("✓ Dependencies installed successfully!");
+            server.addLog("✓ Environment ready!");
             server.addLog("");
 
-            // Step 3: npm run dev / npm start
+            // Step 3: Run
             server.state = "STARTING";
             server.addLog("⚡ PHASE 2 — STARTING DEV SERVER");
             server.addLog("─────────────────────────────────");
 
-            String[] cmdParts = server.startCommand.split("\\s+");
-            // Convert "npm run dev" to proper args
-            String[] args;
-            if (cmdParts.length >= 3 && "npm".equals(cmdParts[0]) && "run".equals(cmdParts[1])) {
-                args = new String[]{"run", cmdParts[2]};
-            } else if (cmdParts.length >= 2 && "npm".equals(cmdParts[0])) {
-                args = new String[]{cmdParts[1]};
-            } else {
-                args = Arrays.copyOfRange(cmdParts, 1, cmdParts.length);
-            }
-
-            server.addLog("$ " + server.startCommand);
+            String startCmd = server.startCommand;
+            server.addLog("$ " + startCmd);
             server.addLog("");
 
-            startLongRunningProcess(workspaceDir, server, args);
+            String[] startParts = startCmd.split("\\s+");
+            startLongRunningProcess(workspaceDir, server, startParts);
 
         } catch (Exception e) {
             log.error("[DevServer] Pipeline failed for {}: {}", key, e.getMessage(), e);
             server.state = "ERROR";
             server.addLog("✗ ERROR: " + e.getMessage());
         }
+    }
+
+    private String getSetupCommand(String framework) {
+        if (framework.startsWith("springboot")) {
+            return "mvn dependency:resolve";
+        }
+        if (framework.equals("django") || framework.equals("python")) {
+            return "pip install -r requirements.txt";
+        }
+        return getNpmCommand() + " install";
     }
 
     /**
@@ -262,8 +266,12 @@ public class DevServerService {
             // Remove project dir prefix for relative path
             String relativePath = projectDir.isEmpty() ? filePath : filePath.substring(projectDir.length() + 1);
             
-            // Skip node_modules, .git, etc.
-            if (relativePath.contains("node_modules/") || relativePath.startsWith(".git/")) continue;
+            // Skip node_modules, .git, target, venv, etc.
+            if (relativePath.contains("node_modules/") || 
+                relativePath.startsWith(".git/") || 
+                relativePath.contains("target/") || 
+                relativePath.contains("venv/") || 
+                relativePath.contains("__pycache__/")) continue;
             
             Path targetFile = projectPath.resolve(relativePath);
             Files.createDirectories(targetFile.getParent());
@@ -278,9 +286,12 @@ public class DevServerService {
     /**
      * Run a command and wait for it to complete (used for npm install).
      */
-    private boolean runCommand(Path workDir, String cmd, String arg, ManagedServer server, int timeoutSec) {
+    private boolean runCommand(Path workDir, String cmd, String[] args, ManagedServer server, int timeoutSec) {
         try {
-            ProcessBuilder pb = new ProcessBuilder(cmd, arg);
+            List<String> fullCmd = new ArrayList<>();
+            fullCmd.add(cmd);
+            fullCmd.addAll(Arrays.asList(args));
+            ProcessBuilder pb = new ProcessBuilder(fullCmd);
             pb.directory(workDir.toFile());
             pb.redirectErrorStream(true);
             
@@ -325,9 +336,7 @@ public class DevServerService {
      */
     private void startLongRunningProcess(Path workDir, ManagedServer server, String[] args) {
         try {
-            List<String> command = new ArrayList<>();
-            command.add(getNpmCommand());
-            command.addAll(Arrays.asList(args));
+            List<String> command = new ArrayList<>(Arrays.asList(args));
 
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.directory(workDir.toFile());

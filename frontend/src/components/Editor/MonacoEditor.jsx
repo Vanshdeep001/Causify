@@ -591,7 +591,7 @@ const MonacoEditor = () => {
     >
       {isReplaying && (
         <div className="editor-actions">
-           <div className="tech-label">[REPLAY_MODE]</div>
+           <div className="tech-label">REPLAY MODE</div>
         </div>
       )}
 

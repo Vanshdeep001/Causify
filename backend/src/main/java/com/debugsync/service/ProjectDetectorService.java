@@ -39,51 +39,82 @@ public class ProjectDetectorService {
         DetectionResult result = new DetectionResult();
         List<DetectedProject> projects = new ArrayList<>();
 
-        // Find all package.json files (they mark project roots)
-        Map<String, String> packageJsons = new HashMap<>(); // directory -> content
+        // Map of marker files (directory -> markerFileName)
+        Map<String, List<String>> markersPerDir = new HashMap<>();
+
         for (ProjectFile pf : allFiles) {
             String path = pf.getPath();
-            if (path.endsWith("package.json") && !path.contains("node_modules")) {
-                // Extract the directory of this package.json
-                String dir = extractDirectory(path);
-                packageJsons.put(dir, pf.getContent());
+            if (path.contains("node_modules") || path.contains("target") || path.contains("venv")) continue;
+
+            String dir = extractDirectory(path);
+            String filename = path.substring(path.lastIndexOf('/') + 1);
+
+            if (filename.equals("package.json") ||
+                filename.equals("pom.xml") ||
+                filename.equals("requirements.txt") ||
+                filename.equals("manage.py") ||
+                filename.equals("app.py") ||
+                filename.equals("main.py")) {
+                
+                markersPerDir.computeIfAbsent(dir, k -> new ArrayList<>()).add(filename);
             }
         }
 
-        if (packageJsons.isEmpty()) {
-            // No package.json found — check for loose JS/HTML files
+        if (markersPerDir.isEmpty()) {
             result.setProjects(projects);
             result.setFullstack(false);
             return result;
         }
 
-        // Analyze each package.json
-        for (Map.Entry<String, String> entry : packageJsons.entrySet()) {
+        // Analyze each directory that has markers
+        for (Map.Entry<String, List<String>> entry : markersPerDir.entrySet()) {
             String dir = entry.getKey();
-            String content = entry.getValue();
+            List<String> markers = entry.getValue();
 
-            try {
-                JsonNode pkg = objectMapper.readTree(content);
-                JsonNode deps = mergeObjects(pkg.get("dependencies"), pkg.get("devDependencies"));
-                JsonNode scripts = pkg.get("scripts");
-                String name = pkg.has("name") ? pkg.get("name").asText() : dir;
-
-                DetectedProject project = analyzePackage(dir, name, deps, scripts);
-                if (project != null) {
-                    projects.add(project);
+            // Try Node/NPM first
+            if (markers.contains("package.json")) {
+                Optional<ProjectFile> pf = allFiles.stream().filter(f -> f.getPath().equals(combine(dir, "package.json"))).findFirst();
+                if (pf.isPresent()) {
+                    try {
+                        JsonNode pkg = objectMapper.readTree(pf.get().getContent());
+                        JsonNode deps = mergeObjects(pkg.get("dependencies"), pkg.get("devDependencies"));
+                        JsonNode scripts = pkg.get("scripts");
+                        String name = pkg.has("name") ? pkg.get("name").asText() : (dir.isEmpty() ? "root" : dir);
+                        DetectedProject p = analyzePackage(dir, name, deps, scripts);
+                        if (p != null) projects.add(p);
+                    } catch (Exception e) { log.warn("Failed to parse package.json at '{}'", dir); }
                 }
-            } catch (Exception e) {
-                log.warn("Failed to parse package.json at '{}': {}", dir, e.getMessage());
+            }
+
+            // Try Spring Boot (Java)
+            if (markers.contains("pom.xml")) {
+                projects.add(new DetectedProject(
+                        "backend", "springboot-maven", dir,
+                        "Spring Boot (Maven)", 8080, "mvn spring-boot:run", "🍃"));
+            }
+
+            // Try Python
+            if (markers.contains("manage.py")) {
+                projects.add(new DetectedProject(
+                        "backend", "django", dir,
+                        "Django App", 8000, "python manage.py runserver", "🎸"));
+            } else if (markers.contains("app.py") || markers.contains("main.py") || markers.contains("requirements.txt")) {
+                // If it has requirements.txt but no manage.py, assume a generic Python app/Flask
+                projects.add(new DetectedProject(
+                        "backend", "python", dir,
+                        "Python Server", 5000, markers.contains("app.py") ? "flask run" : "python " + findEntryFile(markers), "🐍"));
             }
         }
 
         // If there's no detection at the subdirectory level, try root-level detection
-        if (projects.isEmpty() && packageJsons.containsKey("")) {
-            // Root-level package.json with no clear frontend/backend marker
-            // Treat as a generic Node.js project
-            projects.add(new DetectedProject(
-                    "backend", "node", "",
-                    "Node.js App", 3000, "npm start", "🟢"));
+        if (projects.isEmpty() && markersPerDir.containsKey("")) {
+            // Root-level markers with no clear frontend/backend identification
+            // Treat as a generic Node.js project if it has a package.json
+            if (markersPerDir.get("").contains("package.json")) {
+                projects.add(new DetectedProject(
+                        "backend", "node", "",
+                        "Node.js App", 3000, "npm start", "🟢"));
+            }
         }
 
         // Determine if fullstack
@@ -211,13 +242,23 @@ public class ProjectDetectorService {
         return null;
     }
 
+    private String combine(String dir, String file) {
+        return dir.isEmpty() ? file : dir + "/" + file;
+    }
+
+    private String findEntryFile(List<String> markers) {
+        if (markers.contains("app.py")) return "app.py";
+        if (markers.contains("main.py")) return "main.py";
+        return "main.py"; // fallback
+    }
+
     /**
      * Extract directory from a file path (e.g., "myapp/frontend/package.json" →
      * "myapp/frontend")
      */
     private String extractDirectory(String path) {
         int lastSlash = path.lastIndexOf('/');
-        return lastSlash > 0 ? path.substring(0, lastSlash) : "";
+        return lastSlash >= 0 ? path.substring(0, lastSlash) : "";
     }
 
     /**

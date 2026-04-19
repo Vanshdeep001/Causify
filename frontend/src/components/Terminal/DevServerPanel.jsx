@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import useEditorStore from '../../store/useEditorStore';
+import causifyLogo from '../../assets/causify-logo.png';
 import {
   detectProject,
   startDevServer,
@@ -40,13 +41,13 @@ const STATE_COLORS = {
 };
 
 const STATE_LABELS = {
-  IDLE: 'SYSTEM_READY',
-  PREPARING: 'FS_VIRTUALIZING',
-  INSTALLING: 'RESC_SYNCING',
-  STARTING: 'INIT_BOOTSTRAP',
-  RUNNING: 'PROCESS_LIVE',
-  STOPPED: 'SIG_TERMINATED',
-  ERROR: 'FAILURE_CRITICAL',
+  IDLE: 'SYSTEM READY',
+  PREPARING: 'PREPARING FILES',
+  INSTALLING: 'SYNCING RESOURCES',
+  STARTING: 'STARTING UP',
+  RUNNING: 'RUNNING',
+  STOPPED: 'STOPPED',
+  ERROR: 'ERROR',
 };
 
 /* ── Utility: Strip ANSI color codes from strings ── */
@@ -214,7 +215,6 @@ const ServerCard = ({ project, serverState, sessionId }) => {
                 lineHeight: 1, textTransform: 'uppercase', letterSpacing: '-0.03em'
               }}>{project.displayName}</h2>
               <div style={{ display: 'flex', gap: '15px', marginTop: '10px' }}>
-                <StatusLabel state={state} />
                 <div style={{
                   fontFamily: 'var(--font-number)', fontSize: '10px',
                   fontWeight: 900, color: '#555', display: 'flex', alignItems: 'center', gap: '6px'
@@ -231,12 +231,12 @@ const ServerCard = ({ project, serverState, sessionId }) => {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
             {isRunning ? (
               <div style={{ textAlign: 'right' }}>
-                <div style={{ fontFamily: 'var(--font-number)', fontSize: '8px', color: fwColor, fontWeight: 900, letterSpacing: '0.1em' }}>ACTIVE_PORT</div>
+                <div style={{ fontFamily: 'var(--font-number)', fontSize: '8px', color: fwColor, fontWeight: 900, letterSpacing: '0.1em' }}>PORT</div>
                 <div style={{ fontFamily: 'var(--font-number)', fontSize: '1.4rem', color: '#fff', fontWeight: 900 }}>:{port}</div>
               </div>
             ) : (
               <div style={{ textAlign: 'right', opacity: 0.3 }}>
-                <div style={{ fontFamily: 'var(--font-number)', fontSize: '8px', color: '#555', fontWeight: 900 }}>DEFAULT_PORT</div>
+                <div style={{ fontFamily: 'var(--font-number)', fontSize: '8px', color: '#555', fontWeight: 900 }}>DEFAULT PORT</div>
                 <div style={{ fontFamily: 'var(--font-number)', fontSize: '1.4rem', color: '#555', fontWeight: 900 }}>:{project.defaultPort}</div>
               </div>
             )}
@@ -261,7 +261,7 @@ const ServerCard = ({ project, serverState, sessionId }) => {
               onMouseEnter={e => { e.currentTarget.style.transform = 'translate(-2px, -2px)'; e.currentTarget.style.boxShadow = '6px 6px 0px #000'; }}
               onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '4px 4px 0px #000'; }}
             >
-              [ TERMINATE_PROCESS ]
+              STOP SERVER
             </button>
           ) : (
             <button
@@ -277,7 +277,7 @@ const ServerCard = ({ project, serverState, sessionId }) => {
               onMouseEnter={e => { e.currentTarget.style.transform = 'translate(-2px, -2px)'; e.currentTarget.style.boxShadow = '6px 6px 0px #000'; }}
               onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '4px 4px 0px #000'; }}
             >
-              [ INITIALIZE_RUNNER ]
+              START SERVER
             </button>
           )}
 
@@ -309,7 +309,7 @@ const ServerCard = ({ project, serverState, sessionId }) => {
               cursor: 'pointer'
             }}
           >
-            {isExpanded ? 'CLOSE_LOGS' : 'OPEN_LOGS'}
+            {isExpanded ? 'HIDE LOGS' : 'SHOW LOGS'}
           </button>
         </div>
       </div>
@@ -341,7 +341,7 @@ const ServerCard = ({ project, serverState, sessionId }) => {
           >
             {logs.length === 0 ? (
               <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333' }}>
-                <span className="hud-glitch-text">WAITING_FOR_OUTPUT...</span>
+                <span className="hud-glitch-text">WAITING FOR OUTPUT...</span>
               </div>
             ) : (
               <div style={{ position: 'relative', zIndex: 5 }}>
@@ -370,9 +370,6 @@ const ServerCard = ({ project, serverState, sessionId }) => {
   );
 };
 
-/* ══════════════════════════════════════════════════
- *  MAIN DEV SERVER PANEL
- * ══════════════════════════════════════════════════ */
 const DevServerPanel = () => {
   const sessionId = useEditorStore((s) => s.sessionId);
   const detectedProjects = useEditorStore((s) => s.detectedProjects);
@@ -381,6 +378,7 @@ const DevServerPanel = () => {
   const setDetectedProjects = useEditorStore((s) => s.setDetectedProjects);
   const updateDevServer = useEditorStore((s) => s.updateDevServer);
 
+  const [activeIdx, setActiveIdx] = useState(0);
   const [isDetecting, setIsDetecting] = useState(false);
   const [detectError, setDetectError] = useState('');
   const pollingRef = useRef(null);
@@ -416,6 +414,7 @@ const DevServerPanel = () => {
     try {
       const result = await detectProject(sessionId);
       setDetectedProjects(result.projects || []);
+      if (result.projects?.length > 0) setActiveIdx(0); // Reset to first on scan
       if (!result.projects || result.projects.length === 0) {
         setDetectError('No React/Node projects detected in this session.');
       }
@@ -427,27 +426,29 @@ const DevServerPanel = () => {
 
   if (!sessionId) return null;
 
+  const currentProject = detectedProjects[activeIdx];
+
   return (
     <div style={{ padding: '20px', height: '100%', overflowY: 'auto', background: 'var(--bg-paper)' }}>
       {/* HUD Header Banner */}
       <div style={{
-        margin: '0 0 30px', padding: '20px 25px',
+        margin: '0 0 20px', padding: '16px 20px',
         background: 'var(--color-black)', border: 'var(--border-thick)',
-        boxShadow: '8px 8px 0px var(--accent-electric-blue)',
+        boxShadow: '4px 4px 0px var(--accent-electric-blue)',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center'
       }}>
-        <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
           <div style={{
-            width: '44px', height: '44px', background: 'var(--accent-toxic-green)',
+            width: '38px', height: '38px', background: 'var(--accent-toxic-green)',
             border: 'var(--border-thin)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '4px 4px 0px #000', overflow: 'hidden'
+            boxShadow: '3px 3px 0px #000', overflow: 'hidden'
           }}>
-            <img src="/icon (1).png" alt="Mission Control Logo" style={{ width: '80%', height: '80%', objectFit: 'contain' }} />
+            <img src={causifyLogo} alt="Mission Control Logo" style={{ width: '80%', height: '80%', objectFit: 'contain' }} />
           </div>
           <div>
-            <h1 className="logo-text" style={{ fontSize: '1.8rem', color: '#fff', margin: 0 }}>MISSION CONTROL</h1>
-            <div className="hud-ticker">
-              SYSTEM_ACTIVE_READY
+            <h1 className="logo-text" style={{ fontSize: '1.4rem', color: '#fff', margin: 0, letterSpacing: '0.05em' }}>MISSION CONTROL</h1>
+            <div className="hud-ticker" style={{ fontSize: '8px', opacity: 0.6 }}>
+              LIVE_ENVIRONMENT_ORCHESTRATOR
             </div>
           </div>
         </div>
@@ -458,19 +459,17 @@ const DevServerPanel = () => {
           className="tech-label"
           style={{
             cursor: 'pointer', background: isDetecting ? '#111' : '#fff',
-            color: '#000', fontSize: '10px', padding: '8px 18px',
-            boxShadow: '4px 4px 0px #000', transition: 'all 0.1s'
+            color: '#000', fontSize: '9px', padding: '6px 14px',
+            boxShadow: '3px 3px 0px #000', transition: 'all 0.1s'
           }}
-          onMouseDown={e => { e.currentTarget.style.boxShadow = '2px 2px 0px #000'; e.currentTarget.style.transform = 'translate(2px, 2px)'; }}
-          onMouseUp={e => { e.currentTarget.style.boxShadow = '4px 4px 0px #000'; e.currentTarget.style.transform = 'translate(0, 0)'; }}
         >
-          {isDetecting ? "[ RE-SCANNING... ]" : "[ REFRESH ]"}
+          {isDetecting ? "SCANNING..." : "REFRESH"}
         </button>
       </div>
 
       {detectError && (
         <div style={{
-          padding: '20px', border: 'var(--border-thick)', background: '#fff',
+          padding: '15px', border: 'var(--border-thick)', background: '#fff',
           boxShadow: 'var(--shadow-brutal)', color: 'var(--accent-crimson)',
           fontFamily: 'var(--font-header)', fontWeight: 800, marginBottom: '20px'
         }}>
@@ -478,10 +477,65 @@ const DevServerPanel = () => {
         </div>
       )}
 
+      {/* Project Switcher Bar */}
+      {detectedProjects.length > 1 && (
+        <div style={{ 
+          display: 'flex', gap: '10px', marginBottom: '25px', 
+          background: '#eee', padding: '4px', border: 'var(--border-thin)'
+        }}>
+          {detectedProjects.map((p, idx) => {
+            const isActive = activeIdx === idx;
+            const server = devServers[p.type];
+            const isRunning = server?.state === 'RUNNING';
+            
+            return (
+              <button
+                key={idx}
+                onClick={() => setActiveIdx(idx)}
+                style={{
+                  flex: 1, padding: '10px 15px', border: 'none',
+                  background: isActive ? '#000' : 'transparent',
+                  color: isActive ? '#fff' : '#555',
+                  fontFamily: 'var(--font-header)', fontSize: '0.7rem', fontWeight: 900,
+                  cursor: 'pointer', transition: 'all 0.2s',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  textTransform: 'uppercase', letterSpacing: '0.1em'
+                }}
+              >
+                {isRunning && (
+                  <div style={{ 
+                    width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-toxic-green)',
+                    boxShadow: '0 0 10px var(--accent-toxic-green)'
+                  }} />
+                )}
+                {p.type.replace('_', ' ')}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Active Project View */}
+      <div style={{ animation: 'fade-in 0.3s ease-out' }}>
+        {currentProject && (
+          <ServerCard 
+            key={currentProject.type} 
+            project={currentProject} 
+            serverState={devServers[currentProject.type]} 
+            sessionId={sessionId} 
+          />
+        )}
+      </div>
+
       {/* Grid of Projects */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(600px, 1fr))', gap: '30px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '30px' }}>
         {detectedProjects.map((p, idx) => (
-          <ServerCard key={idx} project={p} serverState={devServers[p.type]} sessionId={sessionId} />
+          <ServerCard 
+            key={idx} 
+            project={p} 
+            serverState={devServers[p.type]} 
+            sessionId={sessionId} 
+          />
         ))}
       </div>
 

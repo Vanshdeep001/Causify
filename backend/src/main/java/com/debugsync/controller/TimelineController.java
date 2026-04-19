@@ -21,7 +21,10 @@ public class TimelineController {
     }
 
     @GetMapping("/{sessionId}")
-    public ResponseEntity<Map<String, Object>> getTimeline(@PathVariable String sessionId) {
+    public ResponseEntity<?> getTimeline(@PathVariable String sessionId) {
+        if (sessionId == null || sessionId.trim().isEmpty() || "null".equals(sessionId) || "undefined".equals(sessionId)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Invalid Session ID"));
+        }
         List<CodeSnapshot> snapshots = timelineService.getTimeline(sessionId);
         Map<String, Object> response = new HashMap<>();
         response.put("sessionId", sessionId);

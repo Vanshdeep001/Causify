@@ -1,12 +1,15 @@
 {
-  "name": "frontend",
+  "name": "causify",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Causify — Real-time collaborative debugging platform",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:dev": "node scripts/electron-dev.js",
+    "electron:build": "npx vite build && npx electron-builder",
+    "electron:preview": "npx vite build && npx electron ."
   },
   "keywords": [],
   "author": "",
@@ -20,10 +23,64 @@
     "@vitejs/plugin-react": "^6.0.1",
     "@xyflow/react": "^12.10.1",
     "axios": "^1.13.6",
+    "electron-updater": "^6.6.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "sockjs-client": "^1.6.1",
     "vite": "^8.0.1",
     "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "electron": "^35.0.1",
+    "electron-builder": "^26.8.1",
+    "rcedit": "^5.0.2",
+    "sharp": "^0.34.5"
+  },
+  "build": {
+    "appId": "com.causify.app",
+    "productName": "Causify",
+    "asar": true,
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false,
+    "afterPack": "./scripts/afterPack.js",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "node_modules/electron-updater/**/*",
+      "node_modules/builder-util-runtime/**/*",
+      "!node_modules/.cache"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/backend",
+        "to": "backend"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "forceCodeSigning": false,
+    "mac": {
+      "target": "dmg",
+      "icon": "public/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "YOUR_GITHUB_USERNAME",
+      "repo": "causify"
+    }
   }
 }

@@ -14,13 +14,16 @@ public class ErrorLog {
     private String id;
 
     private String executionId;
+    @Column(columnDefinition = "TEXT")
     private String type;
 
     @Column(columnDefinition = "TEXT")
     private String message;
 
     private int lineNumber;
+    @Column(columnDefinition = "TEXT")
     private String involvedVariables;
+    @Column(columnDefinition = "TEXT")
     private String semanticContext;
 
     public ErrorLog() {}

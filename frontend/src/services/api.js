@@ -4,9 +4,17 @@
 
 import axios from 'axios';
 
+// In production Electron the app is loaded via file:// protocol,
+// so relative URLs don't work — point directly at the local backend.
+const isElectronProd =
+  typeof window !== 'undefined' &&
+  (window.location.protocol === 'file:' || window.electronAPI);
+
+const BACKEND_ORIGIN = isElectronProd ? 'http://127.0.0.1:8080' : '';
+
 // Create an Axios instance with defaults
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${BACKEND_ORIGIN}/api`,
   headers: { 'Content-Type': 'application/json' },
   timeout: 30000,
 });

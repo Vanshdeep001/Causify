@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+
 @Service
 public class FileService {
 
@@ -33,10 +34,14 @@ public class FileService {
 
     @Transactional
     public List<Map<String, String>> uploadFiles(String sessionId, List<Map<String, String>> files) {
+        // Clear existing files for this session to avoid "ghost" projects
+        projectFileRepository.deleteBySessionId(sessionId);
+        
         for (Map<String, String> fileData : files) {
             String path = fileData.get("path");
             String content = fileData.get("content");
-            saveFile(sessionId, path, content);
+            // Save as new since we just cleared the repository for this session
+            projectFileRepository.save(new ProjectFile(sessionId, path, content));
         }
         // Return in the same format as getFilesForSession
         return getFilesForSession(sessionId);

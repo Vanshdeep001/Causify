@@ -1,5 +1,6 @@
-# DebugSync Backend — Application Configuration
+# DebugSync Backend — Application Configuration (EXAMPLE)
 # -----------------------------------------------
+# Copy this file to application.yml and fill in your values.
 
 server:
   port: 8080
@@ -39,7 +40,7 @@ spring:
 # Custom DebugSync configuration
 debugsync:
   ai:
-    openrouter-api-key: ${OPENROUTER_API_KEY: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}
+    openrouter-api-key: YOUR_OPENROUTER_API_KEY_HERE
   cors:
     allowed-origins: http://localhost:5173
   git:

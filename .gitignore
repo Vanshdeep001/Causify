@@ -1,13 +1,20 @@
 # ── Backend ──────────────────────────────────────────────
 backend/data/
+backend/projects/
 backend/target/
+backend/src/main/resources/application.yml
 *.mv.db
 *.trace.db
+
+# ── Secrets ──────────────────────────────────────────────
+.env
 
 # ── Frontend ─────────────────────────────────────────────
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/.npmrc
+frontend/.npm-deps-tree.json
 
 # ── IDE / OS ─────────────────────────────────────────────
 .idea/
@@ -21,3 +28,7 @@ Thumbs.db
 startup_log.txt
 temp_log_tail.txt
 timestamps.txt
+
+# ── Desktop Build Artifacts ──────────────────────────────
+frontend/release/
+frontend/resources/backend/*.jar

@@ -67,7 +67,7 @@ const TimelineSlider = () => {
               padding: '4px 12px', cursor: 'pointer', textTransform: 'uppercase'
             }}
           >
-            ▶ EXIT REPLAY
+            EXIT REPLAY
           </button>
         )}
       </div>
@@ -99,7 +99,7 @@ const TimelineSlider = () => {
               fontFamily: 'var(--font-number)', fontWeight: 900, fontSize: '0.75rem',
               color: !isReplaying ? '#c1ff72' : '#aaa', textTransform: 'uppercase'
             }}>
-              ● LIVE — CURRENT
+              LIVE
             </div>
           </div>
 
@@ -109,7 +109,7 @@ const TimelineSlider = () => {
             background: !isReplaying ? 'rgba(193,255,114,0.2)' : 'rgba(255,255,255,0.05)',
             padding: '2px 8px', borderRadius: '2px'
           }}>
-            {!isReplaying ? 'VIEWING' : 'CLICK TO EXIT'}
+            {!isReplaying ? 'VIEWING' : 'CLICK TO GO LIVE'}
           </div>
         </div>
 
@@ -213,7 +213,7 @@ const TimelineSlider = () => {
           paddingTop: '12px', borderTop: '2px solid #333', marginTop: '8px', flexShrink: 0,
           fontSize: '0.68rem', fontFamily: 'monospace', color: '#666', textAlign: 'center'
         }}>
-          📸 SNAPSHOT MODE — Editor is read-only. Click LIVE to resume editing.
+          SNAPSHOT MODE — CLICK LIVE TO EDIT.
         </div>
       )}
     </div>

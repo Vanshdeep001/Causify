@@ -77,7 +77,8 @@ public class SessionController {
 
     // Flat endpoint for bulk upload
     @PostMapping("/upload")
-    public ResponseEntity<?> uploadProject(@RequestParam String sessionId, @RequestBody List<Map<String, String>> files) {
+    public ResponseEntity<?> uploadProject(@RequestParam String sessionId,
+            @RequestBody List<Map<String, String>> files) {
         if (!sessionRepository.existsById(sessionId)) {
             return ResponseEntity.status(404).body("Session not found");
         }
@@ -90,11 +91,11 @@ public class SessionController {
         String sessionId = fileData.get("sessionId");
         String path = fileData.get("path");
         String content = fileData.get("content");
-        
+
         if (sessionId == null || sessionId.isEmpty()) {
             return ResponseEntity.badRequest().body("sessionId is required");
         }
-        
+
         return ResponseEntity.ok(fileService.saveFile(sessionId, path, content));
     }
 
@@ -108,11 +109,15 @@ public class SessionController {
     @GetMapping("/{id}")
     public ResponseEntity<Session> getSession(@PathVariable String id) {
         return sessionRepository.findById(id)
-            .map(ResponseEntity::ok)
-            .orElse(ResponseEntity.notFound().build());
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
+
     @GetMapping("/{id}/files")
     public ResponseEntity<?> getSessionFiles(@PathVariable String id) {
+        if (id == null || id.trim().isEmpty() || "null".equals(id) || "undefined".equals(id)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Invalid Session ID"));
+        }
         if (!sessionRepository.existsById(id)) {
             return ResponseEntity.status(404).body(Map.of("message", "Session not found"));
         }

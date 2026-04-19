@@ -29,7 +29,8 @@ public class AiAnalysisService {
     private static final Logger log = LoggerFactory.getLogger(AiAnalysisService.class);
     private static final String OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-    @Value("${debugsync.ai.openrouter-api-key:}")
+    // Primary: OPENROUTER_API_KEY env var. Fallback: debugsync.ai.openrouter-api-key in application.yml.
+    @Value("${OPENROUTER_API_KEY:${debugsync.ai.openrouter-api-key:}}")
     private String apiKey;
 
     private final ObjectMapper objectMapper = new ObjectMapper();

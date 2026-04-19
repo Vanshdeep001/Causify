@@ -11,6 +11,14 @@
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client/dist/sockjs';
 
+// In production Electron the app is loaded via file:// protocol,
+// so relative URLs don't work — point directly at the local backend.
+const isElectronProd =
+  typeof window !== 'undefined' &&
+  (window.location.protocol === 'file:' || window.electronAPI);
+
+const WS_URL = isElectronProd ? 'http://127.0.0.1:8080/ws' : '/ws';
+
 let stompClient = null;
 let subscriptions = {};
 
@@ -30,7 +38,7 @@ export const connectWebSocket = (sessionId, userInfo, callbacks = {}) => {
   // Create a STOMP client over SockJS
   stompClient = new Client({
     // Use SockJS as the transport
-    webSocketFactory: () => new SockJS('/ws'),
+    webSocketFactory: () => new SockJS(WS_URL),
 
     // Called when connection is established
     onConnect: () => {

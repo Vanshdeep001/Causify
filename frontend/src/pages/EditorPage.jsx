@@ -2,7 +2,7 @@
  * EditorPage.jsx — Main Application Workspace
  * ------------------------------------------------------- */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import MonacoEditor from '../components/Editor/MonacoEditor';
 import TerminalPanel from '../components/Terminal/TerminalPanel';
 import useEditorStore from '../store/useEditorStore';
@@ -161,6 +161,43 @@ const EditorPage = () => {
   const connectedUsers = useEditorStore((s) => s.connectedUsers);
   const [isSaving, setIsSaving] = useState(false);
   const [saveFlash, setSaveFlash] = useState(false);
+
+  // Resizable Sidebar
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const isResizing = useRef(false);
+
+  const startResizing = useCallback((e) => {
+    isResizing.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  const stopResizing = useCallback(() => {
+    if (isResizing.current) {
+      isResizing.current = false;
+      document.body.style.cursor = 'default';
+      document.body.style.userSelect = 'auto';
+    }
+  }, []);
+
+  const resize = useCallback((e) => {
+    if (isResizing.current) {
+      // 12px offset for dashboard-layout padding
+      const newWidth = e.clientX - 12;
+      if (newWidth > 150 && newWidth < 800) {
+        setSidebarWidth(newWidth);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('mousemove', resize);
+    window.addEventListener('mouseup', stopResizing);
+    return () => {
+      window.removeEventListener('mousemove', resize);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [resize, stopResizing]);
 
   const terminalLayoutMode = useEditorStore((s) => s.terminalLayoutMode);
 
@@ -456,7 +493,7 @@ const EditorPage = () => {
               </div>
             )}
             <button onClick={runCode} disabled={isRunning} style={{ height: H, padding: '0 20px', fontFamily: 'var(--font-number)', fontWeight: 900, fontSize: '0.7rem', background: isRunning ? '#eee' : '#c1ff72', border: '2px solid #080808', cursor: isRunning ? 'not-allowed' : 'pointer' }}>
-              {isRunning ? 'RUNNING...' : '▶ RUN'}
+              {isRunning ? 'RUNNING...' : 'RUN'}
             </button>
           </div>
         </div>
@@ -464,8 +501,27 @@ const EditorPage = () => {
         {/* ────── Main Content Area ────── */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
           {isFileExplorerOpen && (
-            <div style={{ width: '260px', flexShrink: 0, position: 'relative', borderRight: '1px solid #ddd' }}>
-              <FileExplorer onToggle={() => setFileExplorerOpen(false)} />
+            <div style={{ width: `${sidebarWidth}px`, flexShrink: 0, position: 'relative', display: 'flex' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <FileExplorer onToggle={() => setFileExplorerOpen(false)} />
+              </div>
+              {/* Resize Handle */}
+              <div
+                onMouseDown={startResizing}
+                style={{
+                  width: '4px',
+                  cursor: 'col-resize',
+                  background: 'transparent',
+                  position: 'absolute',
+                  right: '-2px',
+                  top: 0,
+                  bottom: 0,
+                  zIndex: 10,
+                  transition: 'background 0.2s'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-electric-blue)'}
+                onMouseLeave={e => { if (!isResizing.current) e.currentTarget.style.background = 'transparent'; }}
+              />
             </div>
           )}
 
