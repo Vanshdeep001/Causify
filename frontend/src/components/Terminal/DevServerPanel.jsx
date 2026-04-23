@@ -527,17 +527,7 @@ const DevServerPanel = () => {
         )}
       </div>
 
-      {/* Grid of Projects */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '30px' }}>
-        {detectedProjects.map((p, idx) => (
-          <ServerCard 
-            key={idx} 
-            project={p} 
-            serverState={devServers[p.type]} 
-            sessionId={sessionId} 
-          />
-        ))}
-      </div>
+
 
       {!detectError && detectedProjects.length === 0 && (
         <div style={{ padding: '60px', textAlign: 'center', border: '4px dashed #ddd', opacity: 0.5 }}>

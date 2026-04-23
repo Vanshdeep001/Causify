@@ -211,6 +211,12 @@ public class DevServerService {
             server.addLog("─────────────────────────────────");
 
             String startCmd = server.startCommand;
+            // On Windows, "npm" must be "npm.cmd" for ProcessBuilder
+            String osName = System.getProperty("os.name", "").toLowerCase();
+            if (osName.contains("win")) {
+                startCmd = startCmd.replaceFirst("^npm ", "npm.cmd ")
+                                   .replaceFirst("^npx ", "npx.cmd ");
+            }
             server.addLog("$ " + startCmd);
             server.addLog("");
 
