@@ -4,16 +4,18 @@
  * Maximize / Restore / Close controls in the navbar.
  * ------------------------------------------------------- */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import useEditorStore from '../../store/useEditorStore';
 import OutputPanel from '../Output/OutputPanel';
 import TimelineSlider from '../Timeline/TimelineSlider';
 import CausalityGraph from '../Graph/CausalityGraph';
 import GitAssistantPanel from './GitAssistantPanel';
+import XTermTab from './XTermTab';
+import DeployPanel from '../Deploy/DeployPanel';
 
 const DEFAULT_HEIGHT = 280;
 const MIN_HEIGHT = 120;
-const NAVBAR_H = 40;
+const NAVBAR_H = 32;
 
 const TerminalPanel = () => {
   const isTerminalOpen = useEditorStore((s) => s.isTerminalOpen);
@@ -26,6 +28,7 @@ const TerminalPanel = () => {
   const userRole = useEditorStore((s) => s.userRole);
   const commitSuggestion = useEditorStore((s) => s.commitSuggestion);
   const detectedProjects = useEditorStore((s) => s.detectedProjects);
+  const deployStatus = useEditorStore((s) => s.deployStatus);
 
   const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
   const setTerminalSecondActiveTab = useEditorStore((s) => s.setTerminalSecondActiveTab);
@@ -36,9 +39,56 @@ const TerminalPanel = () => {
   const [isResizing, setIsResizing] = useState(false);
   const prevHeightRef = useRef(DEFAULT_HEIGHT);
 
+  // ── Terminal instance management ──
+  const [termSessions, setTermSessions] = useState([]); // [{ id, label }]
+  const [activeTermIdx, setActiveTermIdx] = useState(0);
+  const termIdCounter = useRef(0);
+
+  // Create a new terminal session
+  const addTerminalSession = useCallback(() => {
+    termIdCounter.current += 1;
+    const newSession = {
+      id: `term-${termIdCounter.current}`,
+      label: `Terminal ${termIdCounter.current}`,
+    };
+    setTermSessions((prev) => {
+      const updated = [...prev, newSession];
+      setActiveTermIdx(updated.length - 1);
+      return updated;
+    });
+    // Also switch to terminal tab
+    setTerminalActiveTab('terminal');
+  }, [setTerminalActiveTab]);
+
+  // Close a terminal session
+  const closeTerminalSession = useCallback((idx) => {
+    setTermSessions((prev) => {
+      const updated = prev.filter((_, i) => i !== idx);
+      // Adjust active index
+      if (updated.length === 0) {
+        setActiveTermIdx(0);
+      } else if (activeTermIdx >= updated.length) {
+        setActiveTermIdx(updated.length - 1);
+      }
+      return updated;
+    });
+  }, [activeTermIdx]);
+
+  // Auto-create first terminal session when switching to terminal tab
+  useEffect(() => {
+    if (activeTab === 'terminal' && termSessions.length === 0) {
+      termIdCounter.current += 1;
+      setTermSessions([{ id: `term-${termIdCounter.current}`, label: `Terminal ${termIdCounter.current}` }]);
+      setActiveTermIdx(0);
+    }
+  }, [activeTab]);
+
   // Red dot badge on TIMELINE tab when error exists and not already viewing timeline
   const showTimelineBadge =
     Boolean(error && error.trim()) && snapshots.length > 0 && activeTab !== 'timeline';
+
+  // Pulsing badge on DEPLOY tab when deploying
+  const showDeployBadge = deployStatus === 'deploying' && activeTab !== 'deploy';
 
   // ── Maximize / Split / Normal Logic ──
   const handleMaximize = () => {
@@ -94,56 +144,123 @@ const TerminalPanel = () => {
   if (!isTerminalOpen) return null;
 
   /* ── Shared icon-button style ─────── */
-  const iconBtn = (color = '#888', isActive = false) => ({
-    width: '26px', height: '26px',
+  const iconBtn = (isActive = false) => ({
+    width: '24px', height: '24px',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontFamily: 'var(--font-number)', fontWeight: 900, fontSize: '0.65rem',
-    background: isActive ? color : 'transparent', color: isActive ? '#000' : color,
-    border: `1.5px solid ${color}`,
+    fontFamily: 'var(--font-number)', fontWeight: 500, fontSize: '0.62rem',
+    background: isActive ? 'var(--s4)' : 'transparent',
+    color: isActive ? 'var(--t1)' : 'var(--t3)',
+    border: '1px solid ' + (isActive ? 'var(--line-strong)' : 'var(--line)'),
     cursor: 'pointer', flexShrink: 0,
-    transition: 'background 0.12s, color 0.12s',
+    transition: 'all 0.15s ease',
     lineHeight: 1,
-    borderRadius: '2px'
+    borderRadius: '5px'
   });
 
   const errorBadge = {
-    marginLeft: '6px',
-    fontFamily: 'var(--font-number)', fontWeight: 900,
-    fontSize: '0.4rem', letterSpacing: '0.05em',
-    color: '#fff', background: '#ff3e3e',
-    padding: '1px 4px', borderRadius: '2px',
-    lineHeight: 1.2,
-    boxShadow: '0 0 6px rgba(255,62,62,0.5)',
-    animation: 'pulse-live 1.5s ease-in-out infinite',
+    position: 'absolute',
+    top: '-3px',
+    right: '-3px',
+    fontFamily: 'var(--font-number)', fontWeight: 600,
+    fontSize: '0.42rem', letterSpacing: '0.05em',
+    color: '#fff', background: 'var(--crimson)',
+    padding: '1px 4px', borderRadius: '3px',
+    lineHeight: 1.3,
+    animation: 'pulse-live 1.8s ease-in-out infinite',
+    zIndex: 10,
   };
 
   const tabBtn = (isActive) => ({
-    height: NAVBAR_H + 'px', padding: '0 24px',
-    fontFamily: 'var(--font-number)', fontWeight: 800, fontSize: '0.7rem',
-    color: isActive ? '#c1ff72' : '#666',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer', letterSpacing: '0.15em',
-    textTransform: 'uppercase',
-    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-    position: 'relative',
+    width: '24px',
+    height: '24px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    background: isActive ? 'var(--lime)' : 'transparent',
+    color: isActive ? '#000000' : 'var(--t3)',
+    border: isActive ? '1px solid var(--lime)' : '1px solid transparent',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+    boxShadow: isActive ? '0 4px 12px rgba(255, 255, 255, 0.15)' : 'none',
+    position: 'relative',
   });
+
+  const tabIcons = {
+    output: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+        <line x1="7" y1="8" x2="17" y2="8" />
+        <line x1="7" y1="12" x2="17" y2="12" />
+        <line x1="7" y1="16" x2="13" y2="16" />
+      </svg>
+    ),
+    terminal: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="4 17 10 11 4 5" />
+        <line x1="12" y1="19" x2="20" y2="19" />
+      </svg>
+    ),
+    timeline: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <polyline points="12 6 12 12 16 14" />
+      </svg>
+    ),
+    graph: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="18" cy="5" r="3" />
+        <circle cx="6" cy="12" r="3" />
+        <circle cx="18" cy="19" r="3" />
+        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+      </svg>
+    ),
+    git: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="18" cy="18" r="3" />
+        <circle cx="6" cy="6" r="3" />
+        <circle cx="6" cy="18" r="3" />
+        <path d="M18 15V10a4 4 0 0 0-4-4H9" />
+        <line x1="6" y1="9" x2="6" y2="15" />
+      </svg>
+    ),
+    deploy: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M22 2L11 13" /><path d="M22 2L15 22L11 13L2 9L22 2Z" />
+      </svg>
+    ),
+  };
+
+  const tabLabels = {
+    output: 'Output',
+    terminal: 'Terminal',
+    timeline: 'Timeline',
+    graph: 'Graph',
+    git: 'Git Assistant',
+    deploy: 'Deploy',
+  };
+
+  const isMaximized = terminalLayoutMode === 'maximized';
+  const isSplit = terminalLayoutMode === 'split';
 
   return (
     <div
       style={{
-        position: 'fixed', bottom: 0, left: 0, width: '100%',
-        height: currentHeight,
-        background: '#111', color: '#fff',
-        borderTop: '2px solid #333',
+        position: isMaximized ? 'absolute' : 'relative',
+        top: isMaximized ? 0 : 'auto',
+        left: isMaximized ? 0 : 'auto',
+        right: isMaximized ? 0 : 'auto',
+        bottom: 0,
+        width: '100%',
+        height: isMaximized ? '100%' : isSplit ? '400px' : `${terminalHeight}px`,
+        background: 'var(--s1)', color: 'var(--t1)',
+        borderTop: '1px solid var(--line-strong)',
         display: 'flex', flexDirection: 'column',
-        zIndex: 1000,
-        animation: 'slide-up 0.25s ease',
+        zIndex: isMaximized ? 1000 : 20,
+        animation: isMaximized ? 'none' : 'slide-up 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
         overflow: 'hidden',
-        transition: isResizing ? 'none' : 'height 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+        transition: isResizing ? 'none' : 'height 0.2s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
       {/* ── Drag handle ── */}
@@ -158,51 +275,120 @@ const TerminalPanel = () => {
 
       {/* ── Navbar ── */}
       <div style={{
-        display: 'grid', gridTemplateColumns: '120px 1fr 120px', alignItems: 'center',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         height: `${NAVBAR_H}px`, flexShrink: 0,
-        borderBottom: '1px solid #222',
+        borderBottom: '1px solid var(--line)',
+        padding: '0 10px',
       }}>
-        {/* Left Side (Empty/Logo) */}
-        <div style={{ paddingLeft: '12px', opacity: 0.5 }}>
-          <div style={{ width: '4px', height: '4px', background: '#333' }} />
-        </div>
-
         {/* Tabs (Pane 1) */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '10px' }}>
-          {['output', 'timeline', 'graph', 'git']
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {['output', 'terminal', 'timeline', 'graph', 'git', 'deploy']
             .filter(t => t !== 'timeline' || userRole === 'owner')
             .map((t) => (
               <button
                 key={t}
                 onClick={() => setTerminalActiveTab(t)}
+                title={tabLabels[t]}
                 style={tabBtn(activeTab === t)}
+                onMouseEnter={e => { if (activeTab !== t) e.currentTarget.style.color = 'var(--t1)'; }}
+                onMouseLeave={e => { if (activeTab !== t) e.currentTarget.style.color = 'var(--t3)'; }}
               >
-                {t.toUpperCase()}
-                {activeTab === t && (
-                  <div style={{
-                    position: 'absolute', bottom: '0', left: '50%',
-                    width: '40%', height: '2px', background: '#c1ff72',
-                    transform: 'translateX(-50%)', boxShadow: '0 0 10px #c1ff72'
-                  }} />
-                )}
+                {tabIcons[t]}
                 {t === 'timeline' && showTimelineBadge && <span style={errorBadge}>ERR</span>}
+                {t === 'deploy' && showDeployBadge && <span style={{...errorBadge, background: '#38BDF8'}}>LIVE</span>}
               </button>
             ))}
+
+          {/* Terminal instance sub-tabs + add button */}
+          {activeTab === 'terminal' && (
+            <>
+              <div style={{ width: '1px', height: '16px', background: 'var(--line)', marginLeft: '2px', marginRight: '2px' }} />
+              {termSessions.map((session, idx) => (
+                <button
+                  key={session.id}
+                  onClick={() => setActiveTermIdx(idx)}
+                  title={session.label}
+                  style={{
+                    ...tabBtn(activeTermIdx === idx),
+                    width: 'auto',
+                    padding: '0 6px',
+                    fontSize: '0.5rem',
+                    fontFamily: 'var(--font-number)',
+                    fontWeight: 600,
+                    letterSpacing: '0.04em',
+                    gap: '4px',
+                    borderRadius: '3px',
+                    height: '20px',
+                  }}
+                  onMouseEnter={e => { if (activeTermIdx !== idx) e.currentTarget.style.color = 'var(--t1)'; }}
+                  onMouseLeave={e => { if (activeTermIdx !== idx) e.currentTarget.style.color = 'var(--t3)'; }}
+                >
+                  {idx + 1}
+                  {termSessions.length > 1 && (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeTerminalSession(idx);
+                      }}
+                      style={{
+                        marginLeft: '2px',
+                        fontSize: '0.55rem',
+                        color: 'var(--t4)',
+                        cursor: 'pointer',
+                        lineHeight: 1,
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.color = 'var(--crimson)'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--t4)'}
+                    >
+                      ✕
+                    </span>
+                  )}
+                </button>
+              ))}
+              <button
+                onClick={addTerminalSession}
+                title="New terminal"
+                style={{
+                  width: '20px',
+                  height: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'transparent',
+                  color: 'var(--t4)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '3px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  fontSize: '0.7rem',
+                  padding: 0,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--t1)'; e.currentTarget.style.borderColor = 'var(--line-strong)'; }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--t4)'; e.currentTarget.style.borderColor = 'var(--line)'; }}
+              >
+                +
+              </button>
+            </>
+          )}
         </div>
 
         {/* Window controls & Pane 2 Tabs if split */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '15px', paddingRight: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {terminalLayoutMode === 'split' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderRight: '1px solid #333', paddingRight: '15px' }}>
-               {['output', 'timeline', 'graph', 'git']
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', borderRight: '1px solid var(--line)', paddingRight: '10px' }}>
+               {['output', 'timeline', 'graph', 'git', 'deploy']
                 .filter(t => t !== 'timeline' || userRole === 'owner')
                 .map((t) => (
                   <button
                     key={'s-'+t}
                     onClick={() => setTerminalSecondActiveTab(t)}
+                    title={tabLabels[t]}
                     style={{
-                      ...iconBtn('#c1ff72', terminalSecondActiveTab === t),
-                      width: 'auto', padding: '0 8px', fontSize: '0.55rem'
+                      ...iconBtn(terminalSecondActiveTab === t),
+                      width: 'auto', padding: '0 7px', fontSize: '0.55rem',
+                      color: terminalSecondActiveTab === t ? 'var(--lime)' : 'var(--t3)',
+                      borderColor: terminalSecondActiveTab === t ? 'var(--lime-line)' : 'var(--line)',
+                      background: terminalSecondActiveTab === t ? 'var(--lime-dim)' : 'transparent',
                     }}
                   >
                     {t.substring(0, 1).toUpperCase()}
@@ -211,39 +397,42 @@ const TerminalPanel = () => {
             </div>
           )}
 
-          {/* Split ◓ */}
+          {/* Split */}
           <button
             onClick={handleSplit}
             title={terminalLayoutMode === 'split' ? 'Restore' : 'Split View'}
-            style={iconBtn('#888', terminalLayoutMode === 'split')}
-            onMouseEnter={e => { if (terminalLayoutMode !== 'split') { e.currentTarget.style.background = '#888'; e.currentTarget.style.color = '#fff'; } }}
-            onMouseLeave={e => { if (terminalLayoutMode !== 'split') { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; } }}
+            style={iconBtn(terminalLayoutMode === 'split')}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--t1)'; e.currentTarget.style.borderColor = 'var(--line-strong)'; }}
+            onMouseLeave={e => { if (terminalLayoutMode !== 'split') { e.currentTarget.style.color = 'var(--t3)'; e.currentTarget.style.borderColor = 'var(--line)'; } }}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="3" y1="12" x2="21" y2="12" /></svg>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="3" y1="12" x2="21" y2="12" /></svg>
           </button>
 
-          {/* Maximize □ */}
+          {/* Maximize */}
           <button
             onClick={handleMaximize}
             title={terminalLayoutMode === 'maximized' ? 'Restore' : 'Maximize'}
-            style={iconBtn('#888', terminalLayoutMode === 'maximized')}
-            onMouseEnter={e => { if (terminalLayoutMode !== 'maximized') { e.currentTarget.style.background = '#888'; e.currentTarget.style.color = '#fff'; } }}
-            onMouseLeave={e => { if (terminalLayoutMode !== 'maximized') { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#888'; } }}
+            style={iconBtn(terminalLayoutMode === 'maximized')}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--t1)'; e.currentTarget.style.borderColor = 'var(--line-strong)'; }}
+            onMouseLeave={e => { if (terminalLayoutMode !== 'maximized') { e.currentTarget.style.color = 'var(--t3)'; e.currentTarget.style.borderColor = 'var(--line)'; } }}
           >
             {terminalLayoutMode === 'maximized' ? (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" /></svg>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="8" y="4" width="12" height="12" rx="1.5" />
+                <path d="M4 8v10a2 2 0 0 0 2 2h10" />
+              </svg>
             ) : (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /></svg>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /></svg>
             )}
           </button>
 
-          {/* Close ✕ */}
+          {/* Close */}
           <button
             onClick={toggleTerminal}
             title="Close terminal"
-            style={iconBtn('#555')}
-            onMouseEnter={e => { e.currentTarget.style.background = '#ff3e3e'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = '#ff3e3e'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#555'; e.currentTarget.style.borderColor = '#555'; }}
+            style={iconBtn(false)}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--crimson)'; e.currentTarget.style.borderColor = 'rgba(229,72,77,0.4)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--t3)'; e.currentTarget.style.borderColor = 'var(--line)'; }}
           >
             ✕
           </button>
@@ -251,45 +440,73 @@ const TerminalPanel = () => {
       </div>
 
 
-      <div style={{ 
-        flex: 1, 
-        display: 'flex', 
+      <div style={{
+        flex: 1,
+        display: 'flex',
         overflow: 'hidden',
-        background: '#080808'
+        background: 'var(--s0)'
       }}>
         {/* Lpane */}
-        <div style={{ 
-          flex: 1, 
-          overflow: activeTab === 'graph' ? 'hidden' : 'auto', 
-          padding: activeTab === 'graph' ? 0 : '16px 20px',
-          borderRight: terminalLayoutMode === 'split' ? '2px solid #222' : 'none',
-          position: 'relative'
-        }}>
+        <div
+          className="no-scrollbar"
+          style={{
+            flex: 1,
+            overflow: activeTab === 'graph' || activeTab === 'deploy' ? 'hidden' : (activeTab === 'terminal' ? 'hidden' : 'auto'),
+            padding: activeTab === 'graph' || activeTab === 'output' || activeTab === 'terminal' || activeTab === 'deploy' ? 0 : '16px 20px',
+            borderRight: terminalLayoutMode === 'split' ? '1px solid var(--line-strong)' : 'none',
+            position: 'relative'
+          }}
+        >
           {activeTab === 'output' && <OutputPanel />}
+          {activeTab === 'terminal' && termSessions.length > 0 && (
+            <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+              {termSessions.map((session, idx) => (
+                <div
+                  key={session.id}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    position: idx === activeTermIdx ? 'relative' : 'absolute',
+                    top: 0,
+                    left: 0,
+                    visibility: idx === activeTermIdx ? 'visible' : 'hidden',
+                    zIndex: idx === activeTermIdx ? 1 : 0,
+                  }}
+                >
+                  <XTermTab key={session.id} isActive={idx === activeTermIdx} />
+                </div>
+              ))}
+            </div>
+          )}
           {activeTab === 'timeline' && <TimelineSlider />}
           {activeTab === 'graph' && <CausalityGraph />}
           {activeTab === 'git' && <GitAssistantPanel />}
-          
+          {activeTab === 'deploy' && <DeployPanel />}
+
           {terminalLayoutMode === 'split' && (
-            <div style={{ position: 'absolute', top: 0, right: 0, padding: '4px 8px', background: '#333', fontSize: '0.5rem', color: '#888', fontFamily: 'var(--font-number)' }}>PANE 1</div>
+            <div style={{ position: 'absolute', top: 0, right: 0, padding: '3px 8px', background: 'var(--s3)', fontSize: '0.5rem', color: 'var(--t3)', fontFamily: 'var(--font-number)', borderRadius: '0 0 0 5px' }}>PANE 1</div>
           )}
         </div>
 
         {/* Rpane (only if split) */}
         {terminalLayoutMode === 'split' && (
-           <div style={{ 
-            flex: 1, 
-            overflow: terminalSecondActiveTab === 'graph' ? 'hidden' : 'auto', 
-            padding: terminalSecondActiveTab === 'graph' ? 0 : '16px 20px',
-            position: 'relative',
-            background: '#0a0a0a'
-          }}>
+           <div
+            className="no-scrollbar"
+            style={{
+              flex: 1,
+              overflow: terminalSecondActiveTab === 'graph' || terminalSecondActiveTab === 'deploy' ? 'hidden' : 'auto',
+              padding: terminalSecondActiveTab === 'graph' || terminalSecondActiveTab === 'output' || terminalSecondActiveTab === 'deploy' ? 0 : '16px 20px',
+              position: 'relative',
+              background: 'var(--s0)'
+            }}
+          >
             {terminalSecondActiveTab === 'output' && <OutputPanel />}
             {terminalSecondActiveTab === 'timeline' && <TimelineSlider />}
             {terminalSecondActiveTab === 'graph' && <CausalityGraph />}
             {terminalSecondActiveTab === 'git' && <GitAssistantPanel />}
+            {terminalSecondActiveTab === 'deploy' && <DeployPanel />}
 
-            <div style={{ position: 'absolute', top: 0, right: 0, padding: '4px 8px', background: '#c1ff72', fontSize: '0.5rem', color: '#000', fontFamily: 'var(--font-number)', fontWeight: 900 }}>PANE 2</div>
+            <div style={{ position: 'absolute', top: 0, right: 0, padding: '3px 8px', background: 'var(--lime-dim)', fontSize: '0.5rem', color: 'var(--lime)', fontFamily: 'var(--font-number)', fontWeight: 600, borderRadius: '0 0 0 5px' }}>PANE 2</div>
           </div>
         )}
       </div>

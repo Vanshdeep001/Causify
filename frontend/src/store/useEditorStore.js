@@ -13,9 +13,177 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { executeCode } from '../services/api';
+import { executeCode, createSnapshot, getTimeline, getDeployments } from '../services/api';
 import { analyzeImpact } from '../utils/impactAnalyzer';
-import { sendCodeChange, sendRevert } from '../services/socket';
+import { sendCodeChange, sendRevert, sendFollowStart, sendFollowStop } from '../services/socket';
+
+const parseExecutionGraph = (code, language) => {
+  if (!code) return { nodes: [], edges: [] };
+
+  const lines = code.split('\n');
+  let realLines = 0;
+  const allLines = [];
+  
+  lines.forEach(l => {
+    const trimmed = l.trim();
+    if (trimmed && !trimmed.startsWith('//') && !trimmed.startsWith('*') && !trimmed.startsWith('/*')) {
+      realLines++;
+    }
+    allLines.push(trimmed);
+  });
+
+  const isSmallCode = realLines < 40;
+  const maxFunctions = isSmallCode ? 6 : 3;
+  const maxVars = isSmallCode ? 4 : 0;
+
+  const nodes = [];
+  const edges = [];
+  let nodeId = 1;
+
+  // 1. Entry Point
+  let entryLabel = 'Program Entry';
+  if (language === 'java') {
+    const mainClassMatch = code.match(/class\s+(\w+)/);
+    if (mainClassMatch) {
+      entryLabel = `${mainClassMatch[1]}.main()`;
+    }
+  }
+  const entryNode = { id: `e${nodeId++}`, type: 'entry', label: entryLabel, detail: `${realLines} lines of code` };
+  nodes.push(entryNode);
+
+  // 2. Functions
+  const functionNodes = new Map();
+  const funcRegexes = [
+    /function\s+([a-zA-Z_$][\w$]*)/g,
+    /(?:const|let|var)\s+([a-zA-Z_$][\w$]*)\s*=\s*(?:\(|async)/g,
+    /def\s+([a-zA-Z_][\w]*)\s*\(/g,
+    /(?:public|private|protected|static|\s)+[\w<>\[\]]+\s+([a-zA-Z_][\w]*)\s*\(/g
+  ];
+
+  const allFuncNames = [];
+  allLines.forEach((line, idx) => {
+    funcRegexes.forEach(regex => {
+      let match;
+      regex.lastIndex = 0;
+      while ((match = regex.exec(line)) !== null) {
+        const name = match[1];
+        if (name && !['main', 'if', 'for', 'while', 'switch', 'catch'].includes(name)) {
+          if (!allFuncNames.includes(name)) {
+            allFuncNames.push(name);
+            if (functionNodes.size < maxFunctions) {
+              const nid = `e${nodeId++}`;
+              functionNodes.set(name, nid);
+              nodes.push({ id: nid, type: 'function', label: `${name}()`, detail: `Line ${idx + 1}` });
+              edges.push({ id: `${entryNode.id}-${nid}`, source: entryNode.id, target: nid, label: 'calls' });
+            }
+          }
+        }
+      }
+    });
+  });
+
+  if (allFuncNames.length > maxFunctions) {
+    const nid = `e${nodeId++}`;
+    nodes.push({ id: nid, type: 'function', label: `+${allFuncNames.length - maxFunctions} more functions`, detail: 'Not all shown' });
+    edges.push({ id: `${entryNode.id}-${nid}`, source: entryNode.id, target: nid, label: 'also defines' });
+  }
+
+  // 3. Variables (only for small code)
+  if (maxVars > 0) {
+    const varRegexes = [
+      /(?:const|let|var)\s+([a-zA-Z_$][\w$]*)\s*=/g,
+      /(?:int|double|float|bool|char|string|String|auto|string)\s+([a-zA-Z_][\w]*)\s*[=;\[]/g
+    ];
+    let varCount = 0;
+    allLines.forEach((line, idx) => {
+      if (varCount >= maxVars) return;
+      varRegexes.forEach(regex => {
+        let match;
+        regex.lastIndex = 0;
+        while ((match = regex.exec(line)) !== null) {
+          if (varCount >= maxVars) return;
+          const name = match[1];
+          if (name && name.length > 1 && !['return', 'this', 'using', 'namespace', 'cout', 'cin', 'std'].includes(name)) {
+            const nid = `e${nodeId++}`;
+            nodes.push({ id: nid, type: 'variable', label: name, detail: `Line ${idx + 1}` });
+            edges.push({ id: `${entryNode.id}-${nid}`, source: entryNode.id, target: nid, label: 'declares' });
+            varCount++;
+          }
+        }
+      });
+    });
+  }
+
+  // 4. Loops (only for small code, max 2)
+  if (isSmallCode) {
+    let loopCount = 0;
+    allLines.forEach((line, idx) => {
+      if (loopCount >= 2) return;
+      const trimmed = line.trim();
+      if (trimmed.startsWith('for ') || trimmed.startsWith('for(') ||
+          trimmed.startsWith('while ') || trimmed.startsWith('while(') ||
+          trimmed.includes('.forEach(') || trimmed.includes('.map(')) {
+        const loopType = trimmed.includes('for') ? 'for loop' : trimmed.includes('while') ? 'while loop' : 'iteration';
+        const nid = `e${nodeId++}`;
+        nodes.push({ id: nid, type: 'loop', label: loopType, detail: `Line ${idx + 1}` });
+        
+        // Find parent function
+        let parentId = null;
+        for (let i = idx; i >= 0; i--) {
+          const match = allLines[i].match(/(?:function\s+(\w+))|(?:def\s+(\w+)\s*\()|(?:void|int|double|string)\s+(\w+)\s*\(/);
+          if (match) {
+            const name = match[1] || match[2] || match[3];
+            if (name && functionNodes.has(name)) {
+              parentId = functionNodes.get(name);
+              break;
+            }
+          }
+        }
+        
+        edges.push({ id: `${parentId || entryNode.id}-${nid}`, source: parentId || entryNode.id, target: nid, label: 'iterates' });
+        loopCount++;
+      }
+    });
+  }
+
+  // 5. High-level features: Console Output, User Input, UI, etc.
+  let hasOutput = false;
+  let hasInput = false;
+  allLines.forEach(line => {
+    if (line.includes('console.log') || line.includes('System.out.print') || line.includes('print(') || line.includes('cout <<') || line.includes('std::cout')) {
+      hasOutput = true;
+    }
+    if (line.includes('cin >>') || line.includes('std::cin') || line.includes('input(') || line.includes('Scanner') || line.includes('process.stdin') || line.includes('readline')) {
+      hasInput = true;
+    }
+  });
+
+  if (hasInput) {
+    const nid = `e${nodeId++}`;
+    nodes.push({ id: nid, type: 'condition', label: 'User Input', detail: 'Reads from stdin' });
+    edges.push({ id: `${entryNode.id}-${nid}`, source: entryNode.id, target: nid, label: 'requests' });
+  }
+
+  if (hasOutput) {
+    const nid = `e${nodeId++}`;
+    nodes.push({ id: nid, type: 'output', label: 'Console Output', detail: 'Prints to stdout' });
+    edges.push({ id: `${entryNode.id}-${nid}`, source: entryNode.id, target: nid, label: 'outputs' });
+  }
+
+  // 6. Success Node
+  const successId = `e${nodeId++}`;
+  const summary = `${allFuncNames.length} functions, ${realLines} lines`;
+  nodes.push({ id: successId, type: 'success', label: '✓ Ran Successfully', detail: summary });
+  
+  if (functionNodes.size > 0) {
+    const lastFnId = Array.from(functionNodes.values()).pop();
+    edges.push({ id: `${lastFnId}-${successId}`, source: lastFnId, target: successId, label: 'completes' });
+  } else {
+    edges.push({ id: `${entryNode.id}-${successId}`, source: entryNode.id, target: successId, label: 'completes' });
+  }
+
+  return { nodes, edges };
+};
 
 const useEditorStore = create(persist((set, get) => ({
 
@@ -36,6 +204,7 @@ const useEditorStore = create(persist((set, get) => ({
   activePath: '',           // Currently opened file path
   code: '',                 // Code content
   language: 'javascript',  // Editor language mode
+  collisionWarning: null,   // { line: number, username: string } - active concurrency block
 
   // ---- Save State ----
   fileHandles: {},          // { [path]: FileSystemFileHandle } — for silent re-saves
@@ -47,6 +216,13 @@ const useEditorStore = create(persist((set, get) => ({
   error: '',                // Stderr from last execution
   isRunning: false,         // Whether code is currently executing
   executionHistory: [],     // History of all executions
+
+  // ---- Live State Cache (for Replay restoration) ----
+  liveCode: '',
+  liveOutput: '',
+  liveError: '',
+  liveRootCause: null,
+  liveCausalityGraph: null,
 
   // ---- Timeline State ----
   snapshots: [],            // Array of { id, code, userId, timestamp, diff }
@@ -107,13 +283,50 @@ const useEditorStore = create(persist((set, get) => ({
   projectDetected: false,        // Whether detection has been run
   devServerNotification: null,   // Notification banner for project detection
 
+  // ---- Deployment State ----
+  deployStatus: 'idle',           // 'idle' | 'connecting' | 'env-confirm' | 'pushing-env' | 'deploying' | 'success' | 'error'
+  deployLogs: [],                 // Array of log line strings
+  deployUrl: null,                // Final deployment URL on success
+  deployError: null,              // Error message on failure
+  deployStartTime: null,          // Deployment start timestamp
+  currentDeployId: null,          // Active deploy PTY ID
+  deployHistory: [],              // [{id, url, timestamp, status, framework, snapshotId}]
+  vercelConnected: false,         // Whether token is stored
+  vercelUsername: null,           // Vercel account display name
+  deployFramework: null,          // Detected framework for current deploy
+  pendingRedeploy: false,         // Flag to trigger deployment from another tab
+
   // ---- UI Layout State ----
+  activeView: 'code',               // 'code' | 'whiteboard'
+  whiteboardElements: [],           // Elements on the whiteboard
+  whiteboardCursors: {},            // Remote users' whiteboard cursors: { [userId]: { x, y, username, color, timestamp } }
+  whiteboardPan: { x: 0, y: 0 },    // Canvas pan coordinate offset
+  whiteboardZoom: 1,                 // Canvas zoom scale
+
+  // ---- Voice Room State ----
+  voiceRoomUsers: [],               // [{ id, username, color }] users currently in voice room
+  isInVoiceRoom: false,             // Whether current user has joined voice
+  isMuted: false,                   // Local microphone mute
+  isDeafened: false,                // Local audio deafen (can't hear others)
+  speakingUsers: {},                // { [userId]: true/false } — speaking indicators
+
+  // ---- Follow Mode State ----
+  followingUserId: null,            // ID of the user being followed (null = not following)
+  followedByUsers: [],              // IDs of users following this user
+  followState: null,                // Incoming leader state: { leaderId, file, scrollTop, cursorLine, cursorColumn, selectionRange }
+  followToast: null,                // Toast message for follow mode events
+
   terminalActiveTab: 'output',      // Active tab in primary (left) pane
   terminalSecondActiveTab: 'graph', // Active tab in secondary (right) pane in split mode
   isTerminalOpen: false,            // Whether terminal is visible
   terminalHeight: 300,              // Height in pixels (normal mode)
   terminalLayoutMode: 'normal',      // 'normal' | 'split' | 'maximized'
   isFileExplorerOpen: true,    // File explorer visibility
+  pendingTerminalCommand: null, // Command queued to run in PTY
+
+  // ---- CodeShot State ----
+  codeShotModal: null,         // null = closed, or { code, language, filePath, startLine, endLine, branch, timestamp }
+  editorSelection: null,       // null = no selection, or { code, startLine, endLine }
 
   // ---- Actions: Session ----
   setSession: (sessionId, sessionName) => set({ sessionId, sessionName }),
@@ -169,14 +382,19 @@ const useEditorStore = create(persist((set, get) => ({
       fileMap[f.path] = f.content;
       savedMap[f.path] = f.content; // Seed baseline for dirty tracking
     });
-    const firstPath = fileArray.length > 0 ? fileArray[0].path : 'index.js';
+    const firstPath = fileArray.length > 0 ? fileArray[0].path : '';
     const firstContent = fileArray.length > 0 ? fileArray[0].content : '';
+    const language = firstPath ? get().detectLanguage(firstPath) : 'javascript';
     set({
       files: fileMap,
       activePath: firstPath,
       code: firstContent,
-      language: get().detectLanguage(firstPath),
+      language,
       savedContents: savedMap,
+      output: '',
+      error: '',
+      rootCause: null,
+      causalityGraph: parseExecutionGraph(firstContent, language)
     });
   },
 
@@ -184,20 +402,31 @@ const useEditorStore = create(persist((set, get) => ({
     const { files, isReplaying } = get();
     if (isReplaying) return;
     get().markFileOpened(path, files[path] || '');
+    const code = files[path] || '';
+    const language = get().detectLanguage(path);
     set({
       activePath: path,
-      code: files[path] || '',
-      language: get().detectLanguage(path)
+      code,
+      language,
+      output: '',
+      error: '',
+      rootCause: null,
+      causalityGraph: parseExecutionGraph(code, language)
     });
   },
 
   addFile: (path, content = '') => {
+    const language = get().detectLanguage(path);
     set((s) => ({
       files: { ...s.files, [path]: content },
       savedContents: { ...s.savedContents, [path]: content }, // Seed baseline
       activePath: path,
       code: content,
-      language: get().detectLanguage(path)
+      language,
+      output: '',
+      error: '',
+      rootCause: null,
+      causalityGraph: parseExecutionGraph(content, language)
     }));
   },
 
@@ -228,15 +457,20 @@ const useEditorStore = create(persist((set, get) => ({
       const remainingPaths = Object.keys(newFiles);
       newActive = remainingPaths.length > 0 ? remainingPaths[0] : '';
       newCode = remainingPaths.length > 0 ? newFiles[newActive] : '';
+      const language = get().detectLanguage(newActive);
 
       set({
         files: newFiles,
         activePath: newActive,
         code: newCode,
-        language: get().detectLanguage(newActive),
+        language,
         fileHandles: newHandles,
         savedContents: newSaved,
         fileSavedPaths: newDiskPaths,
+        output: '',
+        error: '',
+        rootCause: null,
+        causalityGraph: parseExecutionGraph(newCode, language)
       });
     } else {
       set({
@@ -264,17 +498,31 @@ const useEditorStore = create(persist((set, get) => ({
   },
 
   setCode: (code, remote = false) => {
-    const { activePath } = get();
+    const { activePath, language, isReplaying } = get();
+    if (isReplaying) {
+      set((s) => ({
+        code,
+        files: { ...s.files, [activePath]: code }
+      }));
+      return;
+    }
     set((s) => ({
       code,
-      files: { ...s.files, [activePath]: code }
+      files: { ...s.files, [activePath]: code },
+      output: '',
+      error: '',
+      rootCause: null,
+      causalityGraph: parseExecutionGraph(code, language)
     }));
     // Impact warnings are only shown to REMOTE users (in updateRemoteFile),
     // not to the user who is making the change.
   },
 
+  setCollisionWarning: (warning) => set({ collisionWarning: warning }),
+
   // Update a specific file from a remote event
   updateRemoteFile: (path, content, userId) => {
+    if (!userId) return; // Ignore own changes echoed back from socket to prevent typing glitch
     const { activePath, files, connectedUsers, remoteLineChanges } = get();
     const oldContent = files[path] || '';
     const newContent = content || '';
@@ -405,6 +653,106 @@ const useEditorStore = create(persist((set, get) => ({
 
   setLanguage: (language) => set({ language }),
   setFileExplorerOpen: (isOpen) => set({ isFileExplorerOpen: isOpen }),
+  setActiveView: (activeView) => set({ activeView }),
+  setWhiteboardElements: (val) => set((s) => ({
+    whiteboardElements: typeof val === 'function' ? val(s.whiteboardElements) : val
+  })),
+  setWhiteboardPan: (whiteboardPan) => set({ whiteboardPan }),
+  setWhiteboardZoom: (whiteboardZoom) => set({ whiteboardZoom }),
+  updateWhiteboardCursor: (userId, cursorData) => {
+    set((s) => ({
+      whiteboardCursors: { ...s.whiteboardCursors, [userId]: { ...cursorData, timestamp: Date.now() } }
+    }));
+    // Auto-remove stale whiteboard cursors after 10s
+    setTimeout(() => {
+      const cursor = get().whiteboardCursors[userId];
+      if (cursor && Date.now() - cursor.timestamp > 9000) {
+        set((s) => {
+          const newCursors = { ...s.whiteboardCursors };
+          delete newCursors[userId];
+          return { whiteboardCursors: newCursors };
+        });
+      }
+    }, 10000);
+  },
+  removeWhiteboardCursor: (userId) => {
+    set((s) => {
+      const newCursors = { ...s.whiteboardCursors };
+      delete newCursors[userId];
+      return { whiteboardCursors: newCursors };
+    });
+  },
+
+  // ---- Actions: Voice Room ----
+  setVoiceRoomUsers: (users) => set({ voiceRoomUsers: users }),
+  joinVoiceRoom: () => set({ isInVoiceRoom: true }),
+  leaveVoiceRoom: () => set({ isInVoiceRoom: false, isMuted: false, isDeafened: false }),
+  toggleMute: () => set((s) => ({ isMuted: !s.isMuted })),
+  toggleDeafen: () => set((s) => ({
+    isDeafened: !s.isDeafened,
+    // When deafening, also mute (standard behavior)
+    isMuted: !s.isDeafened ? true : s.isMuted,
+  })),
+  setSpeakingUser: (userId, isSpeaking) => {
+    set((s) => ({
+      speakingUsers: { ...s.speakingUsers, [userId]: isSpeaking }
+    }));
+  },
+  addVoiceUser: (user) => {
+    set((s) => {
+      if (s.voiceRoomUsers.find(u => u.id === user.id)) return {};
+      return { voiceRoomUsers: [...s.voiceRoomUsers, user] };
+    });
+  },
+  removeVoiceUser: (userId) => {
+    set((s) => ({
+      voiceRoomUsers: s.voiceRoomUsers.filter(u => u.id !== userId),
+      speakingUsers: (() => { const c = { ...s.speakingUsers }; delete c[userId]; return c; })(),
+    }));
+  },
+
+  // ---- Actions: Follow Mode ----
+  startFollowing: (leaderId) => {
+    const { sessionId, currentUser, followingUserId } = get();
+    // Stop following previous leader if any
+    if (followingUserId && sessionId && currentUser) {
+      sendFollowStop(sessionId, currentUser.id, followingUserId);
+    }
+    set({ followingUserId: leaderId, followState: null });
+    if (sessionId && currentUser) {
+      sendFollowStart(sessionId, currentUser.id, leaderId);
+    }
+  },
+  stopFollowing: () => {
+    const { sessionId, currentUser, followingUserId } = get();
+    if (followingUserId && sessionId && currentUser) {
+      sendFollowStop(sessionId, currentUser.id, followingUserId);
+    }
+    set({ followingUserId: null, followState: null });
+  },
+  setFollowState: (state) => set({ followState: state }),
+  addFollower: (followerId) => {
+    set((s) => {
+      if (s.followedByUsers.includes(followerId)) return {};
+      return { followedByUsers: [...s.followedByUsers, followerId] };
+    });
+  },
+  removeFollower: (followerId) => {
+    set((s) => ({
+      followedByUsers: s.followedByUsers.filter(id => id !== followerId)
+    }));
+  },
+  setFollowToast: (msg) => {
+    set({ followToast: msg });
+    if (msg) {
+      setTimeout(() => set({ followToast: null }), 3000);
+    }
+  },
+
+  // ---- Actions: CodeShot ----
+  openCodeShotModal: (data) => set({ codeShotModal: data }),
+  closeCodeShotModal: () => set({ codeShotModal: null }),
+  setEditorSelection: (sel) => set({ editorSelection: sel }),
 
   // ---- Actions: File Save ----
 
@@ -477,10 +825,26 @@ const useEditorStore = create(persist((set, get) => ({
     const { snapshots } = get();
     if (index >= 0 && index < snapshots.length) {
       const snap = snapshots[index];
+      
+      // Save current live state if not already replaying
+      const isCurrentlyReplaying = get().isReplaying;
+      const liveStateUpdate = isCurrentlyReplaying ? {} : {
+        liveCode: get().code,
+        liveOutput: get().output,
+        liveError: get().error,
+        liveRootCause: get().rootCause,
+        liveCausalityGraph: get().causalityGraph
+      };
+
       set({
+        ...liveStateUpdate,
         currentSnapshotIndex: index,
         isReplaying: true,
         code: snap.code,
+        output: snap.output || '',
+        error: snap.error || '',
+        rootCause: snap.rootCause || null,
+        causalityGraph: snap.causalityGraph || null,
         commitSuggestion: snap.suggestion || null
       });
     }
@@ -488,15 +852,39 @@ const useEditorStore = create(persist((set, get) => ({
 
   // Return to live editing (exit replay)
   goToLive: () => {
-    const { snapshots } = get();
-    const lastCode = snapshots.length > 0
-      ? snapshots[snapshots.length - 1].code
-      : get().code;
     set({
       currentSnapshotIndex: -1,
       isReplaying: false,
-      code: lastCode,
+      code: get().liveCode !== undefined ? get().liveCode : get().code,
+      output: get().liveOutput !== undefined ? get().liveOutput : '',
+      error: get().liveError !== undefined ? get().liveError : '',
+      rootCause: get().liveRootCause !== undefined ? get().liveRootCause : null,
+      causalityGraph: get().liveCausalityGraph !== undefined ? get().liveCausalityGraph : null,
     });
+  },
+
+  // Restore a specific snapshot code as the live code
+  restoreSnapshot: (index) => {
+    const { snapshots, sessionId, currentUser, activePath } = get();
+    if (index >= 0 && index < snapshots.length) {
+      const snap = snapshots[index];
+      
+      set({
+        code: snap.code,
+        liveCode: snap.code,
+        isReplaying: false,
+        currentSnapshotIndex: -1,
+        output: snap.output || '',
+        error: snap.error || '',
+        rootCause: snap.rootCause || null,
+        causalityGraph: snap.causalityGraph || null
+      });
+
+      // Broadcast the restored code to all collaborators
+      if (sessionId && currentUser && activePath) {
+        sendCodeChange(sessionId, currentUser.id, activePath, snap.code);
+      }
+    }
   },
 
   // ---- Actions: Root Cause ----
@@ -511,6 +899,91 @@ const useEditorStore = create(persist((set, get) => ({
   runCode: async () => {
     const { code, language, sessionId, isRunning, isReplaying, files } = get();
     if (isRunning || isReplaying) return;
+
+    // Detect if the code requires interactive user input (cin, input(), Scanner, etc.)
+    const inputPatterns = {
+      cpp: /(std\s*::\s*)?cin\s*>>|scanf\s*\(|std\s*::\s*getline|getchar\s*\(/i,
+      c: /scanf\s*\(|gets\s*\(|getchar\s*\(/i,
+      python: /\binput\s*\(|sys\s*\.\s*stdin\s*\.\s*read/i,
+      java: /Scanner\b|System\s*\.\s*in|BufferedReader\b|console\s*\(\s*\)\s*\.\s*readLine/i,
+      javascript: /readline\b|prompt\s*\(|process\s*\.\s*stdin/i,
+      typescript: /readline\b|prompt\s*\(|process\s*\.\s*stdin/i,
+      csharp: /Console\s*\.\s*Read/i
+    };
+    const lang = language ? language.toLowerCase() : '';
+    const needsInput = inputPatterns[lang] 
+      ? inputPatterns[lang].test(code)
+      : Object.values(inputPatterns).some(regex => regex.test(code));
+
+    // If Electron is running and the program needs user input, run it in the native interactive CLI terminal
+    if (window.electronAPI && needsInput) {
+      try {
+        const extMap = { python: '.py', java: '.java', cpp: '.cpp', 'c++': '.cpp', c: '.c', javascript: '.js', typescript: '.ts' };
+        const ext = extMap[lang] || '.txt';
+        const filename = `temp_${Date.now()}${ext}`;
+        
+        // Write the editor code to a temporary file in the local filesystem
+        const filePath = await window.electronAPI.saveTempFile({ content: code, filename });
+        
+        const isWindows = window.navigator.userAgent.toLowerCase().includes('win');
+        let runCommand = '';
+        
+        if (lang === 'python') {
+          runCommand = `python -u "${filePath}"`;
+        } else if (lang === 'cpp' || lang === 'c++') {
+          const exePath = filePath.replace(/\.cpp$/, isWindows ? '.exe' : '');
+          runCommand = `g++ "${filePath}" -o "${exePath}" && "${exePath}"`;
+        } else if (lang === 'c') {
+          const exePath = filePath.replace(/\.c$/, isWindows ? '.exe' : '');
+          runCommand = `gcc "${filePath}" -o "${exePath}" && "${exePath}"`;
+        } else if (lang === 'java') {
+          runCommand = `java "${filePath}"`;
+        } else {
+          runCommand = `node "${filePath}"`;
+        }
+
+        // Switch active tab to 'terminal' and queue the run command to execute in PTY
+        const parsedGraph = parseExecutionGraph(code, language);
+        
+        // Create a snapshot for this interactive PTY run so it is saved in timeline history
+        let snapData = null;
+        if (sessionId) {
+          try {
+            snapData = await createSnapshot(sessionId, code, 'system');
+          } catch (e) {
+            console.error('[EditorStore] Failed to create snapshot on backend:', e);
+          }
+        }
+        
+        const snapshotId = snapData?.id || `local-${Date.now()}`;
+        const newSnapshot = {
+          id: snapshotId,
+          code,
+          userId: 'system',
+          timestamp: snapData?.timestamp || new Date().toISOString(),
+          diff: snapData?.diff || '',
+          hasError: false,
+          output: '',
+          error: '',
+          rootCause: null,
+          causalityGraph: parsedGraph
+        };
+        get().addSnapshot(newSnapshot);
+
+        set({
+          output: '',
+          error: '',
+          rootCause: null,
+          causalityGraph: parsedGraph,
+          terminalActiveTab: 'terminal',
+          isTerminalOpen: true,
+          pendingTerminalCommand: runCommand
+        });
+        return;
+      } catch (err) {
+        console.error('[EditorStore] Failed to save/run interactive code in terminal:', err);
+      }
+    }
 
     const isStaticWebProject = files && Object.keys(files).some(p => p.toLowerCase().endsWith('.html'));
 
@@ -545,6 +1018,21 @@ const useEditorStore = create(persist((set, get) => ({
       });
     }
   },
+  loadSessionHistory: async (sessionId) => {
+    if (!sessionId) return;
+    try {
+      const timelineData = await getTimeline(sessionId);
+      if (timelineData && timelineData.snapshots) {
+        set({ snapshots: timelineData.snapshots });
+      }
+      const deployData = await getDeployments(sessionId);
+      if (deployData && deployData.deployments) {
+        set({ deployHistory: deployData.deployments });
+      }
+    } catch (err) {
+      console.error('[EditorStore] Failed to load session history:', err);
+    }
+  },
   setTerminalActiveTab: (tab) => {
     set({
       terminalActiveTab: tab,
@@ -565,6 +1053,7 @@ const useEditorStore = create(persist((set, get) => ({
   setTerminalHeight: (height) => set({ terminalHeight: height }),
   setTerminalLayoutMode: (mode) => set({ terminalLayoutMode: mode }),
   setFileExplorerOpen: (isOpen) => set({ isFileExplorerOpen: isOpen }),
+  clearPendingTerminalCommand: () => set({ pendingTerminalCommand: null }),
 
   // ---- Compound Actions ----
 
@@ -612,7 +1101,15 @@ const useEditorStore = create(persist((set, get) => ({
         result.snapshot.hasError = false;
         result.snapshot.error = '';
       }
-      get().addSnapshot(result.snapshot);
+      
+      const snapshotWithState = {
+        ...result.snapshot,
+        output: finalOutput,
+        error: finalError,
+        rootCause: finalRootCause,
+        causalityGraph: finalGraph
+      };
+      get().addSnapshot(snapshotWithState);
     }
   },
 
@@ -651,6 +1148,25 @@ const useEditorStore = create(persist((set, get) => ({
       setTimeout(() => set({ devServerNotification: null }), 8000);
     }
   },
+
+  // ---- Actions: Deployment ----
+  setDeployStatus: (status) => set({ deployStatus: status }),
+  addDeployLog: (line) => set((s) => ({ deployLogs: [...s.deployLogs, line] })),
+  clearDeployLogs: () => set({ deployLogs: [] }),
+  setDeployUrl: (url) => set({ deployUrl: url }),
+  setDeployError: (error) => set({ deployError: error }),
+  setDeployStartTime: (time) => set({ deployStartTime: time }),
+  setCurrentDeployId: (id) => set({ currentDeployId: id }),
+  setVercelConnected: (connected, username) => set({ vercelConnected: connected, vercelUsername: username }),
+  setDeployFramework: (framework) => set({ deployFramework: framework }),
+  addDeploymentRecord: (record) => set((s) => ({ deployHistory: [...s.deployHistory, record] })),
+  setDeployHistory: (history) => set({ deployHistory: history }),
+  setPendingRedeploy: (pending) => set({ pendingRedeploy: pending }),
+  resetDeploy: () => set({
+    deployStatus: 'idle', deployLogs: [], deployUrl: null,
+    deployError: null, currentDeployId: null, deployStartTime: null,
+    deployFramework: null,
+  }),
 
   // ---- Actions: Impact Detection ----
   addImpactWarning: (warning) => {
@@ -722,10 +1238,37 @@ const useEditorStore = create(persist((set, get) => ({
       isReplaying: false,
       rootCause: null,
       causalityGraph: null,
+      collisionWarning: null,
       // Save state
       fileHandles: {},
       savedContents: {},
       fileSavedPaths: {},
+      activeView: 'code',
+      whiteboardElements: [],
+      whiteboardCursors: {},
+      // Voice room
+      voiceRoomUsers: [],
+      isInVoiceRoom: false,
+      isMuted: false,
+      isDeafened: false,
+      speakingUsers: {},
+      // Follow mode
+      followingUserId: null,
+      followedByUsers: [],
+      followState: null,
+      followToast: null,
+      // Deployment
+      deployStatus: 'idle',
+      deployLogs: [],
+      deployUrl: null,
+      deployError: null,
+      deployStartTime: null,
+      currentDeployId: null,
+      deployHistory: [],
+      vercelConnected: false,
+      vercelUsername: null,
+      deployFramework: null,
+      pendingRedeploy: false,
     });
   },
 }), {
@@ -747,6 +1290,10 @@ const useEditorStore = create(persist((set, get) => ({
     userRole: state.userRole,
     activePath: state.activePath,
     language: state.language,
+    activeView: state.activeView,
+    whiteboardElements: state.whiteboardElements,
+    whiteboardPan: state.whiteboardPan,
+    whiteboardZoom: state.whiteboardZoom,
   }),
 }));
 

@@ -33,13 +33,13 @@ const ImpactWarningBanner = () => {
   return (
     <div style={{
       background: '#080808',
-      border: '3px solid #ff3e3e',
+      border: '3px solid #E5484D',
       borderBottom: 'none',
       padding: '0',
       fontFamily: 'var(--font-body)',
       position: 'relative',
       zIndex: 50,
-      boxShadow: '0 4px 0 #ff3e3e',
+      boxShadow: '0 4px 0 #E5484D',
       animation: 'impact-slide-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
     }}>
 
@@ -47,7 +47,7 @@ const ImpactWarningBanner = () => {
       <div style={{
         height: '3px',
         background: errorImpacts.length > 0
-          ? 'linear-gradient(90deg, #ff3e3e, #ff6b35, #ff3e3e)'
+          ? 'linear-gradient(90deg, #E5484D, #ff6b35, #E5484D)'
           : 'linear-gradient(90deg, #ffc107, #ff9800, #ffc107)',
         animation: 'impact-pulse 2s ease-in-out infinite',
       }} />
@@ -64,8 +64,8 @@ const ImpactWarningBanner = () => {
           <div style={{
             width: '32px', height: '32px', flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: errorImpacts.length > 0 ? 'rgba(255,62,62,0.2)' : 'rgba(255,193,7,0.2)',
-            border: `2px solid ${errorImpacts.length > 0 ? '#ff3e3e' : '#ffc107'}`,
+            background: errorImpacts.length > 0 ? 'rgba(229,72,77,0.2)' : 'rgba(255,193,7,0.2)',
+            border: `2px solid ${errorImpacts.length > 0 ? '#E5484D' : '#ffc107'}`,
             fontFamily: 'var(--font-header)',
             fontSize: '1rem',
             animation: 'impact-icon-pulse 1.5s ease-in-out infinite',
@@ -78,7 +78,7 @@ const ImpactWarningBanner = () => {
             <div style={{
               fontFamily: 'var(--font-header)', fontWeight: 900,
               fontSize: '0.7rem', letterSpacing: '0.08em',
-              color: errorImpacts.length > 0 ? '#ff3e3e' : '#ffc107',
+              color: errorImpacts.length > 0 ? '#E5484D' : '#ffc107',
               marginBottom: '2px',
             }}>
               {errorImpacts.length > 0 ? 'CROSS-FILE ERROR DETECTED' : 'CROSS-FILE WARNING'}
@@ -118,7 +118,7 @@ const ImpactWarningBanner = () => {
           <button
             onClick={() => revertChange(warning.id)}
             style={{
-              background: '#ff3e3e', border: '2px solid #080808',
+              background: '#E5484D', border: '2px solid #080808',
               color: '#fff', padding: '5px 14px',
               fontFamily: 'var(--font-header)', fontWeight: 900,
               fontSize: '0.65rem', cursor: 'pointer',
@@ -170,9 +170,9 @@ const ImpactWarningBanner = () => {
                 flexShrink: 0, padding: '2px 8px',
                 fontFamily: 'var(--font-number)', fontWeight: 900,
                 fontSize: '0.55rem', letterSpacing: '0.08em',
-                background: impact.severity === 'error' ? 'rgba(255,62,62,0.2)' : 'rgba(255,193,7,0.2)',
-                color: impact.severity === 'error' ? '#ff3e3e' : '#ffc107',
-                border: `1px solid ${impact.severity === 'error' ? '#ff3e3e' : '#ffc107'}`,
+                background: impact.severity === 'error' ? 'rgba(229,72,77,0.2)' : 'rgba(255,193,7,0.2)',
+                color: impact.severity === 'error' ? '#E5484D' : '#ffc107',
+                border: `1px solid ${impact.severity === 'error' ? '#E5484D' : '#ffc107'}`,
               }}>
                 {impact.severity === 'error' ? 'ERROR' : 'WARN'}
               </span>

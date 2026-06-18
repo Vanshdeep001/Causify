@@ -72,15 +72,13 @@ function getBackendCwd() {
 /* ── Spawn Backend ── */
 
 async function spawnBackend(isDev = false) {
-  // In dev mode, skip if port 8080 is already occupied
-  if (isDev) {
-    const portBusy = await isPortInUse(8080);
-    if (portBusy) {
-      console.log('[Backend] Port 8080 already in use — skipping spawn (backend running externally)');
-      backendStatus = 'running';
-      pushLog('[SYSTEM] Detected external backend on port 8080 — skipping spawn.');
-      return;
-    }
+  // Always check if port 8080 is already occupied (external backend running)
+  const portBusy = await isPortInUse(8080);
+  if (portBusy) {
+    console.log('[Backend] Port 8080 already in use — skipping spawn (backend running externally)');
+    backendStatus = 'running';
+    pushLog('[SYSTEM] Detected external backend on port 8080 — skipping spawn.');
+    return;
   }
 
   const jarPath = getJarPath();

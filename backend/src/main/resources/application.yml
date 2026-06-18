@@ -3,6 +3,9 @@
 
 server:
   port: 8080
+  tomcat:
+    max-http-form-post-size: 100MB
+    max-swallow-size: 100MB
   error:
     include-message: always
     include-exception: true
@@ -41,7 +44,7 @@ debugsync:
   ai:
     openrouter-api-key: ${OPENROUTER_API_KEY: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}
   cors:
-    allowed-origins: http://localhost:5173
+    allowed-origins: http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000,http://localhost:3001
   git:
     workspace-root: ./git-workspaces
     timeout-seconds: 30

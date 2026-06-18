@@ -18,6 +18,9 @@ const { registerFileSystemHandlers } = require('./ipc/fileSystem');
 const { registerBackendHandlers, spawnBackend, killBackend } = require('./ipc/backend');
 const { registerUpdaterHandlers } = require('./ipc/updater');
 const { registerSecurityHandlers } = require('./ipc/security');
+const { registerClipboardHandlers } = require('./ipc/clipboard');
+const { registerPtyHandlers, killAllPtySessions } = require('./ipc/pty');
+const { registerDeployHandlers, killAllDeploySessions } = require('./ipc/deploy');
 
 /* ── Constants ── */
 const isDev = !app.isPackaged;
@@ -125,13 +128,52 @@ async function loadDevURL(retries = 60) {
 
 /* ── App Lifecycle ── */
 
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv) => {
   // If user tries to open a second instance, focus the existing window
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   }
+
+  // On Windows/Linux, the causify:// URL is passed in argv
+  const deepLinkUrl = argv.find(arg => arg.startsWith('causify://'));
+  if (deepLinkUrl && mainWindow) {
+    handleDeepLink(deepLinkUrl);
+  }
 });
+
+// macOS: handle causify:// URLs via open-url event
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  if (url.startsWith('causify://') && mainWindow) {
+    handleDeepLink(url);
+  }
+});
+
+/**
+ * Parse a causify:// deep-link URL and send navigation data to the renderer.
+ */
+function handleDeepLink(url) {
+  try {
+    const qIndex = url.indexOf('?');
+    if (qIndex === -1) return;
+
+    const params = new URLSearchParams(url.substring(qIndex + 1));
+    const data = {
+      projectId: params.get('project'),
+      filePath: params.get('file'),
+      startLine: parseInt(params.get('start'), 10) || null,
+      endLine: parseInt(params.get('end'), 10) || null,
+      nodeId: params.get('node') || null,
+    };
+
+    if (data.filePath && mainWindow) {
+      mainWindow.webContents.send('navigate-to-codeshot', data);
+    }
+  } catch (err) {
+    console.error('[Electron] Failed to parse deep link:', err.message);
+  }
+}
 
 app.whenReady().then(async () => {
   // Register all IPC handlers
@@ -139,18 +181,40 @@ app.whenReady().then(async () => {
   registerBackendHandlers();
   registerUpdaterHandlers();
   registerSecurityHandlers();
+  registerClipboardHandlers();
+  registerPtyHandlers();
+  registerDeployHandlers();
+
+  // Register causify:// custom protocol for deep links
+  app.setAsDefaultProtocolClient('causify');
 
   // Spawn backend (skips in dev if port 8080 is already in use)
   try {
     await spawnBackend(isDev);
   } catch (err) {
     console.error('[Electron] Backend spawn error:', err.message);
-    // Non-fatal in dev mode — backend might be running externally
     if (!isDev) {
+      // Determine a helpful message based on the error
+      let userMessage = err.message;
+      let detail = '';
+
+      if (err.message.includes('Java not found') || err.message.includes('ENOENT')) {
+        userMessage = 'Java is not installed on this computer.';
+        detail = 'Causify requires Java 17 or later to run.\n\n'
+          + 'Download Java from:\nhttps://adoptium.net/temurin/releases/\n\n'
+          + 'After installing Java, restart Causify.';
+      } else if (err.message.includes('code 1')) {
+        userMessage = 'Backend failed to start (Java may be outdated).';
+        detail = 'This usually means Java is installed but the version is too old.\n\n'
+          + 'Causify requires Java 17+. Check your version:\n  java -version\n\n'
+          + 'Download the latest from:\nhttps://adoptium.net/temurin/releases/';
+      }
+
       const response = dialog.showMessageBoxSync({
         type: 'error',
         title: 'Backend Failed to Start',
-        message: err.message,
+        message: userMessage,
+        detail: detail,
         buttons: ['Retry', 'Continue Without Backend', 'Quit'],
         defaultId: 0,
       });
@@ -167,6 +231,8 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  killAllPtySessions();
+  killAllDeploySessions();
   killBackend();
   if (process.platform !== 'darwin') {
     app.quit();
@@ -181,6 +247,7 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
+  killAllPtySessions();
   killBackend();
 });
 

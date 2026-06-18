@@ -1,5 +1,8 @@
 /*
  * CollaborationHandler.java — WebSocket message handler for real-time collab
+ *
+ * Handles: code sync, user presence, cursors, whiteboard, reverts,
+ *          voice room signaling (WebRTC), and follow mode state relay.
  */
 package com.debugsync.websocket;
 
@@ -59,10 +62,72 @@ public class CollaborationHandler {
         messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/cursor", payload);
     }
 
+    @MessageMapping("/session/{sessionId}/whiteboard")
+    public void handleWhiteboardUpdate(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
+        log.debug("Whiteboard update in session {}", sessionId);
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/whiteboard", payload);
+    }
+
     @MessageMapping("/session/{sessionId}/revert")
     public void handleRevert(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
         log.info("Revert in session {} for file {} by user {}", 
             sessionId, payload.get("path"), payload.get("username"));
         messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/revert", payload);
+    }
+
+    /* ────────────────────────────────────────────────────────────
+     * Voice Room — WebRTC Signaling
+     * The backend only relays signaling messages (SDP offer/answer,
+     * ICE candidates) between peers. No media processing.
+     * ──────────────────────────────────────────────────────────── */
+
+    @MessageMapping("/session/{sessionId}/voice/join")
+    public void handleVoiceJoin(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
+        log.info("User {} joined voice room in session {}", payload.get("userId"), sessionId);
+        payload.put("type", "voice-join");
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/voice", payload);
+    }
+
+    @MessageMapping("/session/{sessionId}/voice/leave")
+    public void handleVoiceLeave(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
+        log.info("User {} left voice room in session {}", payload.get("userId"), sessionId);
+        payload.put("type", "voice-leave");
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/voice", payload);
+    }
+
+    @MessageMapping("/session/{sessionId}/voice/signal")
+    public void handleVoiceSignal(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
+        // Relay WebRTC signaling data (SDP offer/answer, ICE candidates) to all peers
+        payload.put("type", "voice-signal");
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/voice", payload);
+    }
+
+    /* ────────────────────────────────────────────────────────────
+     * Follow Mode — Editor State Relay
+     * Broadcasts lightweight editor state (file, scroll, cursor,
+     * selection) from leader to followers. No video/pixels.
+     * ──────────────────────────────────────────────────────────── */
+
+    @MessageMapping("/session/{sessionId}/follow/start")
+    public void handleFollowStart(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
+        log.info("User {} started following user {} in session {}",
+            payload.get("followerId"), payload.get("leaderId"), sessionId);
+        payload.put("type", "follow-start");
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/follow", payload);
+    }
+
+    @MessageMapping("/session/{sessionId}/follow/stop")
+    public void handleFollowStop(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
+        log.info("User {} stopped following user {} in session {}",
+            payload.get("followerId"), payload.get("leaderId"), sessionId);
+        payload.put("type", "follow-stop");
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/follow", payload);
+    }
+
+    @MessageMapping("/session/{sessionId}/follow/state")
+    public void handleFollowState(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
+        // Relay leader's editor state to all followers
+        payload.put("type", "follow-state");
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/follow", payload);
     }
 }

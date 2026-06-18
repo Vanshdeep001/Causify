@@ -26,6 +26,9 @@ public class Session {
     @Column(columnDefinition = "TEXT")
     private String currentCode;
 
+    @Column(columnDefinition = "TEXT")
+    private String whiteboardData;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
@@ -75,6 +78,14 @@ public class Session {
 
     public void setCurrentCode(String currentCode) {
         this.currentCode = currentCode;
+    }
+
+    public String getWhiteboardData() {
+        return whiteboardData;
+    }
+
+    public void setWhiteboardData(String whiteboardData) {
+        this.whiteboardData = whiteboardData;
     }
 
     public LocalDateTime getCreatedAt() {

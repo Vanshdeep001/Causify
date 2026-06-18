@@ -24,8 +24,9 @@ public class SessionController {
     }
 
     @PostMapping("/create")
-    public ResponseEntity<Map<String, String>> createSession(@RequestBody Map<String, String> body) {
+    public ResponseEntity<Map<String, Object>> createSession(@RequestBody Map<String, String> body) {
         String name = body.getOrDefault("name", "Debug Session");
+        String username = body.getOrDefault("username", "Owner");
         String password = body.get("password");
 
         Session session = new Session();
@@ -36,11 +37,13 @@ public class SessionController {
 
         String userId = UUID.randomUUID().toString().substring(0, 8);
 
-        Map<String, String> response = new HashMap<>();
+        Map<String, Object> response = new HashMap<>();
         response.put("id", session.getId());
         response.put("name", session.getName());
         response.put("userId", userId);
         response.put("role", "owner");
+        // Full user object the client uses for presence + change attribution
+        response.put("user", Map.of("id", userId, "username", username, "color", "#FF2E93"));
 
         return ResponseEntity.ok(response);
     }
@@ -49,6 +52,7 @@ public class SessionController {
     public ResponseEntity<?> joinSession(@RequestBody Map<String, String> body) {
         String id = body.get("id");
         String password = body.get("password");
+        String username = body.getOrDefault("username", "Collaborator");
 
         Optional<Session> sessionOpt = sessionRepository.findById(id);
         if (sessionOpt.isEmpty()) {
@@ -71,6 +75,8 @@ public class SessionController {
         response.put("userId", userId);
         response.put("role", "collaborator");
         response.put("files", files);
+        // Full user object the client uses for presence + change attribution
+        response.put("user", Map.of("id", userId, "username", username, "color", "#4DD6FF"));
 
         return ResponseEntity.ok(response);
     }

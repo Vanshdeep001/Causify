@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveFileToPath: (content, filePath) =>
     ipcRenderer.invoke('dialog:save-file-to-path', content, filePath),
 
+  saveTempFile: (options) =>
+    ipcRenderer.invoke('fs:save-temp-file', options),
+
   openFile: () =>
     ipcRenderer.invoke('dialog:open-file'),
 
@@ -103,4 +106,96 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('app:get-version'),
   isFirstLaunch: () => ipcRenderer.invoke('app:is-first-launch'),
   completeSetup: () => ipcRenderer.invoke('app:complete-setup'),
+
+  /* ── CodeShot Deep Link ── */
+  onCodeShotNavigate: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('navigate-to-codeshot', handler);
+    return () => ipcRenderer.removeListener('navigate-to-codeshot', handler);
+  },
+
+  /* ── Clipboard Image (native) ── */
+  writeImageToClipboard: (dataUrl) =>
+    ipcRenderer.invoke('clipboard:write-image', dataUrl),
+
+  /* ── Terminal PTY ── */
+  createPty: (options) =>
+    ipcRenderer.invoke('pty:create', options),
+
+  writePty: (ptyId, data) =>
+    ipcRenderer.invoke('pty:write', ptyId, data),
+
+  resizePty: (ptyId, cols, rows) =>
+    ipcRenderer.invoke('pty:resize', ptyId, cols, rows),
+
+  killPty: (ptyId) =>
+    ipcRenderer.invoke('pty:kill', ptyId),
+
+  onPtyOutput: (ptyId, callback) => {
+    const channel = `pty:output-${ptyId}`;
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+
+  onPtyExit: (ptyId, callback) => {
+    const channel = `pty:exit-${ptyId}`;
+    const handler = (_event, exitInfo) => callback(exitInfo);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+
+  /* ── Deploy (Vercel) ── */
+  setVercelToken: (token) =>
+    ipcRenderer.invoke('deploy:set-token', token),
+
+  hasVercelToken: () =>
+    ipcRenderer.invoke('deploy:has-token'),
+
+  clearVercelToken: () =>
+    ipcRenderer.invoke('deploy:clear-token'),
+
+  validateVercelToken: (token) =>
+    ipcRenderer.invoke('deploy:validate-token', token),
+
+  detectFramework: (cwd) =>
+    ipcRenderer.invoke('deploy:detect-framework', cwd),
+
+  prepareDeployWorkspace: (options) =>
+    ipcRenderer.invoke('deploy:prepare', options),
+
+  listVercelProjects: () =>
+    ipcRenderer.invoke('deploy:list-projects'),
+
+  getLinkedVercelProject: (options) =>
+    ipcRenderer.invoke('deploy:get-linked', options),
+
+  linkVercelProject: (options) =>
+    ipcRenderer.invoke('deploy:link-project', options),
+
+  runDeploy: (options) =>
+    ipcRenderer.invoke('deploy:run', options),
+
+  cancelDeploy: (deployId) =>
+    ipcRenderer.invoke('deploy:cancel', deployId),
+
+  onDeployLog: (deployId, callback) => {
+    const channel = `deploy:log-${deployId}`;
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+
+  onDeployComplete: (deployId, callback) => {
+    const channel = `deploy:complete-${deployId}`;
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+
+  detectEnvFiles: (cwd) =>
+    ipcRenderer.invoke('deploy:detect-env', cwd),
+
+  pushEnvVars: (options) =>
+    ipcRenderer.invoke('deploy:push-env', options),
 });

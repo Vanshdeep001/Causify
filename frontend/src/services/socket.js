@@ -6,6 +6,8 @@
  *   - Code sync between users
  *   - User presence (join/leave)
  *   - Live execution results
+ *   - Voice room signaling (WebRTC)
+ *   - Follow mode editor state relay
  * ------------------------------------------------------- */
 
 import { Client } from '@stomp/stompjs';
@@ -25,6 +27,12 @@ let subscriptions = {};
 // Connect to the WebSocket server
 // userInfo = { id, username, color }
 export const connectWebSocket = (sessionId, userInfo, callbacks = {}) => {
+  // Guard: presence + change attribution require a valid user object.
+  if (!userInfo || !userInfo.id) {
+    console.error('[WS] connectWebSocket called without a valid user object', userInfo);
+    return;
+  }
+
   // Disconnect any existing connection before creating a new one
   if (stompClient) {
     try {
@@ -37,14 +45,12 @@ export const connectWebSocket = (sessionId, userInfo, callbacks = {}) => {
 
   // Create a STOMP client over SockJS
   stompClient = new Client({
-    // Use SockJS as the transport
     webSocketFactory: () => new SockJS(WS_URL),
 
-    // Called when connection is established
     onConnect: () => {
       console.log('[WS] Connected to Causify server');
 
-      // Subscribe to code changes in this session
+      // Subscribe to code changes
       subscriptions.code = stompClient.subscribe(
         `/topic/session/${sessionId}/code`,
         (message) => {
@@ -89,12 +95,39 @@ export const connectWebSocket = (sessionId, userInfo, callbacks = {}) => {
         }
       );
 
+      // Subscribe to whiteboard updates
+      subscriptions.whiteboard = stompClient.subscribe(
+        `/topic/session/${sessionId}/whiteboard`,
+        (message) => {
+          const data = JSON.parse(message.body);
+          if (callbacks.onWhiteboardChange) callbacks.onWhiteboardChange(data);
+        }
+      );
+
       // Subscribe to revert notifications
       subscriptions.revert = stompClient.subscribe(
         `/topic/session/${sessionId}/revert`,
         (message) => {
           const data = JSON.parse(message.body);
           if (callbacks.onRevert) callbacks.onRevert(data);
+        }
+      );
+
+      // Subscribe to voice room signaling (WebRTC)
+      subscriptions.voice = stompClient.subscribe(
+        `/topic/session/${sessionId}/voice`,
+        (message) => {
+          const data = JSON.parse(message.body);
+          if (callbacks.onVoiceSignal) callbacks.onVoiceSignal(data);
+        }
+      );
+
+      // Subscribe to follow mode state updates
+      subscriptions.follow = stompClient.subscribe(
+        `/topic/session/${sessionId}/follow`,
+        (message) => {
+          const data = JSON.parse(message.body);
+          if (callbacks.onFollowUpdate) callbacks.onFollowUpdate(data);
         }
       );
 
@@ -111,22 +144,29 @@ export const connectWebSocket = (sessionId, userInfo, callbacks = {}) => {
       if (callbacks.onConnected) callbacks.onConnected();
     },
 
-    // Called when connection is lost
     onDisconnect: () => {
       console.log('[WS] Disconnected');
       if (callbacks.onDisconnected) callbacks.onDisconnected();
     },
 
-    // Reconnect settings
     reconnectDelay: 3000,
 
-    // Error handler
     onStompError: (frame) => {
       console.error('[WS] STOMP error:', frame.headers['message']);
     },
   });
 
   stompClient.activate();
+};
+
+// Send whiteboard updates to other users
+export const sendWhiteboardUpdate = (sessionId, update) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/whiteboard`,
+      body: JSON.stringify(update),
+    });
+  }
 };
 
 // Send code changes to other users
@@ -155,6 +195,71 @@ export const sendRevert = (sessionId, userId, path, username, revertedUser) => {
     stompClient.publish({
       destination: `/app/session/${sessionId}/revert`,
       body: JSON.stringify({ userId, path, username, revertedUser, timestamp: Date.now() }),
+    });
+  }
+};
+
+/* ── Voice Room Signaling ── */
+
+export const sendVoiceJoin = (sessionId, userInfo) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/voice/join`,
+      body: JSON.stringify({
+        userId: userInfo.id,
+        username: userInfo.username,
+        color: userInfo.color || '#6366f1',
+      }),
+    });
+  }
+};
+
+export const sendVoiceLeave = (sessionId, userInfo) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/voice/leave`,
+      body: JSON.stringify({
+        userId: userInfo.id,
+        username: userInfo.username,
+      }),
+    });
+  }
+};
+
+export const sendVoiceSignal = (sessionId, signalData) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/voice/signal`,
+      body: JSON.stringify(signalData),
+    });
+  }
+};
+
+/* ── Follow Mode ── */
+
+export const sendFollowStart = (sessionId, followerId, leaderId) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/follow/start`,
+      body: JSON.stringify({ followerId, leaderId }),
+    });
+  }
+};
+
+export const sendFollowStop = (sessionId, followerId, leaderId) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/follow/stop`,
+      body: JSON.stringify({ followerId, leaderId }),
+    });
+  }
+};
+
+export const sendFollowState = (sessionId, editorState) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/follow/state`,
+      body: JSON.stringify(editorState),
     });
   }
 };

@@ -7,6 +7,7 @@
 const { ipcMain, dialog, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 /* ── File Type Filters ── */
 const FILE_FILTERS = [
@@ -56,6 +57,21 @@ function registerFileSystemHandlers() {
       return { filePath, fileName: path.basename(filePath) };
     } catch (err) {
       throw new Error(`Failed to save file: ${err.message}`);
+    }
+  });
+
+  /* ── Save Temporary File ── */
+  ipcMain.handle('fs:save-temp-file', async (_event, { content, filename }) => {
+    try {
+      const tempDir = path.join(os.tmpdir(), 'causify_temp');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      const filePath = path.join(tempDir, filename);
+      fs.writeFileSync(filePath, content, 'utf-8');
+      return filePath;
+    } catch (err) {
+      throw new Error(`Failed to save temp file: ${err.message}`);
     }
   });
 

@@ -88,6 +88,19 @@ export const createSnapshot = async (sessionId, code, userId) => {
   return response.data;
 };
 
+/* ---- Deployment APIs ---- */
+
+export const createDeployment = async (deploymentData) => {
+  const response = await api.post('/deployments', deploymentData);
+  return response.data;
+};
+
+export const getDeployments = async (sessionId) => {
+  const response = await api.get(`/deployments?sessionId=${sessionId}`);
+  return response.data;
+};
+
+
 /* ---- Root Cause APIs ---- */
 
 export const analyzeRootCause = async (sessionId, error, code) => {
@@ -139,6 +152,25 @@ export const gitIsConnected = async (sessionId) => {
 
 export const gitDisconnect = async (sessionId) => {
   const response = await api.post('/git/disconnect', { sessionId });
+  return response.data;
+};
+
+/* ---- Project Context APIs ---- */
+
+export const getProjectContext = async (projectId) => {
+  const response = await api.get(`/context?projectId=${projectId}`);
+  return response.data;
+};
+
+/* ---- Whiteboard APIs ---- */
+
+export const getWhiteboard = async (projectId) => {
+  const response = await api.get(`/whiteboard?projectId=${projectId}`);
+  return response.data;
+};
+
+export const saveWhiteboard = async (projectId, boardData) => {
+  const response = await api.put(`/whiteboard?projectId=${projectId}`, boardData);
   return response.data;
 };
 

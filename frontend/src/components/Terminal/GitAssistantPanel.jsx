@@ -151,7 +151,7 @@ const GitAssistantPanel = () => {
       }}>
         <div style={{ width: '100%', maxWidth: 'none', animation: 'fade-in 0.5s ease-out' }}>
           {/* Compact Header */}
-          <div style={{ marginBottom: '30px', borderLeft: '3px solid #c1ff72', paddingLeft: '20px' }}>
+          <div style={{ marginBottom: '30px', borderLeft: '3px solid #FFFFFF', paddingLeft: '20px' }}>
             <div style={{ 
               fontFamily: 'var(--font-number)', fontSize: '0.6rem', color: '#555',
               letterSpacing: '0.5em', marginBottom: '8px', opacity: 0.8
@@ -173,8 +173,8 @@ const GitAssistantPanel = () => {
               border: '1px solid #1a1a1a', padding: '20px 24px',
               display: 'flex', flexDirection: 'column', gap: '15px'
             }}>
-              <div style={{ position: 'absolute', top: '-1px', left: '-1px', width: '10px', height: '10px', borderTop: '2px solid #c1ff72', borderLeft: '2px solid #c1ff72' }} />
-              <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '10px', height: '10px', borderBottom: '2px solid #c1ff72', borderRight: '2px solid #c1ff72' }} />
+              <div style={{ position: 'absolute', top: '-1px', left: '-1px', width: '10px', height: '10px', borderTop: '2px solid #FFFFFF', borderLeft: '2px solid #FFFFFF' }} />
+              <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '10px', height: '10px', borderBottom: '2px solid #FFFFFF', borderRight: '2px solid #FFFFFF' }} />
               
               <div style={{ display: 'flex', alignItems: 'flex-end' }}>
                 <HudLabel>Endpoint URL [SSH/HTTPS]</HudLabel>
@@ -182,7 +182,7 @@ const GitAssistantPanel = () => {
 
               <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid #222', paddingBottom: '8px' }}>
-                  <span style={{ color: '#c1ff72', fontFamily: 'var(--font-number)', fontSize: '0.9rem', fontWeight: 900, opacity: 0.6 }}>▶</span>
+                  <span style={{ color: '#FFFFFF', fontFamily: 'var(--font-number)', fontSize: '0.9rem', fontWeight: 900, opacity: 0.6 }}>▶</span>
                   <input
                     type="text"
                     value={repoUrlInput}
@@ -203,7 +203,7 @@ const GitAssistantPanel = () => {
                   disabled={gitLoading || !repoUrlInput.trim()}
                   style={{
                     height: '42px', padding: '0 30px',
-                    background: gitLoading ? '#111' : '#c1ff72', color: '#000',
+                    background: gitLoading ? '#111' : '#FFFFFF', color: '#000',
                     border: 'none', cursor: gitLoading ? 'wait' : 'pointer',
                     fontFamily: 'var(--font-number)', fontSize: '0.75rem', fontWeight: 900,
                     letterSpacing: '0.15em', transition: 'all 0.2s',
@@ -220,8 +220,8 @@ const GitAssistantPanel = () => {
             {/* Compact Error HUD */}
             {gitError && (
               <div style={{ 
-                padding: '12px 18px', background: 'rgba(255,62,62,0.03)',
-                borderLeft: '3px solid #ff3e3e', color: '#ff3e3e',
+                padding: '12px 18px', background: 'rgba(229,72,77,0.03)',
+                borderLeft: '3px solid #E5484D', color: '#E5484D',
                 fontFamily: 'var(--font-number)', fontSize: '0.7rem', fontWeight: 800,
                 letterSpacing: '0.04em', animation: 'scale-in 0.2s ease'
               }}>
@@ -248,8 +248,8 @@ const GitAssistantPanel = () => {
   if (suggestion) {
     const getBadgeColors = (type) => {
       switch(type) {
-        case 'fix': return { bg: 'rgba(255, 62, 62, 0.05)', fg: '#ff3e3e', icon: '🐞', label: 'BUG_FIX' };
-        case 'feat': return { bg: 'rgba(193, 255, 114, 0.05)', fg: '#c1ff72', icon: '✨', label: 'FEATURE' };
+        case 'fix': return { bg: 'rgba(229, 72, 77, 0.05)', fg: '#E5484D', icon: '🐞', label: 'BUG_FIX' };
+        case 'feat': return { bg: 'rgba(255, 255, 255, 0.05)', fg: '#FFFFFF', icon: '✨', label: 'FEATURE' };
         case 'style': return { bg: 'rgba(129, 140, 248, 0.05)', fg: '#818cf8', icon: '🎨', label: 'UI_STYLE' };
         case 'refactor': return { bg: 'rgba(251, 191, 36, 0.05)', fg: '#fbbf24', icon: '🔧', label: 'REFACTOR' };
         default: return { bg: 'rgba(255,255,255,0.05)', fg: '#fff', icon: '📝', label: 'SYSTEM' };
@@ -310,7 +310,7 @@ const GitAssistantPanel = () => {
       return (
         <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a' }}>
           <div style={{ textAlign: 'center', animation: 'scale-in 0.3s ease' }}>
-            <div style={{ fontFamily: 'var(--font-number)', color: '#c1ff72', fontSize: '1.5rem', fontWeight: 900 }}>EXECUTION_COMPLETE</div>
+            <div style={{ fontFamily: 'var(--font-number)', color: '#FFFFFF', fontSize: '1.5rem', fontWeight: 900 }}>EXECUTION_COMPLETE</div>
             <div style={{ fontFamily: 'var(--font-body)', color: '#666', fontSize: '0.8rem', marginTop: '5px' }}>{commitResult.text}</div>
             <div style={{ marginTop: '20px', display: 'flex', gap: '12px', justifyContent: 'center' }}>
               <button
@@ -318,7 +318,7 @@ const GitAssistantPanel = () => {
                 disabled={gitLoading}
                 style={{
                   padding: '10px 30px', background: 'transparent', 
-                  border: '2px solid #c1ff72', color: '#c1ff72', cursor: 'pointer',
+                  border: '2px solid #FFFFFF', color: '#FFFFFF', cursor: 'pointer',
                   fontFamily: 'var(--font-number)', fontSize: '0.75rem', fontWeight: 900,
                   letterSpacing: '0.1em', opacity: gitLoading ? 0.5 : 1,
                   transition: 'all 0.15s ease',
@@ -382,7 +382,7 @@ const GitAssistantPanel = () => {
           {/* Repo indicator */}
           <div style={{ marginTop: '20px', padding: '8px 0', borderTop: '1px solid #1a1a1a' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <StatusDot color="#c1ff72" pulse={false} />
+              <StatusDot color="#FFFFFF" pulse={false} />
               <span style={{ fontFamily: 'var(--font-number)', fontSize: '0.6rem', color: '#555', letterSpacing: '0.1em' }}>REPO LINKED</span>
             </div>
           </div>
@@ -394,7 +394,7 @@ const GitAssistantPanel = () => {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={{ background: '#0a0a0a', padding: '25px', border: '1.5px solid #1a1a1a', flex: 1, position: 'relative' }}>
             <HudLabel>Commit Terminal Buffer</HudLabel>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', color: '#c1ff72', fontFamily: 'var(--font-number)', fontSize: '1.1rem', fontWeight: 700 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', color: '#FFFFFF', fontFamily: 'var(--font-number)', fontSize: '1.1rem', fontWeight: 700 }}>
               <span style={{ marginTop: '4px', opacity: 0.8, color: '#fff' }}>▶</span>
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                 <div style={{ opacity: 0.3, fontSize: '0.8rem' }}>git commit -m "</div>
@@ -416,8 +416,8 @@ const GitAssistantPanel = () => {
             {/* Error inline */}
             {commitResult && !commitResult.success && (
               <div style={{ 
-                marginTop: '10px', padding: '8px 12px', background: 'rgba(255,62,62,0.08)',
-                border: '1px solid rgba(255,62,62,0.3)', color: '#ff3e3e',
+                marginTop: '10px', padding: '8px 12px', background: 'rgba(229,72,77,0.08)',
+                border: '1px solid rgba(229,72,77,0.3)', color: '#E5484D',
                 fontFamily: 'var(--font-number)', fontSize: '0.7rem', fontWeight: 700
               }}>
                 ✕ {commitResult.text}
@@ -440,10 +440,10 @@ const GitAssistantPanel = () => {
               onClick={handleCommit}
               disabled={isCommitting || !commitMessage.trim()}
               style={{ 
-                background: '#c1ff72', color: '#000', border: 'none', 
+                background: '#FFFFFF', color: '#000', border: 'none', 
                 padding: '12px 40px', cursor: 'pointer', fontFamily: 'var(--font-number)', 
                 fontSize: '0.85rem', fontWeight: 900,
-                boxShadow: '0 0 30px rgba(193, 255, 114, 0.15)',
+                boxShadow: '0 0 30px rgba(255, 255, 255, 0.15)',
                 opacity: isCommitting ? 0.6 : 1,
                 transition: 'transform 0.1s ease',
               }}
@@ -460,13 +460,13 @@ const GitAssistantPanel = () => {
         {/* 3. STAGING ZONE */}
         <div style={{ flex: isSplit ? '0 0 auto' : '0 0 240px', display: 'flex', flexDirection: 'column' }}>
           <HudLabel>Staged Blueprint</HudLabel>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto' }}>
             {suggestion.modifiedFiles?.map((file) => (
               <div key={file} style={{ 
                 display: 'flex', alignItems: 'center', gap: '15px', padding: '12px 0',
                 borderBottom: '1px solid #111'
               }}>
-                <div style={{ width: '8px', height: '8px', background: '#c1ff72', borderRadius: '1px', transform: 'rotate(45deg)' }} />
+                <div style={{ width: '8px', height: '8px', background: '#FFFFFF', borderRadius: '1px', transform: 'rotate(45deg)' }} />
                 <span style={{ color: '#fff', fontSize: '1rem', fontFamily: 'var(--font-header)', fontWeight: 700 }}>
                   {file}
                 </span>
@@ -477,7 +477,7 @@ const GitAssistantPanel = () => {
                 <HudLabel>Impact Predictions</HudLabel>
                 {suggestion.affectedFiles.map(file => (
                   <div key={file} style={{ 
-                    color: '#ff3e3e', fontSize: '0.85rem', padding: '6px 0', 
+                    color: '#E5484D', fontSize: '0.85rem', padding: '6px 0', 
                     fontFamily: 'var(--font-header)', fontWeight: 700 
                   }}>
                      {'>'} {file}
@@ -623,7 +623,7 @@ const GitAssistantPanel = () => {
 
       return {
         type: 'commit',
-        color: '#c1ff72',
+        color: '#FFFFFF',
         icon: '●',
         title: 'READY TO COMMIT',
         detail: `${actualChanges.length} file${actualChanges.length > 1 ? 's' : ''} changed (${summary})`,
@@ -697,12 +697,12 @@ const GitAssistantPanel = () => {
       {showCommitInput && (
         <div style={{
           padding: '12px 20px', background: '#0d0d0d',
-          borderBottom: '2px solid #c1ff7225', flexShrink: 0,
+          borderBottom: '2px solid #FFFFFF25', flexShrink: 0,
           animation: 'scale-in 0.2s ease',
         }}>
           <div style={{ fontFamily: 'var(--font-number)', fontSize: '0.6rem', color: '#666', letterSpacing: '0.2em', marginBottom: '8px' }}>COMMIT MESSAGE</div>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <span style={{ color: '#c1ff72', fontFamily: 'var(--font-number)', fontSize: '0.8rem' }}>▶</span>
+            <span style={{ color: '#FFFFFF', fontFamily: 'var(--font-number)', fontSize: '0.8rem' }}>▶</span>
             <input
               type="text"
               value={inlineCommitMsg}
@@ -721,7 +721,7 @@ const GitAssistantPanel = () => {
               onClick={handleInlineCommit}
               disabled={gitLoading || !inlineCommitMsg.trim()}
               style={{
-                padding: '8px 24px', background: '#c1ff72', color: '#000',
+                padding: '8px 24px', background: '#FFFFFF', color: '#000',
                 border: 'none', cursor: 'pointer', fontFamily: 'var(--font-number)',
                 fontSize: '0.7rem', fontWeight: 900, borderRadius: '2px',
                 opacity: (gitLoading || !inlineCommitMsg.trim()) ? 0.4 : 1,
@@ -750,7 +750,7 @@ const GitAssistantPanel = () => {
       }}>
 
       {/* LEFT: Status Dashboard */}
-      <div style={{ flex: isSplit ? '0 0 auto' : '0 0 300px', display: 'flex', flexDirection: 'column', padding: '10px', overflow: 'auto' }}>
+      <div className="no-scrollbar" style={{ flex: isSplit ? '0 0 auto' : '0 0 300px', display: 'flex', flexDirection: 'column', padding: '10px', overflow: 'auto' }}>
         
         {/* Connection status */}
         <HudLabel>Repository Status</HudLabel>
@@ -758,13 +758,13 @@ const GitAssistantPanel = () => {
           padding: '14px', border: '2px solid #1a1a1a', marginBottom: '20px',
           position: 'relative', background: '#0a0a0a'
         }}>
-          <div style={{ position: 'absolute', top: '-1px', left: '-1px', width: '10px', height: '10px', borderTop: '3px solid #c1ff72', borderLeft: '3px solid #c1ff72' }} />
-          <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '10px', height: '10px', borderBottom: '3px solid #c1ff72', borderRight: '3px solid #c1ff72' }} />
+          <div style={{ position: 'absolute', top: '-1px', left: '-1px', width: '10px', height: '10px', borderTop: '3px solid #FFFFFF', borderLeft: '3px solid #FFFFFF' }} />
+          <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '10px', height: '10px', borderBottom: '3px solid #FFFFFF', borderRight: '3px solid #FFFFFF' }} />
           
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center' }}>
-              <StatusDot color="#c1ff72" />
-              <span style={{ fontFamily: 'var(--font-number)', fontSize: '0.75rem', color: '#c1ff72', fontWeight: 900, letterSpacing: '0.1em' }}>
+              <StatusDot color="#FFFFFF" />
+              <span style={{ fontFamily: 'var(--font-number)', fontSize: '0.75rem', color: '#FFFFFF', fontWeight: 900, letterSpacing: '0.1em' }}>
                 CONNECTED
               </span>
             </div>
@@ -777,7 +777,7 @@ const GitAssistantPanel = () => {
                 letterSpacing: '0.1em', borderRadius: '2px',
                 transition: 'all 0.12s ease',
               }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#ff3e3e'; e.currentTarget.style.color = '#ff3e3e'; }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#E5484D'; e.currentTarget.style.color = '#E5484D'; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = '#333'; e.currentTarget.style.color = '#555'; }}
             >
               DISCONNECT
@@ -798,7 +798,7 @@ const GitAssistantPanel = () => {
             actualChanges.slice(0, 8).map((line, i) => {
               const status = line.substring(0, 2).trim();
               const file = line.substring(3).trim();
-              const statusColor = status.includes('M') ? '#fbbf24' : status.includes('A') ? '#c1ff72' : status.includes('D') ? '#ff3e3e' : '#818cf8';
+              const statusColor = status.includes('M') ? '#fbbf24' : status.includes('A') ? '#FFFFFF' : status.includes('D') ? '#E5484D' : '#818cf8';
               return (
                 <div key={i} style={{ 
                   display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 0',
@@ -829,14 +829,14 @@ const GitAssistantPanel = () => {
             disabled={gitLoading}
             style={{
               padding: '8px 16px',
-              background: hasChanges ? '#c1ff72' : 'transparent',
-              border: hasChanges ? '1.5px solid #c1ff72' : '1.5px solid #333',
+              background: hasChanges ? '#FFFFFF' : 'transparent',
+              border: hasChanges ? '1.5px solid #FFFFFF' : '1.5px solid #333',
               color: hasChanges ? '#000' : '#888', cursor: 'pointer',
               fontFamily: 'var(--font-number)', fontSize: '0.65rem', fontWeight: 900,
               letterSpacing: '0.1em', textTransform: 'uppercase',
               transition: 'all 0.12s ease', borderRadius: '2px',
               opacity: gitLoading ? 0.4 : 1,
-              boxShadow: hasChanges ? '0 0 12px rgba(193,255,114,0.15)' : 'none',
+              boxShadow: hasChanges ? '0 0 12px rgba(255, 255, 255,0.15)' : 'none',
               gridColumn: 'span 2'
             }}
           >
@@ -856,7 +856,7 @@ const GitAssistantPanel = () => {
                 opacity: gitLoading ? 0.4 : 1,
                 gridColumn: cmd === 'status' ? 'span 2' : 'auto'
               }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#c1ff72'; e.currentTarget.style.color = '#c1ff72'; }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#FFFFFF'; e.currentTarget.style.color = '#FFFFFF'; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = '#333'; e.currentTarget.style.color = '#888'; }}
             >
               {cmd === 'push' ? '↑ PUSH' : cmd === 'pull' ? '↓ PULL' : '⟳ REFRESH STATUS'}
@@ -876,7 +876,7 @@ const GitAssistantPanel = () => {
           display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px',
           background: '#0a0a0a', border: '1.5px solid #1a1a1a', marginBottom: '12px'
         }}>
-          <span style={{ color: '#c1ff72', fontFamily: 'var(--font-number)', fontSize: '0.85rem', fontWeight: 700 }}>❯</span>
+          <span style={{ color: '#FFFFFF', fontFamily: 'var(--font-number)', fontSize: '0.85rem', fontWeight: 700 }}>❯</span>
           <input
             type="text"
             value={commandInput}
@@ -893,7 +893,7 @@ const GitAssistantPanel = () => {
           {gitLoading && (
             <span style={{ 
               fontFamily: 'var(--font-number)', fontSize: '0.65rem', 
-              color: '#c1ff72', animation: 'pulse-live 1s ease infinite' 
+              color: '#FFFFFF', animation: 'pulse-live 1s ease infinite' 
             }}>
               ⠿ RUNNING
             </span>
@@ -903,8 +903,8 @@ const GitAssistantPanel = () => {
         {/* Error display */}
         {gitError && (
           <div style={{ 
-            padding: '10px 14px', background: 'rgba(255,62,62,0.06)',
-            border: '1px solid rgba(255,62,62,0.25)', color: '#ff3e3e',
+            padding: '10px 14px', background: 'rgba(229,72,77,0.06)',
+            border: '1px solid rgba(229,72,77,0.25)', color: '#E5484D',
             fontFamily: 'var(--font-number)', fontSize: '0.7rem', fontWeight: 700,
             marginBottom: '12px'
           }}>
@@ -914,14 +914,14 @@ const GitAssistantPanel = () => {
 
         {/* Command output */}
         {commandOutput && (
-          <div style={{ flex: 1, overflow: 'auto' }}>
+          <div className="no-scrollbar" style={{ flex: 1, overflow: 'auto' }}>
             <div style={{ 
               fontFamily: 'var(--font-number)', fontSize: '0.65rem', color: '#555',
               marginBottom: '8px', letterSpacing: '0.15em'
             }}>
               → git {commandOutput.command}
             </div>
-            <pre style={{ 
+            <pre className="no-scrollbar" style={{ 
               margin: 0, padding: '14px', background: '#0a0a0a', 
               border: '1px solid #1a1a1a', overflow: 'auto',
               color: '#ccc', fontFamily: 'var(--font-number)', fontSize: '0.75rem',
@@ -951,9 +951,9 @@ const GitAssistantPanel = () => {
       {!isSplit && <PowerLine />}
 
       {/* RIGHT: Recent Commits Log */}
-      <div style={{ flex: isSplit ? '0 0 auto' : '0 0 260px', display: 'flex', flexDirection: 'column', padding: '10px', overflow: 'auto' }}>
+      <div className="no-scrollbar" style={{ flex: isSplit ? '0 0 auto' : '0 0 260px', display: 'flex', flexDirection: 'column', padding: '10px', overflow: 'auto' }}>
         <HudLabel>Commit History</HudLabel>
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto' }}>
           {logLines.length > 0 ? (
             logLines.map((line, i) => {
               const hash = line.substring(0, 7);
@@ -964,7 +964,7 @@ const GitAssistantPanel = () => {
                   borderBottom: '1px solid #111'
                 }}>
                   <span style={{ 
-                    fontFamily: 'var(--font-number)', fontSize: '0.7rem', color: '#c1ff72',
+                    fontFamily: 'var(--font-number)', fontSize: '0.7rem', color: '#FFFFFF',
                     fontWeight: 900, flexShrink: 0, marginTop: '2px'
                   }}>
                     {hash}

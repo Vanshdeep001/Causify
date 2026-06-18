@@ -17,11 +17,11 @@ import { extractSymbols } from './dependencyParser';
 const RISK_COLORS = {
   low:    { bg: '#1a2e1a', border: '#2ecc40', glow: '0 0 12px rgba(46,204,64,0.3)' },
   medium: { bg: '#2e2a1a', border: '#f5a623', glow: '0 0 12px rgba(245,166,35,0.3)' },
-  high:   { bg: '#2e1a1a', border: '#ff3e3e', glow: '0 0 12px rgba(255,62,62,0.4)' },
+  high:   { bg: '#2e1a1a', border: '#E5484D', glow: '0 0 12px rgba(229,72,77,0.4)' },
 };
 
 const FOLDER_COLORS = [
-  '#2d5bff', '#c1ff72', '#f5a623', '#e056fd', '#00d2d3',
+  '#B3B3B3', '#FFFFFF', '#f5a623', '#e056fd', '#00d2d3',
   '#ff6b6b', '#54a0ff', '#feca57', '#48dbfb', '#ff9ff3',
 ];
 
@@ -117,11 +117,11 @@ export const buildLevel1 = (depMap) => {
       label: `${count}`,
       type: 'smoothstep',
       animated: true,
-      style: { stroke: '#080808', strokeWidth: Math.min(1 + count, 5) },
-      labelStyle: { fill: '#080808', fontWeight: 700, fontSize: 10, fontFamily: 'Unbounded, sans-serif' },
+      style: { stroke: '#4A4A4A', strokeWidth: Math.min(1 + count, 4) },
+      labelStyle: { fill: '#D4D4D4', fontWeight: 600, fontSize: 10, fontFamily: 'JetBrains Mono, monospace' },
       labelBgPadding: [4, 2],
-      labelBgBorderRadius: 0,
-      labelBgStyle: { fill: '#f8f6f0', fillOpacity: 0.9, stroke: '#080808', strokeWidth: 2 },
+      labelBgBorderRadius: 4,
+      labelBgStyle: { fill: '#1A1A1A', fillOpacity: 0.95, stroke: '#2E2E2E', strokeWidth: 1 },
     });
   }
 
@@ -346,11 +346,11 @@ export const buildLevel3 = (depMap, filePath, fileContent) => {
       type: 'smoothstep',
       label: 'impacts',
       animated: true,
-      style: { stroke: '#ff3e3e', strokeWidth: 2.5, strokeDasharray: '6,3' },
-      labelStyle: { fill: '#ff3e3e', fontWeight: 700, fontSize: 9, fontFamily: 'Unbounded, sans-serif' },
+      style: { stroke: '#E5484D', strokeWidth: 2, strokeDasharray: '6,3' },
+      labelStyle: { fill: '#E5484D', fontWeight: 600, fontSize: 9, fontFamily: 'JetBrains Mono, monospace' },
       labelBgPadding: [3, 2],
       labelBgBorderRadius: 0,
-      labelBgStyle: { fill: '#fff5f5', fillOpacity: 0.95, stroke: '#ff3e3e', strokeWidth: 1 },
+      labelBgStyle: { fill: '#1A0E0F', fillOpacity: 0.95, stroke: '#E5484D', strokeWidth: 1 },
     });
   });
 
@@ -393,11 +393,11 @@ export const buildLevel3 = (depMap, filePath, fileContent) => {
       target: `dep:${imp}`,
       type: 'smoothstep',
       label: 'imports',
-      style: { stroke: '#2d5bff', strokeWidth: 2.5 },
-      labelStyle: { fill: '#2d5bff', fontWeight: 700, fontSize: 9, fontFamily: 'Unbounded, sans-serif' },
+      style: { stroke: '#B3B3B3', strokeWidth: 2 },
+      labelStyle: { fill: '#B3B3B3', fontWeight: 600, fontSize: 9, fontFamily: 'JetBrains Mono, monospace' },
       labelBgPadding: [3, 2],
       labelBgBorderRadius: 0,
-      labelBgStyle: { fill: '#f0f4ff', fillOpacity: 0.95, stroke: '#2d5bff', strokeWidth: 1 },
+      labelBgStyle: { fill: '#0B1A20', fillOpacity: 0.95, stroke: '#B3B3B3', strokeWidth: 1 },
     });
   });
 
@@ -559,12 +559,12 @@ export const buildEgoGraph = (depMap, centerPath) => {
       type: 'smoothstep',
       animated: true,
       label: 'imports',
-      style: { stroke: '#ff3e3e', strokeWidth: 2.5 },
-      labelStyle: { fill: '#ff3e3e', fontWeight: 700, fontSize: 9, fontFamily: 'Unbounded, sans-serif' },
+      style: { stroke: '#E5484D', strokeWidth: 2.5 },
+      labelStyle: { fill: '#E5484D', fontWeight: 700, fontSize: 9, fontFamily: 'JetBrains Mono, monospace' },
       labelBgPadding: [3, 2],
       labelBgBorderRadius: 0,
-      labelBgStyle: { fill: '#fff5f5', fillOpacity: 0.95, stroke: '#ff3e3e', strokeWidth: 1 },
-      markerEnd: { type: 'arrowclosed', color: '#ff3e3e' },
+      labelBgStyle: { fill: '#1A0E0F', fillOpacity: 0.95, stroke: '#E5484D', strokeWidth: 1 },
+      markerEnd: { type: 'arrowclosed', color: '#E5484D' },
     });
   }
 
@@ -577,12 +577,12 @@ export const buildEgoGraph = (depMap, centerPath) => {
       type: 'smoothstep',
       animated: true,
       label: 'imports',
-      style: { stroke: '#2d5bff', strokeWidth: 2.5 },
-      labelStyle: { fill: '#2d5bff', fontWeight: 700, fontSize: 9, fontFamily: 'Unbounded, sans-serif' },
+      style: { stroke: '#B3B3B3', strokeWidth: 2 },
+      labelStyle: { fill: '#B3B3B3', fontWeight: 600, fontSize: 9, fontFamily: 'JetBrains Mono, monospace' },
       labelBgPadding: [3, 2],
       labelBgBorderRadius: 0,
-      labelBgStyle: { fill: '#f0f4ff', fillOpacity: 0.95, stroke: '#2d5bff', strokeWidth: 1 },
-      markerEnd: { type: 'arrowclosed', color: '#2d5bff' },
+      labelBgStyle: { fill: '#0B1A20', fillOpacity: 0.95, stroke: '#B3B3B3', strokeWidth: 1 },
+      markerEnd: { type: 'arrowclosed', color: '#B3B3B3' },
     });
   }
 

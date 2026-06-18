@@ -39,46 +39,49 @@ import { buildLevel1, buildLevel2, buildLevel3, buildEgoGraph } from '../../util
 // ═══════════════════════════════════════════════════════════
 
 const BrutalNode = ({ data }) => {
-  const bgColor = (() => {
+  // Type-specific accent used for the top edge and tag
+  const accent = (() => {
     switch (data.type) {
-      case 'error': return 'var(--accent-crimson)';
-      case 'change': return 'var(--accent-electric-blue)';
-      case 'variable': return 'var(--accent-toxic-green)';
-      case 'function': return 'var(--bg-white)';
-      case 'entry': return 'var(--color-black)';
-      case 'loop': return '#7c3aed';
-      case 'condition': return '#f59e0b';
-      case 'output': return '#06b6d4';
-      case 'success': return '#10b981';
-      case 'class': return '#6366f1';
-      case 'thread': return '#ec4899';
-      default: return 'var(--bg-white)';
+      case 'error': return '#E5484D';
+      case 'change': return '#B3B3B3';
+      case 'variable': return '#FFFFFF';
+      case 'function': return '#A0A0A0';
+      case 'entry': return '#EDEDED';
+      case 'loop': return '#9D7BFF';
+      case 'condition': return '#FFB224';
+      case 'output': return '#B3B3B3';
+      case 'success': return '#3DD68C';
+      case 'class': return '#8B8DFF';
+      case 'thread': return '#F76BB8';
+      default: return '#A0A0A0';
     }
   })();
 
-  const darkTypes = ['error', 'change', 'entry', 'loop', 'condition', 'output', 'success', 'class', 'thread'];
-  const textColor = darkTypes.includes(data.type) ? '#fff' : 'var(--color-black)';
-
   return (
     <div className="brutal-node" style={{
-      background: bgColor,
-      color: textColor,
+      background: 'var(--s2)',
+      color: 'var(--t1)',
       width: '240px',
-      padding: '16px',
-      border: '4px solid var(--color-black)',
-      boxShadow: '8px 8px 0px var(--color-black)'
+      padding: '14px 16px',
+      border: '1px solid var(--line-strong)',
+      borderTop: `2px solid ${accent}`,
+      borderRadius: '8px',
+      boxShadow: 'var(--shadow-brutal-sm)'
     }}>
-      <Handle type="target" position={Position.Top} style={{ background: '#000', width: '10px', height: '10px', borderRadius: 0 }} />
-      <div className="node-type-tag" style={{ opacity: 0.8, fontSize: '0.6rem', letterSpacing: '0.1em', marginBottom: '4px' }}>
+      <Handle type="target" position={Position.Top} style={{ background: '#3A3A3A', border: '1px solid #4A4A4A', width: '8px', height: '8px', borderRadius: '50%' }} />
+      <div className="node-type-tag" style={{
+        fontSize: '0.55rem', letterSpacing: '0.1em', marginBottom: '6px',
+        color: accent, background: `${accent}14`, border: `1px solid ${accent}40`,
+      }}>
         {(data.type || 'node').toUpperCase()}
       </div>
-      <div className="node-label thick-type" style={{ fontSize: '1.1rem', marginBottom: '8px' }}>{data.label}</div>
+      <div className="node-label" style={{ fontSize: '0.95rem', fontWeight: 600, fontFamily: 'var(--font-header)', marginBottom: '6px' }}>{data.label}</div>
       {data.detail && (
-        <div className="node-detail" style={{ fontSize: '0.8rem', opacity: 0.9, lineHeight: 1.4 }}>
+        <div className="node-detail" style={{ fontSize: '0.74rem', color: 'var(--t2)', lineHeight: 1.45 }}>
           {data.detail}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#000', width: '10px', height: '10px', borderRadius: 0 }} />
+      <Handle type="source" position={Position.Bottom} style={{ background: '#3A3A3A', border: '1px solid #4A4A4A', width: '8px', height: '8px', borderRadius: '50%' }} />
     </div>
   );
 };
@@ -107,11 +110,11 @@ const CausalityMode = ({ causalityGraph }) => {
       label: e.label,
       type: 'smoothstep',
       animated: true,
-      style: { stroke: 'var(--color-black)', strokeWidth: 3 },
-      labelStyle: { fill: 'var(--color-black)', fontWeight: 900, fontSize: 11 },
+      style: { stroke: '#3A3A3A', strokeWidth: 1.5 },
+      labelStyle: { fill: '#D4D4D4', fontWeight: 600, fontSize: 11, fontFamily: 'JetBrains Mono, monospace' },
       labelBgPadding: [6, 4],
-      labelBgBorderRadius: 0,
-      labelBgStyle: { fill: 'var(--bg-paper)', fillOpacity: 0.9, stroke: 'var(--color-black)', strokeWidth: 2 }
+      labelBgBorderRadius: 4,
+      labelBgStyle: { fill: '#1A1A1A', fillOpacity: 0.95, stroke: '#2E2E2E', strokeWidth: 1 }
     }));
 
     return { nodes: ns, edges: es };
@@ -119,10 +122,9 @@ const CausalityMode = ({ causalityGraph }) => {
 
   if (!causalityGraph || !causalityGraph.nodes || causalityGraph.nodes.length === 0) {
     return (
-      <div className="dep-graph-empty">
-        <div className="dep-empty-icon">⚡</div>
-        <div className="dep-empty-title">SYSTEM IDLE</div>
-        <div className="dep-empty-sub">Run code to generate the interaction map</div>
+      <div className="dep-graph-empty" style={{ gap: '8px' }}>
+        <div className="dep-empty-title" style={{ fontSize: '0.8rem', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--t2)', textTransform: 'uppercase' }}>SYSTEM IDLE</div>
+        <div className="dep-empty-sub" style={{ fontSize: '0.58rem', letterSpacing: '0.12em', color: 'var(--t4)', textTransform: 'uppercase' }}>Run code to generate the interaction map</div>
       </div>
     );
   }
@@ -135,16 +137,16 @@ const CausalityMode = ({ causalityGraph }) => {
         nodeTypes={causalityNodeTypes}
         fitView
         fitViewOptions={{ padding: 0.2 }}
-        colorMode="light"
+        colorMode="dark"
         nodesDraggable={true}
         nodesConnectable={false}
         proOptions={{ hideAttribution: true }}
       >
-        <Background color="#ccc" gap={40} variant="dots" size={1} />
+        <Background color="#242424" gap={40} variant="dots" size={1} />
         <Controls
           position="bottom-left"
           showInteractive={false}
-          style={{ background: 'var(--bg-white)', border: 'var(--border-thin)', borderRadius: 0, boxShadow: 'var(--shadow-brutal-sm)' }}
+          style={{ background: 'var(--s2)', border: '1px solid var(--line-strong)', borderRadius: '6px', boxShadow: 'var(--shadow-brutal-sm)' }}
         />
       </ReactFlow>
     </div>
@@ -157,6 +159,22 @@ const CausalityMode = ({ causalityGraph }) => {
 // ═══════════════════════════════════════════════════════════
 
 const FILE_TYPE_ICONS = { js: '⚡', css: '🎨', html: '📄', json: '📋', unknown: '📁' };
+
+const getLanguageColor = (fileType) => {
+  const ext = fileType?.toLowerCase();
+  switch (ext) {
+    case 'html': return '#F06529';
+    case 'css': return '#2965F1';
+    case 'js': return '#F7DF1E';
+    case 'jsx': return '#61DAFB';
+    case 'ts': return '#3178C6';
+    case 'tsx': return '#61DAFB';
+    case 'json': return '#3DD68C';
+    case 'py': return '#FFE873';
+    case 'java': return '#F89820';
+    default: return '#A0A0A0';
+  }
+};
 
 const FolderClusterNode = ({ data }) => (
   <div className="dep-node dep-folder-node" style={{ borderColor: data.color }}>
@@ -177,15 +195,22 @@ const FolderClusterNode = ({ data }) => (
 
 const FileNode = ({ data }) => {
   const riskClass = `dep-risk-${data.risk || 'low'}`;
+  const langColor = getLanguageColor(data.fileType);
+
   return (
     <div
       className={`dep-node dep-file-node ${riskClass} ${data.isExternal ? 'dep-external' : ''} ${data.isCenter ? 'dep-center-node' : ''} ${data.isImpact ? 'dep-impact-node' : ''} ${data.isDependency ? 'dep-dependency-node' : ''}`}
-      style={data.isCenter ? { borderColor: 'var(--color-black)', background: 'var(--accent-toxic-green)', boxShadow: 'var(--shadow-brutal)' } : {}}
+      style={{
+        borderTop: data.isCenter ? '2px solid var(--lime)' : `2px solid ${langColor}`,
+        boxShadow: data.isCenter ? 'var(--shadow-brutal)' : `0 4px 12px ${langColor}12`,
+      }}
     >
       <Handle type="target" position={Position.Top} className="dep-handle" />
       <div className="dep-node-header">
-        <span className="dep-file-icon">{data.icon}</span>
-        <span className="dep-node-badge dep-type-badge">{data.fileType?.toUpperCase()}</span>
+        <span className="dep-file-icon" style={{ color: langColor }}>{data.icon}</span>
+        <span className="dep-node-badge dep-type-badge" style={{ background: `${langColor}1a`, color: langColor, border: `1px solid ${langColor}40` }}>
+          {data.fileType?.toUpperCase()}
+        </span>
         {data.isEntryPoint && <span className="dep-entry-badge">ENTRY</span>}
         {data.risk === 'high' && <span className="dep-risk-badge">HIGH RISK</span>}
       </div>
@@ -198,7 +223,9 @@ const FileNode = ({ data }) => {
         {data.hopLevel !== undefined && (
           <>
             <span className="dep-node-sep">•</span>
-            <span className="dep-hop-label">{data.hopLevel === 0 ? 'CENTER' : `HOP ${data.hopLevel}`}</span>
+            <span className="dep-hop-label" style={{ color: data.isCenter ? 'var(--lime)' : 'var(--cyan)' }}>
+              {data.hopLevel === 0 ? 'CENTER' : `HOP ${data.hopLevel}`}
+            </span>
           </>
         )}
       </div>
@@ -350,7 +377,7 @@ const LayeredDepMode = ({ depMap, files, activePath }) => {
               <div className="dep-search-dropdown">
                 <input className="dep-search-input" placeholder="Search files..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} autoFocus />
                 {searchResults.length > 0 && (
-                  <div className="dep-search-results">
+                  <div className="dep-search-results no-scrollbar">
                     {searchResults.map((r) => (
                       <button key={r.path} className="dep-search-result" onClick={() => focusSearchResult(r.path)}>
                         <span className="dep-search-file">{r.fileName}</span>
@@ -382,7 +409,7 @@ const LayeredDepMode = ({ depMap, files, activePath }) => {
           nodeTypes={depNodeTypes}
           fitView
           fitViewOptions={{ padding: 0.15 }}
-          colorMode="light"
+          colorMode="dark"
           nodesDraggable={true}
           nodesConnectable={false}
           minZoom={0.1}
@@ -390,25 +417,25 @@ const LayeredDepMode = ({ depMap, files, activePath }) => {
           defaultEdgeOptions={{ animated: false }}
           proOptions={{ hideAttribution: true }}
         >
-          <Background color="#ccc" gap={40} variant="dots" size={1} />
+          <Background color="#242424" gap={40} variant="dots" size={1} />
           <Controls
             position="bottom-left"
             showInteractive={false}
-            style={{ background: 'var(--bg-white)', border: 'var(--border-thin)', borderRadius: 0, boxShadow: 'var(--shadow-brutal-sm)' }}
+            style={{ background: 'var(--s2)', border: '1px solid var(--line-strong)', borderRadius: '6px', boxShadow: 'var(--shadow-brutal-sm)' }}
           />
           <MiniMap
             position="bottom-right"
             nodeColor={(n) =>
-              n.type === 'folderCluster' ? (n.data.color || '#2d5bff') :
-              n.data?.risk === 'high' ? '#ff3e3e' :
-              n.data?.risk === 'medium' ? '#f5a623' :
-              n.data?.isCenter ? '#c1ff72' : '#555'
+              n.type === 'folderCluster' ? (n.data.color || '#B3B3B3') :
+              n.data?.risk === 'high' ? '#E5484D' :
+              n.data?.risk === 'medium' ? '#FFB224' :
+              n.data?.isCenter ? '#FFFFFF' : '#3A3A3A'
             }
-            maskColor="rgba(0,0,0,0.15)"
+            maskColor="rgba(0,0,0,0.5)"
             style={{
-              background: 'var(--bg-paper)',
-              border: 'var(--border-thin)',
-              borderRadius: 0,
+              background: 'var(--s2)',
+              border: '1px solid var(--line-strong)',
+              borderRadius: '6px',
               boxShadow: 'var(--shadow-brutal-sm)',
             }}
           />
@@ -416,11 +443,11 @@ const LayeredDepMode = ({ depMap, files, activePath }) => {
       </div>
 
       <div className="dep-legend">
-        <div className="dep-legend-item"><span className="dep-legend-dot" style={{ background: '#c1ff72' }} /><span>Active / Center</span></div>
-        <div className="dep-legend-item"><span className="dep-legend-dot" style={{ background: '#2ecc40' }} /><span>Low Risk</span></div>
-        <div className="dep-legend-item"><span className="dep-legend-dot" style={{ background: '#f5a623' }} /><span>Medium Risk</span></div>
-        <div className="dep-legend-item"><span className="dep-legend-dot" style={{ background: '#ff3e3e' }} /><span>High Risk</span></div>
-        <div className="dep-legend-item"><span className="dep-legend-dot" style={{ background: '#2d5bff' }} /><span>Dependency</span></div>
+        <div className="dep-legend-item"><span className="dep-legend-dot" style={{ background: '#FFFFFF' }} /><span>Active / Center</span></div>
+        <div className="dep-legend-item"><span className="dep-legend-dot" style={{ background: '#3DD68C' }} /><span>Low Risk</span></div>
+        <div className="dep-legend-item"><span className="dep-legend-dot" style={{ background: '#FFB224' }} /><span>Medium Risk</span></div>
+        <div className="dep-legend-item"><span className="dep-legend-dot" style={{ background: '#E5484D' }} /><span>High Risk</span></div>
+        <div className="dep-legend-item"><span className="dep-legend-dot" style={{ background: '#B3B3B3' }} /><span>Dependency</span></div>
         <div className="dep-legend-item"><span className="dep-legend-dot dep-legend-dot-outline" /><span>External</span></div>
       </div>
     </div>
@@ -459,10 +486,16 @@ const CausalityGraph = () => {
   // Multi-file but no deps detected yet
   if (fileCount >= 2) {
     return (
-      <div className="dep-graph-empty">
-        <div className="dep-empty-icon">◇</div>
-        <div className="dep-empty-title">NO DEPENDENCIES DETECTED</div>
-        <div className="dep-empty-sub">Add import/require statements to see the graph</div>
+      <div className="dep-graph-empty" style={{ gap: '16px' }}>
+        <div className="dep-empty-icon" style={{ opacity: 0.5, animation: 'none' }}>
+          <svg viewBox="0 0 24 24" width="60" height="60" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="6" cy="6" r="3" />
+            <circle cx="18" cy="18" r="3" />
+            <line x1="9" y1="9" x2="15" y2="15" strokeDasharray="3 3" opacity="0.4" />
+          </svg>
+        </div>
+        <div className="dep-empty-title" style={{ fontSize: '0.8rem', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--t2)', textTransform: 'uppercase' }}>NO DEPENDENCIES DETECTED</div>
+        <div className="dep-empty-sub" style={{ fontSize: '0.58rem', letterSpacing: '0.12em', color: 'var(--t4)', textTransform: 'uppercase' }}>Add import/require statements to see the graph</div>
       </div>
     );
   }

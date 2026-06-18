@@ -2,7 +2,7 @@
  * OutputPanel.jsx — Execution Output with Smart Root Cause Analysis
  * ------------------------------------------------------- */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import useEditorStore from '../../store/useEditorStore';
 import HtmlPreview from '../Preview/HtmlPreview';
 import DevServerPanel from '../Terminal/DevServerPanel';
@@ -64,18 +64,23 @@ const ConfidenceRing = ({ percent, color, size = 52 }) => {
 
 /* ── Smart Root Cause Analysis Card — v2 Redesign ── */
 const RootCauseCard = ({ rootCause, code }) => {
+  const [isReportExpanded, setIsReportExpanded] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
     what: true, location: true, chain: false, fix: true, tip: true
   });
+  const [copied, setCopied] = useState(false);
 
   if (!rootCause) return null;
 
-  const confidence = rootCause.confidence || 0;
-  const confidencePercent = Math.round(confidence * 100);
-  const confidenceColor = confidence >= 0.8 ? '#c1ff72' : confidence >= 0.5 ? '#fbbf24' : '#ff3e3e';
-
   const toggleSection = (key) => {
     setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleCopyCode = (text) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const getCodeLine = (lineNum) => {
@@ -105,23 +110,18 @@ const RootCauseCard = ({ rootCause, code }) => {
     return text.split('\n')
       .map(l => l.trim())
       .filter(l => l.length > 0)
-      .map(l => l.replace(/^\d+[\.)]\\s*/, '').replace(/^\*\\s*/, '').replace(/^-\\s*/, ''));
+      .map(l => l.replace(/^\d+[\.)]\s*/, '').replace(/^\*\s*/, '').replace(/^-\s*/, ''));
   };
 
   const chainSteps = parseChain(rootCause.rootCauseChain);
 
-  /* Section header component */
-  const SectionHead = ({ icon, label, color, sectionKey, children }) => (
-    <div className="rca2-section">
+  /* Minimal Section Header Component */
+  const SectionHead = ({ label, sectionKey, children }) => (
+    <div className={`rca2-section ${expandedSections[sectionKey] ? 'is-expanded' : ''}`}>
       <div className="rca2-section-head" onClick={() => toggleSection(sectionKey)}>
-        <div className="rca2-section-dot" style={{ background: color, boxShadow: `0 0 8px ${color}40` }} />
-        <div className="rca2-section-pipe" />
-        <div className="rca2-section-icon" style={{ borderColor: `${color}40`, background: `${color}0a` }}>
-          {icon}
-        </div>
         <span className="rca2-section-label">{label}</span>
         <svg className="rca2-section-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
-          stroke="#555" strokeWidth="2.5" style={{ transform: expandedSections[sectionKey] ? 'rotate(180deg)' : 'rotate(0)' }}>
+          stroke="currentColor" strokeWidth="2.5" style={{ transform: expandedSections[sectionKey] ? 'rotate(180deg)' : 'rotate(0)' }}>
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </div>
@@ -132,146 +132,335 @@ const RootCauseCard = ({ rootCause, code }) => {
   );
 
   return (
-    <div className="rca2-card">
-      {/* ── Animated border glow ── */}
-      <div className="rca2-glow-border" />
+    <div className="rca2-wrapper">
+      {/* Dashed separator divider */}
+      <div className="rca2-divider" />
 
-      {/* ── Header ── */}
-      <div className="rca2-header">
-        <div className="rca2-header-left">
-          <div className="rca2-badge-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
-              <path d="M12 16v-4" />
-              <path d="M12 8h.01" />
-            </svg>
-          </div>
-          <div>
-            <div className="rca2-header-title">Diagnostic Report</div>
-            <div className="rca2-header-meta">
-              <span className="rca2-error-type">{rootCause.errorType}</span>
-              {errorLine > 0 && <span className="rca2-error-line">Line {errorLine}</span>}
-            </div>
-          </div>
-        </div>
-        <ConfidenceRing percent={confidencePercent} color={confidenceColor} />
+      {/* Typographic Collapse Trigger */}
+      <div className="rca2-collapse-trigger" onClick={() => setIsReportExpanded(!isReportExpanded)}>
+        <span className="rca2-trigger-symbol">{isReportExpanded ? '▼' : '▶'}</span>
+        <span className="rca2-trigger-text">
+          <span className="rca2-title-fill">AI Diagnostic&nbsp;</span>
+          <span className="rca2-title-stroke">Intelligence</span>
+          <span className="rca2-trigger-subtext">
+            {isReportExpanded ? '(Click to collapse)' : '(Click to expand)'}
+          </span>
+        </span>
       </div>
 
-      {/* ── Pipeline Body ── */}
-      <div className="rca2-body">
+      {isReportExpanded && (
+        <div className="rca2-card">
+          {/* ── Minimalist Header ── */}
 
-        {/* Section: What Happened */}
-        {rootCause.whatHappened && (
-          <SectionHead
-            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c1ff72" strokeWidth="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>}
-            label="WHAT HAPPENED"
-            color="#c1ff72"
-            sectionKey="what"
-          >
-            <div className="rca2-explanation">{rootCause.whatHappened}</div>
-          </SectionHead>
-        )}
+          {/* ── Body ── */}
+          <div className="rca2-body">
 
-        {/* Section: Error Location */}
-        {failingCode && (
-          <SectionHead
-            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff3e3e" strokeWidth="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>}
-            label="ERROR LOCATION"
-            color="#ff3e3e"
-            sectionKey="location"
-          >
-            <div className="rca2-code-viewer">
-              {errorLine > 1 && getCodeLine(errorLine - 1) && (
-                <div className="rca2-code-line rca2-ctx">
-                  <span className="rca2-ln">{errorLine - 1}</span>
-                  <span className="rca2-lc">{getCodeLine(errorLine - 1)}</span>
-                </div>
-              )}
-              <div className="rca2-code-line rca2-err">
-                <span className="rca2-ln">{errorLine}</span>
-                <span className="rca2-lc">{failingCode}</span>
-                <span className="rca2-err-msg">
-                  {rootCause.errorMessage?.length > 40
-                    ? rootCause.errorMessage.substring(0, 40) + '...'
-                    : rootCause.errorMessage}
-                </span>
-              </div>
-              {getCodeLine(errorLine + 1) && (
-                <div className="rca2-code-line rca2-ctx">
-                  <span className="rca2-ln">{errorLine + 1}</span>
-                  <span className="rca2-lc">{getCodeLine(errorLine + 1)}</span>
-                </div>
-              )}
-            </div>
-          </SectionHead>
-        )}
+            {/* Section: What Happened */}
+            {rootCause.whatHappened && (
+              <SectionHead label="What Happened" sectionKey="what">
+                <div className="rca2-explanation">{rootCause.whatHappened}</div>
+              </SectionHead>
+            )}
 
-        {/* Section: Root Cause Chain */}
-        {chainSteps.length > 0 && (
-          <SectionHead
-            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2d5bff" strokeWidth="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>}
-            label="CAUSE CHAIN"
-            color="#2d5bff"
-            sectionKey="chain"
-          >
-            <div className="rca2-chain">
-              {chainSteps.map((step, i) => (
-                <div key={i} className="rca2-chain-item">
-                  <div className="rca2-chain-connector">
-                    <div className="rca2-chain-dot" style={{
-                      background: i === chainSteps.length - 1 ? '#ff3e3e' : '#2d5bff',
-                      boxShadow: `0 0 6px ${i === chainSteps.length - 1 ? '#ff3e3e' : '#2d5bff'}50`
-                    }} />
-                    {i < chainSteps.length - 1 && <div className="rca2-chain-line" />}
+            {/* Section: Error Location */}
+            {failingCode && (
+              <SectionHead label="Error Location" sectionKey="location">
+                <div className="rca2-code-viewer">
+                  <div className="rca2-code-header">
+                    <span className="rca2-code-file-label">main.cpp</span>
                   </div>
-                  <div className="rca2-chain-content">
-                    <span className="rca2-chain-idx">{String(i + 1).padStart(2, '0')}</span>
-                    <span className="rca2-chain-text">{step}</span>
+                  <div className="rca2-code-body">
+                    {errorLine > 1 && getCodeLine(errorLine - 1) && (
+                      <div className="rca2-code-line rca2-ctx">
+                        <span className="rca2-ln">{errorLine - 1}</span>
+                        <span className="rca2-lc">{getCodeLine(errorLine - 1)}</span>
+                      </div>
+                    )}
+                    <div className="rca2-code-line rca2-err">
+                      <span className="rca2-ln">{errorLine}</span>
+                      <span className="rca2-lc">{failingCode}</span>
+                      <div className="rca2-err-msg">
+                        {rootCause.errorMessage}
+                      </div>
+                    </div>
+                    {getCodeLine(errorLine + 1) && (
+                      <div className="rca2-code-line rca2-ctx">
+                        <span className="rca2-ln">{errorLine + 1}</span>
+                        <span className="rca2-lc">{getCodeLine(errorLine + 1)}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          </SectionHead>
-        )}
-
-        {/* Section: Suggested Fix */}
-        {(fixContent.code || fixContent.explanation) && (
-          <SectionHead
-            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c1ff72" strokeWidth="2.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>}
-            label="SUGGESTED FIX"
-            color="#c1ff72"
-            sectionKey="fix"
-          >
-            {fixContent.explanation && (
-              <div className="rca2-fix-text">{fixContent.explanation}</div>
+              </SectionHead>
             )}
-            {fixContent.code && (
-              <div className="rca2-fix-code">
-                <div className="rca2-fix-code-bar">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#c1ff72" strokeWidth="2.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                  <span>Corrected Code</span>
+
+            {/* Section: Root Cause Chain */}
+            {chainSteps.length > 0 && (
+              <SectionHead label="Cause Chain" sectionKey="chain">
+                <div className="rca2-chain">
+                  {chainSteps.map((step, i) => (
+                    <div key={i} className="rca2-chain-item">
+                      <div className="rca2-chain-content">
+                        <span className="rca2-chain-idx">{String(i + 1).padStart(2, '0')}</span>
+                        <span className="rca2-chain-text">{step}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <pre className="rca2-fix-pre">{fixContent.code}</pre>
-              </div>
+              </SectionHead>
             )}
-          </SectionHead>
-        )}
 
-        {/* Section: Pro Tip */}
-        {rootCause.proTip && (
-          <SectionHead
-            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>}
-            label="PRO TIP"
-            color="#fbbf24"
-            sectionKey="tip"
-          >
-            <div className="rca2-tip">{rootCause.proTip}</div>
-          </SectionHead>
-        )}
+            {/* Section: Suggested Fix */}
+            {(fixContent.code || fixContent.explanation) && (
+              <SectionHead label="Suggested Fix" sectionKey="fix">
+                {fixContent.explanation && (
+                  <div className="rca2-fix-text">{fixContent.explanation}</div>
+                )}
+                {fixContent.code && (
+                  <div className="rca2-fix-code">
+                    <div className="rca2-code-header">
+                      <span className="rca2-code-file-label">fixed_solution</span>
+                      <button className="rca2-copy-btn" onClick={() => handleCopyCode(fixContent.code)}>
+                        {copied ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    <pre className="rca2-fix-pre">{fixContent.code}</pre>
+                  </div>
+                )}
+              </SectionHead>
+            )}
 
-        {/* Terminal dot at the end of the pipeline */}
-        <div className="rca2-pipeline-end">
-          <div className="rca2-section-dot" style={{ background: '#333', width: '6px', height: '6px' }} />
+            {/* Section: Pro Tip */}
+            {rootCause.proTip && (
+              <SectionHead label="Pro Tip" sectionKey="tip">
+                <div className="rca2-tip">{rootCause.proTip}</div>
+              </SectionHead>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const TELEMETRY_LINES = [
+  'INITIALIZING SYMBOL RESOLVER',
+  'PARSING CALL GRAPH TRAVERSALS',
+  'MAPPING EVENT EMITTER SCHEMAS',
+  'EVALUATING CAUSALITY GRADIENTS',
+  'CORRELATING METRICS & LOG ENTRIES',
+  'ISOLATING ROOT CAUSE SEQUENCE',
+  'GENERATING INTELLIGENCE REPORT'
+];
+
+const ScanningSegment = () => {
+  const [telemetryIndex, setTelemetryIndex] = useState(0);
+  const [traceId] = useState(() => Math.random().toString(36).substring(7).toUpperCase());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTelemetryIndex((prev) => (prev + 1) % TELEMETRY_LINES.length);
+    }, 1600);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="output-placeholder terminal-window-pane" style={{
+      position: 'relative',
+      overflow: 'hidden',
+      background: 'var(--s0)',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      height: '100%',
+      padding: '24px'
+    }}>
+      <style>{`
+        @keyframes character-jump {
+          0%, 100% { transform: translateY(0) scaleY(1) scaleX(1); }
+          20% { transform: translateY(0) scaleY(0.75) scaleX(1.25); }
+          26% { transform: translateY(0) scaleY(1.15) scaleX(0.85); }
+          50% { transform: translateY(-38px) scaleY(1) scaleX(1); }
+          72% { transform: translateY(0) scaleY(1) scaleX(1); }
+          76% { transform: translateY(0) scaleY(0.7) scaleX(1.3); }
+          84% { transform: translateY(0) scaleY(1.05) scaleX(0.95); }
+          90% { transform: translateY(0) scaleY(1) scaleX(1); }
+        }
+        @keyframes block-bounce {
+          0%, 48%, 62%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
+          56% { transform: translateY(2px); }
+        }
+        @keyframes particle-tl {
+          0%, 49% { transform: translate(0, 0); opacity: 0; }
+          50% { opacity: 1; }
+          75% { transform: translate(-28px, -20px); opacity: 0; }
+          100% { opacity: 0; }
+        }
+        @keyframes particle-tr {
+          0%, 49% { transform: translate(0, 0); opacity: 0; }
+          50% { opacity: 1; }
+          75% { transform: translate(28px, -20px); opacity: 0; }
+          100% { opacity: 0; }
+        }
+        @keyframes particle-bl {
+          0%, 49% { transform: translate(0, 0); opacity: 0; }
+          50% { opacity: 1; }
+          75% { transform: translate(-20px, 16px); opacity: 0; }
+          100% { opacity: 0; }
+        }
+        @keyframes particle-br {
+          0%, 49% { transform: translate(0, 0); opacity: 0; }
+          50% { opacity: 1; }
+          75% { transform: translate(20px, 16px); opacity: 0; }
+          100% { opacity: 0; }
+        }
+        @keyframes particle-top {
+          0%, 49% { transform: translate(0, 0); opacity: 0; }
+          50% { opacity: 1; }
+          75% { transform: translate(0, -32px); opacity: 0; }
+          100% { opacity: 0; }
+        }
+        .pixel-particle {
+          position: absolute;
+          background: #FFFFFF;
+        }
+        .p-tl { width: 4px; height: 4px; animation: particle-tl 1.6s infinite; }
+        .p-tr { width: 5px; height: 5px; animation: particle-tr 1.6s infinite; }
+        .p-bl { width: 3px; height: 3px; animation: particle-bl 1.6s infinite; }
+        .p-br { width: 4px; height: 4px; animation: particle-br 1.6s infinite; }
+        .p-top { width: 5px; height: 5px; animation: particle-top 1.6s infinite; }
+      `}</style>
+
+      {/* Retro Animation Stage */}
+      <div style={{
+        position: 'relative',
+        width: '180px',
+        height: '140px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        marginBottom: '28px'
+      }}>
+        {/* Pixel Question Block */}
+        <div style={{
+          position: 'absolute',
+          top: '16px',
+          left: 'calc(50% - 20px)',
+          width: '40px',
+          height: '40px',
+          animation: 'block-bounce 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite'
+        }}>
+          <svg width="40" height="40" viewBox="0 0 16 16" shapeRendering="crispEdges">
+            {/* Outer border */}
+            <rect x="0" y="0" width="16" height="16" fill="none" stroke="#FFFFFF" strokeWidth="1"/>
+            {/* Corner dots */}
+            <rect x="2" y="2" width="1" height="1" fill="#FFFFFF"/>
+            <rect x="13" y="2" width="1" height="1" fill="#FFFFFF"/>
+            <rect x="2" y="13" width="1" height="1" fill="#FFFFFF"/>
+            <rect x="13" y="13" width="1" height="1" fill="#FFFFFF"/>
+            {/* Question mark */}
+            <rect x="6" y="4" width="4" height="1" fill="#FFFFFF"/>
+            <rect x="5" y="5" width="2" height="1" fill="#FFFFFF"/>
+            <rect x="9" y="5" width="2" height="1" fill="#FFFFFF"/>
+            <rect x="8" y="6" width="2" height="2" fill="#FFFFFF"/>
+            <rect x="7" y="8" width="2" height="1" fill="#FFFFFF"/>
+            <rect x="7" y="10" width="2" height="2" fill="#FFFFFF"/>
+          </svg>
+        </div>
+
+        {/* Particles */}
+        <div style={{ position: 'absolute', top: '36px', left: '50%', width: '0', height: '0' }}>
+          <div className="pixel-particle p-tl" />
+          <div className="pixel-particle p-tr" />
+          <div className="pixel-particle p-bl" />
+          <div className="pixel-particle p-br" />
+          <div className="pixel-particle p-top" />
+        </div>
+
+        {/* Character */}
+        <div style={{
+          position: 'absolute',
+          bottom: '0',
+          left: 'calc(50% - 20px)',
+          width: '40px',
+          height: '40px',
+          transformOrigin: 'bottom center',
+          animation: 'character-jump 1.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite'
+        }}>
+          <svg width="40" height="40" viewBox="0 0 16 16" shapeRendering="crispEdges">
+            {/* Cute Pixel Robot/Character */}
+            <rect x="4" y="4" width="8" height="8" fill="#FFFFFF"/>
+            <rect x="5" y="5" width="6" height="4" fill="var(--s0)"/>
+            {/* Eyes */}
+            <rect x="6" y="6" width="1" height="2" fill="#FFFFFF"/>
+            <rect x="9" y="6" width="1" height="2" fill="#FFFFFF"/>
+            {/* Mouth */}
+            <rect x="7" y="9" width="2" height="1" fill="#FFFFFF"/>
+            {/* Cap/Hat */}
+            <rect x="3" y="3" width="10" height="1" fill="#FFFFFF"/>
+            <rect x="5" y="2" width="6" height="1" fill="#FFFFFF"/>
+            {/* Feet */}
+            <rect x="4" y="12" width="2" height="2" fill="#FFFFFF"/>
+            <rect x="10" y="12" width="2" height="2" fill="#FFFFFF"/>
+          </svg>
+        </div>
+      </div>
+
+      {/* Platform under the character */}
+      <div style={{
+        width: '140px',
+        height: '1px',
+        background: '#FFFFFF',
+        opacity: 0.15,
+        marginTop: '-28px',
+        marginBottom: '28px'
+      }} />
+
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+        {/* Title */}
+        <div style={{
+          fontFamily: 'var(--font-header)',
+          fontSize: '0.82rem',
+          fontWeight: 900,
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          color: '#FFFFFF',
+          lineHeight: 1.2,
+          marginBottom: '8px'
+        }}>
+          Scanning Execution Flow
+        </div>
+
+        {/* Live Telemetry Message */}
+        <div style={{
+          fontFamily: 'var(--font-number)',
+          fontSize: '0.55rem',
+          fontWeight: 500,
+          color: 'var(--t2)',
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+          height: '14px',
+          marginBottom: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '4px'
+        }}>
+          <span style={{ color: 'var(--t4)' }}>▶</span> {TELEMETRY_LINES[telemetryIndex]}
+        </div>
+
+        {/* Trace ID Tag */}
+        <div style={{
+          fontFamily: 'var(--font-number)',
+          fontSize: '0.52rem',
+          letterSpacing: '0.04em',
+          color: 'var(--t4)',
+          textTransform: 'uppercase'
+        }}>
+          TRACE_ID: {traceId}
         </div>
       </div>
     </div>
@@ -305,25 +494,18 @@ const OutputPanel = () => {
   }
 
   if (isRunning) {
-    return (
-      <div className="output-placeholder terminal-window-pane" style={{ position: 'relative', overflow: 'hidden' }}>
-        <div className="terminal-scanlines"></div>
-        <div className="diagnostic-loading">
-          <div className="loading-spinner" style={{ width: 40, height: 40, borderWidth: '4px', borderColor: 'var(--accent-toxic-green) transparent' }}></div>
-          <div style={{ marginTop: 24, letterSpacing: '0.2em' }} className="ai-header-glitch">SCANNING EXECUTION FLOW...</div>
-          <div style={{ fontSize: '0.6rem', opacity: 0.5, marginTop: 8, fontFamily: 'var(--font-number)' }}>TRACE_ID: {Math.random().toString(36).substring(7).toUpperCase()}</div>
-        </div>
-      </div>
-    );
+    return <ScanningSegment />;
   }
 
   if (!output && !error) {
     return (
-      <div className="output-placeholder terminal-window-pane">
+      <div className="output-placeholder terminal-window-pane" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="terminal-scanlines" />
-        <div style={{ textAlign: 'center', opacity: 0.3 }}>
-          <div style={{ fontSize: '2rem', marginBottom: 12 }}>⚡</div>
-          <div className="tech-label" style={{ border: 'none', background: 'transparent' }}>SYSTEM_IDLE // AWAITING_SEQUENCE</div>
+        <div className="dep-graph-empty" style={{ background: 'transparent', gap: '8px' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div className="dep-empty-title" style={{ fontSize: '0.8rem', fontWeight: 900, letterSpacing: '0.08em', color: 'var(--t2)', textTransform: 'uppercase', marginBottom: '6px' }}>SYSTEM_IDLE</div>
+            <div className="dep-empty-sub" style={{ fontSize: '0.58rem', letterSpacing: '0.12em', color: 'var(--t4)', textTransform: 'uppercase' }}>AWAITING_SEQUENCE_EXECUTION</div>
+          </div>
         </div>
       </div>
     );
@@ -332,12 +514,6 @@ const OutputPanel = () => {
   return (
     <div className="terminal-window-pane">
       <div className="terminal-scanlines" />
-
-      {/* System Meta Header */}
-      <div className="terminal-meta-header">
-        <div><span className="status-pulse" /> TERMINAL_ACTIVE</div>
-        <div>SESSION_ID: {sessionId?.substring(0, 12)}</div>
-      </div>
 
       <div className="terminal-log-area" style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}>
         {output && output.split('\n').filter(l => l.trim()).map((line, idx) => (

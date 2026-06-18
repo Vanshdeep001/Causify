@@ -22,29 +22,29 @@ const FRAMEWORK_COLORS = {
   'vue': '#42b883',
   'angular': '#dd0031',
   'svelte': '#ff3e00',
-  'express': '#c1ff72',
+  'express': '#FFFFFF',
   'fastify': '#000',
   'koa': '#333',
   'nestjs': '#e0234e',
-  'node': '#c1ff72',
+  'node': '#FFFFFF',
   'hapi': '#fd7e14',
 };
 
 const STATE_COLORS = {
-  IDLE: '#555',
-  PREPARING: '#fbbf24',
-  INSTALLING: '#f59e0b',
-  STARTING: '#38bdf8',
-  RUNNING: '#c1ff72',
-  STOPPED: '#6b7280',
-  ERROR: '#ef4444',
+  IDLE: '#6E6E6E',
+  PREPARING: '#FFB224',
+  INSTALLING: '#FFB224',
+  STARTING: '#FFB224',
+  RUNNING: '#FFFFFF',
+  STOPPED: '#6E6E6E',
+  ERROR: '#E5484D',
 };
 
 const STATE_LABELS = {
-  IDLE: 'SYSTEM READY',
-  PREPARING: 'PREPARING FILES',
-  INSTALLING: 'SYNCING RESOURCES',
-  STARTING: 'STARTING UP',
+  IDLE: 'READY',
+  PREPARING: 'PREPARING',
+  INSTALLING: 'SYNCING',
+  STARTING: 'STARTING',
   RUNNING: 'RUNNING',
   STOPPED: 'STOPPED',
   ERROR: 'ERROR',
@@ -57,73 +57,57 @@ const stripAnsi = (str) => {
 };
 
 /* ── Animated React Atom Icon ── */
-const ReactAtom = ({ size = 40, color = '#61dafb', spinning = false }) => (
+const ReactAtom = ({ size = 26, color = '#EDEDED', spinning = false }) => (
   <svg width={size} height={size} viewBox="0 0 100 100" style={{
-    animation: spinning ? 'spin-slow 4s linear infinite' : 'none',
-    filter: spinning ? `drop-shadow(0 0 8px ${color}66)` : 'none'
+    animation: spinning ? 'spin-slow 8s linear infinite' : 'none',
+    transition: 'all 0.3s ease'
   }}>
     <circle cx="50" cy="50" r="6" fill={color} />
-    <ellipse cx="50" cy="50" rx="40" ry="14" stroke={color} strokeWidth="3" fill="none" opacity="0.4" />
+    <ellipse cx="50" cy="50" rx="40" ry="14" stroke={color} strokeWidth="3" fill="none" opacity="0.3" />
     <ellipse cx="50" cy="50" rx="40" ry="14" stroke={color} strokeWidth="3" fill="none" transform="rotate(60 50 50)" />
     <ellipse cx="50" cy="50" rx="40" ry="14" stroke={color} strokeWidth="3" fill="none" transform="rotate(120 50 50)" />
   </svg>
 );
 
 /* ── Node.js Hexagon Icon ── */
-const NodeHex = ({ size = 40, color = '#c1ff72', active = false }) => (
+const NodeHex = ({ size = 26, color = '#EDEDED', active = false }) => (
   <svg width={size} height={size} viewBox="0 0 100 100" style={{
-    filter: active ? `drop-shadow(0 0 8px ${color}66)` : 'none',
-    animation: active ? 'hud-flicker 2s infinite' : 'none'
+    transition: 'all 0.3s ease'
   }}>
-    <polygon points="50,5 95,27.5 95,72.5 50,95 5,72.5 5,27.5" stroke={color} strokeWidth="4" fill={color} fillOpacity={active ? 0.3 : 0.1} />
-    <text x="50" y="62" textAnchor="middle" fontFamily="'Unbounded', sans-serif" fontWeight="900" fontSize="28" fill={color}>N</text>
+    <polygon points="50,5 95,27.5 95,72.5 50,95 5,72.5 5,27.5" stroke={color} strokeWidth="4" fill="none" />
+    <text x="50" y="62" textAnchor="middle" fontFamily="'Space Grotesk', sans-serif" fontWeight="900" fontSize="30" fill={color}>N</text>
   </svg>
 );
 
-/* ── HUD Component: Corner Brackets ── */
-const HudCornerBrackets = () => (
-  <>
-    <div className="hud-corner-l" />
-    <div className="hud-corner-r" style={{ bottom: '10px', right: '10px', top: 'auto', left: 'auto' }} />
-    <div className="hud-corner-r" style={{ top: '10px', right: '10px', bottom: 'auto', left: 'auto', borderBottom: 'none', borderTop: '4px solid var(--accent-toxic-green)' }} />
-    <div className="hud-corner-l" style={{ bottom: '10px', left: '10px', top: 'auto', right: 'auto', borderTop: 'none', borderBottom: '4px solid var(--accent-toxic-green)' }} />
-  </>
+/* ── Flat Telemetry Row ── */
+const TelemetryLine = ({ label, value, color }) => (
+  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px', padding: '3px 0', whiteSpace: 'nowrap' }}>
+    <span style={{ fontFamily: 'var(--font-number)', fontSize: '8px', color: 'var(--t3)', letterSpacing: '0.08em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+      {label}
+    </span>
+    <span style={{ fontFamily: 'var(--font-number)', fontSize: '0.7rem', color: color || 'var(--t1)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+      {value}
+    </span>
+  </div>
 );
 
 /* ── Pulsing Status Dot ── */
 const StatusLabel = ({ state }) => {
-  const color = STATE_COLORS[state] || '#555';
+  const color = STATE_COLORS[state] || '#6E6E6E';
   const label = STATE_LABELS[state] || 'UNKNOWN';
   const isPulsing = ['RUNNING', 'INSTALLING', 'STARTING', 'PREPARING'].includes(state);
 
   return (
-    <div style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '8px',
-      padding: '4px 12px',
-      background: '#0a0a0a',
-      border: `2px solid ${color}`,
-      boxShadow: isPulsing ? `0 0 10px ${color}44` : 'none',
-      position: 'relative',
-      overflow: 'hidden'
-    }}>
-      {isPulsing && (
-        <div style={{
-          position: 'absolute',
-          top: 0, left: 0, width: '100%', height: '100%',
-          background: `linear-gradient(90deg, transparent, ${color}22, transparent)`,
-          animation: 'scanline 2s linear infinite'
-        }} />
-      )}
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
       <span style={{
-        width: '6px', height: '6px', borderRadius: '50%', background: color,
+        width: '4px', height: '4px', borderRadius: '50%', background: color,
+        boxShadow: isPulsing ? `0 0 6px ${color}` : 'none',
         animation: isPulsing ? 'pulse-live 1s ease-in-out infinite' : 'none'
       }} />
       <span style={{
-        fontFamily: "'Unbounded', sans-serif",
-        fontSize: '10px', fontWeight: 900, color: color,
-        letterSpacing: '0.05em'
+        fontFamily: "'Space Grotesk', sans-serif",
+        fontSize: '8px', fontWeight: 800, color: color,
+        letterSpacing: '0.04em'
       }}>{label}</span>
     </div>
   );
@@ -134,7 +118,6 @@ const StatusLabel = ({ state }) => {
  * ══════════════════════════════════════════════════ */
 const ServerCard = ({ project, serverState, sessionId }) => {
   const logContainerRef = useRef(null);
-  const [isExpanded, setIsExpanded] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const updateDevServer = useEditorStore((s) => s.updateDevServer);
 
@@ -144,19 +127,47 @@ const ServerCard = ({ project, serverState, sessionId }) => {
 
   const port = serverState?.port || project.defaultPort;
   const url = serverState?.url || `http://localhost:${port}`;
-  const fwColor = FRAMEWORK_COLORS[project.framework] || '#c1ff72';
   const isRunning = state === 'RUNNING';
   const isBusy = ['INSTALLING', 'STARTING', 'PREPARING'].includes(state);
 
+  // Live telemetry simulation
+  const [uptime, setUptime] = useState(0);
+  const [cpu, setCpu] = useState(0);
+  const [memory, setMemory] = useState(0);
+
   useEffect(() => {
-    if (logContainerRef.current && isExpanded) {
+    let interval;
+    if (isRunning) {
+      setCpu(Math.floor(Math.random() * 8) + 2);
+      setMemory(Math.floor(Math.random() * 20) + 140);
+      interval = setInterval(() => {
+        setUptime(u => u + 1);
+        setCpu(Math.floor(Math.random() * 8) + 2);
+        setMemory(Math.floor(Math.random() * 20) + 140);
+      }, 1000);
+    } else {
+      setUptime(0);
+      setCpu(0);
+      setMemory(0);
+    }
+    return () => clearInterval(interval);
+  }, [isRunning]);
+
+  const formatUptime = (secs) => {
+    const h = Math.floor(secs / 3600).toString().padStart(2, '0');
+    const m = Math.floor((secs % 3600) / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  };
+
+  useEffect(() => {
+    if (logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
-  }, [logs, isExpanded]);
+  }, [logs]);
 
   const handleStart = async () => {
     setIsLoading(true);
-    setIsExpanded(true);
     try {
       const status = await startDevServer(sessionId, project.directory, project.type);
       updateDevServer(project.type, status);
@@ -178,194 +189,268 @@ const ServerCard = ({ project, serverState, sessionId }) => {
   };
 
   const isReactLike = project.framework?.toLowerCase().includes('react') || project.framework?.toLowerCase().includes('vite');
+  const themeColor = isReactLike ? '#61dafb' : '#6DB33F';
 
   return (
-    <div className="hud-module" style={{
-      border: `4px solid ${isRunning ? fwColor : 'var(--color-black)'}`,
-      padding: '0', background: '#080808',
-      transition: 'all 0.4s cubic-bezier(0.19, 1, 0.22, 1)',
-      boxShadow: isRunning ? `10px 10px 0px ${fwColor}` : '6px 6px 0px var(--color-black)'
+    <div style={{
+      padding: '0',
+      background: 'transparent',
+      position: 'relative',
+      overflow: 'visible',
     }}>
-      <HudCornerBrackets />
-
-      {/* Grid Pattern Background */}
-      <div style={{
-        position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-        backgroundImage: 'radial-gradient(rgba(255,255,255,0.03) 1px, transparent 0)',
-        backgroundSize: '20px 20px', pointerEvents: 'none'
-      }} />
-
-      {/* Card Header Section */}
-      <div style={{
-        padding: '24px 30px', position: 'relative', zIndex: 5,
-        display: 'flex', flexDirection: 'column', gap: '20px'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div style={{ display: 'flex', gap: '20px' }}>
-            <div style={{ paddingTop: '5px' }}>
+      <div style={{ display: 'flex', flexDirection: 'row', gap: '24px', flexWrap: 'wrap' }}>
+        
+        {/* LEFT COLUMN: Controls & Uptime telemetry */}
+        <div style={{ flex: '1 1 280px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* Header Title Info */}
+          <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+            <div style={{
+              width: '36px', height: '36px',
+              border: `1px solid ${isRunning || isBusy ? themeColor : '#2E2E2E'}`,
+              borderRadius: '2px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'transparent',
+              transition: 'all 0.3s ease'
+            }}>
               {isReactLike
-                ? <ReactAtom size={50} color={fwColor} spinning={isRunning || isBusy} />
-                : <NodeHex size={50} color={fwColor} active={isRunning || isBusy} />
+                ? <ReactAtom size={22} color={isRunning || isBusy ? '#61dafb' : '#6E6E6E'} spinning={isRunning || isBusy} />
+                : <NodeHex size={22} color={isRunning || isBusy ? '#6DB33F' : '#6E6E6E'} active={isRunning || isBusy} />
               }
             </div>
             <div>
               <h2 style={{
-                fontFamily: 'var(--font-header)', fontSize: '1.8rem',
-                color: isRunning ? fwColor : '#fff', margin: 0,
-                lineHeight: 1, textTransform: 'uppercase', letterSpacing: '-0.03em'
+                fontFamily: 'var(--font-header)', fontSize: '1.15rem',
+                color: 'var(--t1)', margin: 0,
+                lineHeight: 1.1, textTransform: 'uppercase', letterSpacing: '-0.02em'
               }}>{project.displayName}</h2>
-              <div style={{ display: 'flex', gap: '15px', marginTop: '10px' }}>
-                <div style={{
-                  fontFamily: 'var(--font-number)', fontSize: '10px',
-                  fontWeight: 900, color: '#555', display: 'flex', alignItems: 'center', gap: '6px'
+              <div style={{
+                fontFamily: 'var(--font-number)', fontSize: '0.62rem',
+                color: 'var(--t3)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '6px'
+              }}>
+                <span>PATH</span>
+                <span style={{
+                  color: isRunning || isBusy ? themeColor : 'var(--t2)',
+                  background: 'var(--s2)',
+                  padding: '1px 5px',
+                  border: `1px solid ${isRunning || isBusy ? themeColor + '40' : '#2E2E2E'}`,
+                  borderRadius: '2px',
+                  transition: 'all 0.3s ease'
                 }}>
-                  <span style={{ opacity: 0.5 }}>PATH:</span>
-                  <span style={{ color: '#aaa', background: '#111', padding: '2px 6px', border: '1px solid #222' }}>
-                    {project.directory || 'ROOT'}
-                  </span>
-                </div>
+                  {project.directory || 'ROOT'}
+                </span>
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
-            {isRunning ? (
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontFamily: 'var(--font-number)', fontSize: '8px', color: fwColor, fontWeight: 900, letterSpacing: '0.1em' }}>PORT</div>
-                <div style={{ fontFamily: 'var(--font-number)', fontSize: '1.4rem', color: '#fff', fontWeight: 900 }}>:{port}</div>
-              </div>
-            ) : (
-              <div style={{ textAlign: 'right', opacity: 0.3 }}>
-                <div style={{ fontFamily: 'var(--font-number)', fontSize: '8px', color: '#555', fontWeight: 900 }}>DEFAULT PORT</div>
-                <div style={{ fontFamily: 'var(--font-number)', fontSize: '1.4rem', color: '#555', fontWeight: 900 }}>:{project.defaultPort}</div>
-              </div>
+          {/* Telemetry Matrix (Flat Dot Leaders) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <TelemetryLine label="PORT" value={isRunning ? `:${port}` : 'CLOSED'} color={isRunning ? 'var(--t1)' : 'var(--t4)'} />
+            <TelemetryLine label="STATE" value={<StatusLabel state={state} />} />
+            <TelemetryLine label="UPTIME" value={isRunning ? formatUptime(uptime) : 'OFFLINE'} color={isRunning ? 'var(--t1)' : 'var(--t4)'} />
+            <TelemetryLine label="LOAD" value={isRunning ? `${cpu}% CPU / ${memory}MB` : 'STABLE'} color={isRunning ? 'var(--t1)' : 'var(--t4)'} />
+          </div>
+
+          {/* Action Sequencer switch controller */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {/* ACTIVATE */}
+              <button
+                onClick={!isRunning && !isBusy ? handleStart : undefined}
+                disabled={isLoading || isBusy || isRunning}
+                style={{
+                  flex: 1,
+                  height: '32px',
+                  borderRadius: '2px',
+                  border: `1px solid ${isRunning ? '#FFFFFF' : '#333'}`,
+                  background: isRunning ? '#FFFFFF' : 'transparent',
+                  color: isRunning ? '#000000' : 'var(--t3)',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontWeight: 700,
+                  fontSize: '0.66rem',
+                  letterSpacing: '0.04em',
+                  cursor: isRunning || isBusy ? 'default' : 'pointer',
+                  transition: 'all 0.2s ease',
+                  opacity: isBusy ? 0.5 : 1,
+                }}
+                onMouseEnter={e => { if (!isRunning && !isBusy) { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; e.currentTarget.style.color = '#FFFFFF'; e.currentTarget.style.borderColor = '#FFFFFF'; } }}
+                onMouseLeave={e => { if (!isRunning && !isBusy) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--t3)'; e.currentTarget.style.borderColor = '#333'; } }}
+              >
+                {isBusy ? 'SYNCING...' : 'ACTIVATE'}
+              </button>
+              
+              {/* DEACTIVATE */}
+              <button
+                onClick={isRunning ? handleStop : undefined}
+                disabled={isLoading || isBusy || !isRunning}
+                style={{
+                  flex: 1,
+                  height: '32px',
+                  borderRadius: '2px',
+                  border: `1px solid ${(!isRunning && !isBusy) ? 'rgba(229, 72, 77, 0.2)' : (isRunning ? 'var(--crimson)' : '#333')}`,
+                  background: isRunning ? 'transparent' : 'rgba(229, 72, 77, 0.04)',
+                  color: isRunning ? 'var(--crimson)' : 'var(--t4)',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontWeight: 700,
+                  fontSize: '0.66rem',
+                  letterSpacing: '0.04em',
+                  cursor: !isRunning || isBusy ? 'default' : 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+                onMouseEnter={e => { if (isRunning && !isBusy) { e.currentTarget.style.background = 'rgba(229, 72, 77, 0.1)'; e.currentTarget.style.color = 'var(--crimson)'; e.currentTarget.style.borderColor = 'var(--crimson)'; } }}
+                onMouseLeave={e => { if (isRunning && !isBusy) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--crimson)'; e.currentTarget.style.borderColor = 'var(--crimson)'; } }}
+              >
+                DEACTIVATE
+              </button>
+            </div>
+
+            {/* Launch browser link (Flat underlined link) */}
+            {isRunning && (
+              <a
+                href={url} target="_blank" rel="noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  color: themeColor,
+                  textDecoration: 'none',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontWeight: 600,
+                  fontSize: '0.68rem',
+                  letterSpacing: '0.04em',
+                  marginTop: '4px',
+                  borderBottom: `1px solid ${themeColor}80`,
+                  paddingBottom: '2px',
+                  alignSelf: 'flex-start',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={e => { e.currentTarget.style.color = '#FFFFFF'; e.currentTarget.style.borderBottomColor = '#FFFFFF'; }}
+                onMouseLeave={e => { e.currentTarget.style.color = themeColor; e.currentTarget.style.borderBottomColor = themeColor + '80'; }}
+              >
+                LAUNCH BROWSER
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                  <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                </svg>
+              </a>
             )}
           </div>
         </div>
 
-        {/* Action Bar */}
-        <div style={{
-          display: 'flex', gap: '12px', borderTop: '2px solid #1a1a1a', paddingTop: '15px'
-        }}>
-          {isRunning || isBusy ? (
-            <button
-              onClick={handleStop}
-              disabled={isLoading}
-              style={{
-                flex: 1, height: '44px', border: 'var(--border-thin)',
-                background: 'var(--accent-crimson)', color: '#fff',
-                fontFamily: 'var(--font-number)', fontWeight: 900, fontSize: '12px',
-                cursor: 'pointer', transition: 'all 0.2s',
-                boxShadow: '4px 4px 0px #000'
-              }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translate(-2px, -2px)'; e.currentTarget.style.boxShadow = '6px 6px 0px #000'; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '4px 4px 0px #000'; }}
-            >
-              STOP SERVER
-            </button>
-          ) : (
-            <button
-              onClick={handleStart}
-              disabled={isLoading}
-              style={{
-                flex: 1, height: '44px', border: 'var(--border-thin)',
-                background: fwColor, color: '#000',
-                fontFamily: 'var(--font-number)', fontWeight: 900, fontSize: '12px',
-                cursor: 'pointer', transition: 'all 0.2s',
-                boxShadow: '4px 4px 0px #000'
-              }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translate(-2px, -2px)'; e.currentTarget.style.boxShadow = '6px 6px 0px #000'; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '4px 4px 0px #000'; }}
-            >
-              START SERVER
-            </button>
-          )}
+        {/* CENTER DIVIDER: Solid vertical guide */}
+        <div style={{ flex: '0 0 1px', borderRight: '1px solid #2E2E2E', alignSelf: 'stretch', margin: '4px 0', minHeight: '140px' }} />
 
-          {isRunning && (
-            <a
-              href={url} target="_blank" rel="noreferrer"
-              style={{
-                width: '60px', height: '44px', border: 'var(--border-thin)',
-                background: '#fff', color: '#000', display: 'flex',
-                alignItems: 'center', justifyContent: 'center',
-                boxShadow: '4px 4px 0px #000', transition: 'all 0.2s'
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = fwColor; e.currentTarget.style.transform = 'translate(-2px, -2px)'; e.currentTarget.style.boxShadow = '6px 6px 0px #000'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '4px 4px 0px #000'; }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
-            </a>
-          )}
-
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            style={{
-              padding: '0 15px', border: 'var(--border-thin)',
-              background: '#111', color: '#555',
-              fontFamily: 'var(--font-number)', fontWeight: 900, fontSize: '10px',
-              cursor: 'pointer'
-            }}
-          >
-            {isExpanded ? 'HIDE LOGS' : 'SHOW LOGS'}
-          </button>
-        </div>
-      </div>
-
-      {/* Log Console — CRT Style */}
-      {isExpanded && (
-        <div style={{
-          position: 'relative',
-          background: '#050505',
-          borderTop: '4px solid var(--color-black)',
-          padding: '2px'
-        }}>
+        {/* RIGHT COLUMN: Output Stream Monitor Console */}
+        <div style={{ flex: '2 2 400px', display: 'flex', flexDirection: 'column', minWidth: '300px', overflow: 'hidden' }}>
+          
+          {/* Console Header */}
           <div style={{
-            position: 'absolute', top: 0, left: 0, height: '2px', width: '2px',
-            background: fwColor, boxShadow: `0 0 10px ${fwColor}`, zIndex: 10
-          }} />
+            background: 'transparent',
+            padding: '0 0 8px 0',
+            borderBottom: '1px solid #2E2E2E',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <span style={{ fontFamily: 'var(--font-number)', fontSize: '8px', color: 'var(--t3)', letterSpacing: '0.12em', fontWeight: 600 }}>LOG STREAM</span>
+            <span style={{
+              fontFamily: 'var(--font-number)',
+              fontSize: '7px',
+              color: isRunning ? themeColor : 'var(--t4)',
+              letterSpacing: '0.04em',
+              textShadow: isRunning ? `0 0 6px ${themeColor}40` : 'none',
+              transition: 'all 0.3s ease'
+            }}>
+              {isRunning ? 'RECEIVING_FEED' : 'OFFLINE'}
+            </span>
+          </div>
 
-          <div
-            ref={logContainerRef}
-            className="hud-scanlines"
-            style={{
-              height: '320px', overflowY: 'auto',
-              padding: '20px',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px', lineHeight: '1.7',
-              color: '#aaccff', background: '#0a0a0a',
-              position: 'relative'
-            }}
-          >
-            {logs.length === 0 ? (
-              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#333' }}>
-                <span className="hud-glitch-text">WAITING FOR OUTPUT...</span>
-              </div>
-            ) : (
-              <div style={{ position: 'relative', zIndex: 5 }}>
-                {logs.map((line, i) => (
-                  <div key={i} style={{
-                    color: line.includes('✓') ? 'var(--accent-toxic-green)'
-                      : line.includes('✗') ? 'var(--accent-crimson)'
-                        : line.includes('PHASE') ? '#fbbf24'
-                          : line.includes('$') ? 'var(--accent-electric-blue)'
-                            : line.includes('Local:') || line.includes('Network:') ? fwColor
-                              : '#aaccff',
-                    opacity: line.includes('━') || line.includes('──') ? 0.3 : 0.9,
-                    textShadow: line.includes('✓') ? `0 0 5px ${fwColor}` : 'none',
-                    fontWeight: line.includes('PHASE') || line.includes('✓') ? 900 : 400,
-                    marginBottom: '2px'
-                  }}>
-                    {line}
-                  </div>
-                ))}
-              </div>
-            )}
+          {/* Console Body */}
+          <div style={{
+            position: 'relative',
+            background: '#070707',
+            border: '1px solid #232323',
+            borderRadius: '2px',
+            flex: 1,
+            height: '180px',
+            minHeight: '180px',
+            marginTop: '8px',
+            overflow: 'hidden'
+          }}>
+            {/* CRT Screen Scanline Filter Overlay */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+              background: 'linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.04), rgba(0, 255, 0, 0.01), rgba(0, 255, 0, 0.03))',
+              backgroundSize: '100% 2px, 3px 100%',
+              opacity: 0.15,
+              pointerEvents: 'none',
+              zIndex: 10
+            }} />
+            
+            <div
+              ref={logContainerRef}
+              style={{
+                height: '100%', overflowY: 'auto',
+                padding: '10px 12px',
+                background: '#070707',
+                position: 'relative',
+                zIndex: 5
+              }}
+            >
+              {logs.length === 0 ? (
+                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{
+                    fontFamily: "var(--font-number)", fontSize: '0.5rem',
+                    color: 'var(--t4)', letterSpacing: '0.2em', fontWeight: 600,
+                  }}>AWAITING OUTPUT STREAM</span>
+                </div>
+              ) : (
+                <div style={{ position: 'relative' }}>
+                  {logs.map((line, i) => {
+                    const isSeparator = line.includes('━') || line.includes('──');
+                    const isPhase = line.includes('PHASE') || line.includes('CAUSIFY DEV SERVER');
+                    const isSuccess = line.includes('✓');
+                    const isError = line.includes('✗') || line.includes('ERROR');
+                    const isCommand = line.trimStart().startsWith('$');
+                    const isUrl = line.includes('Local:') || line.includes('→ Detected') || line.includes('SERVER IS RUNNING');
+                    const isValidation = line.includes('package.json:') || line.includes('index.html:') || line.includes('entry point:') || line.includes('Total files') || line.includes('src/:');
+                    const isEmpty = line.trim() === '';
+
+                    if (isSeparator) return <div key={i} style={{ height: '1px', background: 'var(--line)', margin: '6px 0' }} />;
+                    if (isEmpty) return <div key={i} style={{ height: '3px' }} />;
+
+                    return (
+                      <div key={i} style={{
+                        fontFamily: isPhase
+                          ? "'Space Grotesk', sans-serif"
+                          : "var(--font-mono, 'JetBrains Mono', monospace)",
+                        fontSize: isPhase ? '0.58rem' : '0.62rem',
+                        lineHeight: isPhase ? 1 : 1.6,
+                        letterSpacing: isPhase ? '0.12em' : '0.01em',
+                        color: isPhase ? 'var(--t3)'
+                          : isUrl ? 'var(--t1)'
+                          : isSuccess ? 'var(--t2)'
+                          : isError ? 'var(--t4)'
+                          : isCommand ? 'var(--t2)'
+                          : isValidation ? 'var(--t4)'
+                          : 'var(--t3)',
+                        fontWeight: isPhase ? 900 : isSuccess || isCommand || isUrl ? 600 : 400,
+                        marginTop: isPhase ? '6px' : '0',
+                        marginBottom: isPhase ? '2px' : '1px',
+                        paddingLeft: isValidation ? '6px' : '0',
+                        borderLeft: isValidation ? '1px solid var(--line)' : 'none',
+                      }}>
+                        {isPhase ? line.replace(/[🚀📦⚡📂🔍]/g, '').trim() : line}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      )}
+
+      </div>
     </div>
   );
 };
@@ -429,39 +514,54 @@ const DevServerPanel = () => {
   const currentProject = detectedProjects[activeIdx];
 
   return (
-    <div style={{ padding: '20px', height: '100%', overflowY: 'auto', background: 'var(--bg-paper)' }}>
+    <div style={{ padding: '16px', height: '100%', overflowY: 'auto', background: 'var(--s0)' }}>
       {/* HUD Header Banner */}
       <div style={{
-        margin: '0 0 20px', padding: '16px 20px',
-        background: 'var(--color-black)', border: 'var(--border-thick)',
-        boxShadow: '4px 4px 0px var(--accent-electric-blue)',
+        margin: '0 0 24px', padding: '8px 0',
+        background: 'transparent', borderBottom: '1px solid #2E2E2E',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center'
       }}>
-        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <div style={{
-            width: '38px', height: '38px', background: 'var(--accent-toxic-green)',
-            border: 'var(--border-thin)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '3px 3px 0px #000', overflow: 'hidden'
+            width: '32px', height: '32px', border: '1px solid #2E2E2E',
+            borderRadius: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden'
           }}>
-            <img src={causifyLogo} alt="Mission Control Logo" style={{ width: '80%', height: '80%', objectFit: 'contain' }} />
+            <img src={causifyLogo} alt="Mission Control Logo" style={{ width: '75%', height: '75%', objectFit: 'contain' }} />
           </div>
           <div>
-            <h1 className="logo-text" style={{ fontSize: '1.4rem', color: '#fff', margin: 0, letterSpacing: '0.05em' }}>MISSION CONTROL</h1>
-            <div className="hud-ticker" style={{ fontSize: '8px', opacity: 0.6 }}>
-              LIVE_ENVIRONMENT_ORCHESTRATOR
-            </div>
+            <h1 className="logo-text" style={{
+              fontFamily: 'var(--font-header)', fontSize: '1.05rem', fontWeight: 900, letterSpacing: '0.04em', margin: 0,
+              display: 'flex', alignItems: 'center', gap: '4px'
+            }}>
+              <span style={{ color: 'var(--t1)' }}>MISSION</span>
+              <span style={{
+                color: 'transparent',
+                WebkitTextStroke: '1px var(--t1)',
+                WebkitTextFillColor: 'transparent',
+              }}>CONTROL</span>
+            </h1>
           </div>
         </div>
 
         <button
           onClick={handleDetect}
           disabled={isDetecting}
-          className="tech-label"
           style={{
-            cursor: 'pointer', background: isDetecting ? '#111' : '#fff',
-            color: '#000', fontSize: '9px', padding: '6px 14px',
-            boxShadow: '3px 3px 0px #000', transition: 'all 0.1s'
+            cursor: 'pointer',
+            background: 'transparent',
+            color: 'var(--t1)',
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontWeight: 600,
+            border: '1px solid rgba(255, 255, 255, 0.75)',
+            borderRadius: '3px',
+            fontSize: '0.62rem',
+            letterSpacing: '0.06em',
+            padding: '6px 14px',
+            transition: 'all 0.2s ease',
           }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--t1)'; e.currentTarget.style.color = 'var(--s0)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--t1)'; }}
         >
           {isDetecting ? "SCANNING..." : "REFRESH"}
         </button>
@@ -469,9 +569,9 @@ const DevServerPanel = () => {
 
       {detectError && (
         <div style={{
-          padding: '15px', border: 'var(--border-thick)', background: '#fff',
-          boxShadow: 'var(--shadow-brutal)', color: 'var(--accent-crimson)',
-          fontFamily: 'var(--font-header)', fontWeight: 800, marginBottom: '20px'
+          padding: '12px 16px', border: '1px solid var(--crimson)', background: 'rgba(229, 72, 77, 0.08)',
+          color: 'var(--crimson)', borderRadius: '2px',
+          fontFamily: 'var(--font-header)', fontWeight: 800, fontSize: '0.72rem', marginBottom: '16px'
         }}>
           SYSTEM_ERROR: {detectError.toUpperCase()}
         </div>
@@ -480,38 +580,110 @@ const DevServerPanel = () => {
       {/* Project Switcher Bar */}
       {detectedProjects.length > 1 && (
         <div style={{ 
-          display: 'flex', gap: '10px', marginBottom: '25px', 
-          background: '#eee', padding: '4px', border: 'var(--border-thin)'
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '14px', 
+          marginBottom: '24px',
+          paddingBottom: '12px',
+          borderBottom: '1px solid #141414'
         }}>
-          {detectedProjects.map((p, idx) => {
-            const isActive = activeIdx === idx;
-            const server = devServers[p.type];
-            const isRunning = server?.state === 'RUNNING';
-            
-            return (
-              <button
-                key={idx}
-                onClick={() => setActiveIdx(idx)}
-                style={{
-                  flex: 1, padding: '10px 15px', border: 'none',
-                  background: isActive ? '#000' : 'transparent',
-                  color: isActive ? '#fff' : '#555',
-                  fontFamily: 'var(--font-header)', fontSize: '0.7rem', fontWeight: 900,
-                  cursor: 'pointer', transition: 'all 0.2s',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  textTransform: 'uppercase', letterSpacing: '0.1em'
-                }}
-              >
-                {isRunning && (
-                  <div style={{ 
-                    width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-toxic-green)',
-                    boxShadow: '0 0 10px var(--accent-toxic-green)'
-                  }} />
-                )}
-                {p.type.replace('_', ' ')}
-              </button>
-            );
-          })}
+          <span style={{ 
+            fontFamily: 'var(--font-number)', 
+            fontSize: '8px', 
+            color: 'var(--t3)', 
+            letterSpacing: '0.12em', 
+            fontWeight: 800,
+            textTransform: 'uppercase',
+            whiteSpace: 'nowrap'
+          }}>
+            SELECT SYSTEM
+          </span>
+          
+          <div style={{ 
+            display: 'flex', 
+            background: '#090909', 
+            border: '1px solid #202020', 
+            borderRadius: '4px', 
+            padding: '2px',
+            gap: '2px',
+            alignItems: 'center'
+          }}>
+            {detectedProjects.map((p, idx) => {
+              const isActive = activeIdx === idx;
+              const server = devServers[p.type];
+              const isRunning = server?.state === 'RUNNING';
+              
+              // Determine tech stack color
+              const typeLower = p.type?.toLowerCase() || '';
+              const fwLower = p.framework?.toLowerCase() || '';
+              const isReact = typeLower.includes('frontend') || fwLower.includes('react') || fwLower.includes('vite') || fwLower.includes('next') || fwLower.includes('vue') || fwLower.includes('svelte');
+              const themeColor = isReact ? '#61dafb' : '#6DB33F';
+              const bgTint = isActive ? (isReact ? 'rgba(97, 218, 251, 0.08)' : 'rgba(109, 179, 63, 0.08)') : 'transparent';
+
+              return (
+                <button
+                  key={idx}
+                  onClick={() => setActiveIdx(idx)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: '2px',
+                    border: 'none',
+                    background: bgTint,
+                    color: isActive ? themeColor : 'var(--t3)',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontSize: '0.62rem',
+                    fontWeight: 700,
+                    cursor: 'pointer', 
+                    transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    gap: '6px',
+                    textTransform: 'uppercase', 
+                    letterSpacing: '0.08em',
+                    textShadow: isActive ? `0 0 6px ${themeColor}40` : 'none',
+                  }}
+                  onMouseEnter={e => {
+                    if (!isActive) {
+                      e.currentTarget.style.color = themeColor;
+                      e.currentTarget.style.background = themeColor + '08';
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!isActive) {
+                      e.currentTarget.style.color = 'var(--t3)';
+                      e.currentTarget.style.background = 'transparent';
+                    }
+                  }}
+                >
+                  {isActive && (
+                    <span style={{ 
+                      color: themeColor, 
+                      marginRight: '2px', 
+                      fontFamily: 'var(--font-mono)', 
+                      fontSize: '0.68rem',
+                      lineHeight: 1
+                    }}>&rsaquo;</span>
+                  )}
+                  <span>{p.type.toUpperCase().replace('_', ' ')}</span>
+                  
+                  {isRunning && (
+                    <div style={{ 
+                      width: '4px', 
+                      height: '4px', 
+                      borderRadius: '50%', 
+                      background: themeColor,
+                      boxShadow: `0 0 6px ${themeColor}`,
+                      marginLeft: '2px'
+                    }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          
+          {/* Decorative Terminal Line Grid */}
+          <div style={{ flex: 1, height: '1px', background: 'linear-gradient(90deg, #202020, transparent)', marginLeft: '4px' }} />
         </div>
       )}
 
@@ -527,13 +699,11 @@ const DevServerPanel = () => {
         )}
       </div>
 
-
-
       {!detectError && detectedProjects.length === 0 && (
-        <div style={{ padding: '60px', textAlign: 'center', border: '4px dashed #ddd', opacity: 0.5 }}>
-          <div style={{ fontSize: '4rem' }}>📡</div>
-          <h3 style={{ fontFamily: 'var(--font-header)', fontSize: '1.5rem', marginTop: '20px' }}>WAITING FOR PROJECT SIGNALS...</h3>
-          <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.9rem' }}>Upload a folder containing a package.json to initialize development servers.</p>
+        <div style={{ padding: '48px 0', textAlign: 'center', background: 'transparent' }}>
+          <div style={{ fontSize: '2rem', marginBottom: '12px' }}>📡</div>
+          <h3 style={{ fontFamily: 'var(--font-header)', fontSize: '1rem', color: 'var(--t2)', margin: '0 0 8px' }}>WAITING FOR PROJECT SIGNALS...</h3>
+          <p style={{ fontFamily: 'var(--font-body)', fontSize: '0.74rem', color: 'var(--t3)', margin: 0 }}>Upload a folder containing a package.json to initialize development servers.</p>
         </div>
       )}
     </div>

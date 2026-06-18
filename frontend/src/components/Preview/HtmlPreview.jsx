@@ -47,6 +47,27 @@ const HtmlPreview = () => {
     // Inject CSS and JS into the HTML
     let combined = htmlContent;
 
+    // Inject CSS to hide scrollbar while keeping page scrollable
+    const hideScrollbarStyle = `
+<style>
+  html::-webkit-scrollbar, body::-webkit-scrollbar {
+    display: none !important;
+  }
+  html, body {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+</style>
+`;
+
+    if (combined.includes('</head>')) {
+      combined = combined.replace('</head>', `${hideScrollbarStyle}\n</head>`);
+    } else if (combined.includes('<head>')) {
+      combined = combined.replace('<head>', `<head>\n${hideScrollbarStyle}`);
+    } else {
+      combined = hideScrollbarStyle + '\n' + combined;
+    }
+
     // Inject CSS before </head> or at top
     if (cssFiles.length > 0) {
       const cssBlock = cssFiles.map(css => `<style>\n${css}\n</style>`).join('\n');
@@ -98,16 +119,16 @@ const HtmlPreview = () => {
       <div style={{
         display: 'flex', alignItems: 'center', gap: '8px',
         padding: '6px 0', marginBottom: '8px',
-        borderBottom: '1px solid #333',
+        borderBottom: '1px solid var(--line)',
       }}>
         <span style={{ fontSize: '0.8rem' }}>🌐</span>
         <span style={{
-          fontFamily: 'var(--font-number)', fontWeight: 700, fontSize: '0.6rem',
-          color: '#c1ff72', letterSpacing: '0.05em',
+          fontFamily: 'var(--font-number)', fontWeight: 600, fontSize: '0.6rem',
+          color: 'var(--lime)', letterSpacing: '0.08em',
         }}>
           LIVE PREVIEW
         </span>
-        <span style={{ fontSize: '0.55rem', color: '#555' }}>
+        <span style={{ fontSize: '0.55rem', color: 'var(--t3)' }}>
           — {Object.keys(files).filter(p => p.endsWith('.html')).length} HTML, {Object.keys(files).filter(p => p.endsWith('.css')).length} CSS, {Object.keys(files).filter(p => p.endsWith('.js')).length} JS
         </span>
       </div>
@@ -115,7 +136,7 @@ const HtmlPreview = () => {
       {/* Iframe */}
       <div style={{
         flex: 1, borderRadius: '4px', overflow: 'hidden',
-        border: '1px solid #333', background: '#fff',
+        border: '1px solid var(--line-strong)', background: '#fff',
       }}>
         <iframe
           srcDoc={previewSrc}

@@ -183,6 +183,9 @@ public class DevServerService {
             server.addLog("✓ Files written to: " + workspaceDir.toString());
             server.addLog("");
 
+            // Step 1b: Validate critical files exist
+            validateWorkspace(workspaceDir, server);
+
             // Step 2: Dependencies / Setup
             server.state = "INSTALLING";
             String setupCmd = getSetupCommand(server.framework);
@@ -229,6 +232,66 @@ public class DevServerService {
             server.addLog("✗ ERROR: " + e.getMessage());
         }
     }
+
+    /**
+     * Validate that the workspace directory has the expected files for the framework.
+     */
+    private void validateWorkspace(Path workspaceDir, ManagedServer server) {
+        server.addLog("🔍 Validating workspace structure...");
+        
+        // List top-level contents
+        try {
+            long fileCount = Files.walk(workspaceDir)
+                .filter(Files::isRegularFile)
+                .count();
+            server.addLog("  Total files on disk: " + fileCount);
+        } catch (IOException e) {
+            server.addLog("  ⚠ Could not count files: " + e.getMessage());
+        }
+
+        // Check for critical files
+        boolean hasPackageJson = Files.exists(workspaceDir.resolve("package.json"));
+        boolean hasIndexHtml = Files.exists(workspaceDir.resolve("index.html"));
+        boolean hasSrcDir = Files.isDirectory(workspaceDir.resolve("src"));
+        
+        server.addLog("  package.json: " + (hasPackageJson ? "✓" : "✗ MISSING"));
+        server.addLog("  index.html:   " + (hasIndexHtml ? "✓" : "✗ MISSING"));
+        server.addLog("  src/:         " + (hasSrcDir ? "✓" : "✗ MISSING"));
+
+        if (hasSrcDir) {
+            // Check for entry point files
+            String[] entryFiles = {"main.jsx", "main.tsx", "main.js", "index.jsx", "index.tsx", "index.js", "App.jsx", "App.tsx"};
+            boolean foundEntry = false;
+            for (String entry : entryFiles) {
+                if (Files.exists(workspaceDir.resolve("src").resolve(entry))) {
+                    server.addLog("  entry point:  ✓ src/" + entry);
+                    foundEntry = true;
+                    break;
+                }
+            }
+            if (!foundEntry) {
+                server.addLog("  entry point:  ⚠ No standard entry file found in src/");
+                // List what's actually in src/
+                try {
+                    Files.list(workspaceDir.resolve("src"))
+                        .limit(10)
+                        .forEach(p -> server.addLog("    → " + p.getFileName()));
+                } catch (IOException e) {
+                    server.addLog("    ⚠ Could not list src/ contents");
+                }
+            }
+        }
+
+        if (!hasPackageJson) {
+            server.addLog("");
+            server.addLog("⚠ WARNING: package.json is missing from the workspace.");
+            server.addLog("  This usually means the project directory was not detected correctly.");
+            server.addLog("  Expected workspace: " + workspaceDir);
+        }
+        
+        server.addLog("");
+    }
+
 
     private String getSetupCommand(String framework) {
         if (framework.startsWith("springboot")) {
