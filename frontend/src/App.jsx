@@ -7,13 +7,15 @@ import EditorPage from './pages/EditorPage';
 import UserPresence from './components/Session/UserPresence';
 import VoiceRoom from './components/Session/VoiceRoom';
 import NotificationSystem from './components/Session/NotificationSystem';
-import SetupWizard from './components/Session/SetupWizard';
 import CodeShotModal from './components/CodeShot/CodeShotModal';
 import { parseCodeShotLink } from './utils/codeShotDeepLink';
 import useEditorStore from './store/useEditorStore';
 import { connectWebSocket, disconnectWebSocket } from './services/socket';
-import { getSessionFiles, saveFile } from './services/api';
+import { getSessionFiles, saveFile, createSession, uploadProject } from './services/api';
 import causifyLogo from './assets/causify-logo.png';
+
+// Module-level so React StrictMode's double-mount can't create two sessions
+let sessionRehydrateAttempted = false;
 
 const App = () => {
   const sessionId = useEditorStore((s) => s.sessionId);
@@ -24,6 +26,38 @@ const App = () => {
   const followToast = useEditorStore((s) => s.followToast);
   const reconnectedRef = useRef(false);
 
+  // ── Re-attach restored workspaces to a fresh backend session ──
+  // The workspace (files) survives a window close, but the backend session
+  // does not. Without a session every session-bound feature (git connect,
+  // run, dev server, save) silently no-ops — so on launch, quietly create
+  // a new session for the restored files. The reconnect effect below then
+  // picks up the new sessionId/currentUser and wires the WebSocket.
+  useEffect(() => {
+    if (sessionRehydrateAttempted) return;
+    sessionRehydrateAttempted = true;
+
+    const store = useEditorStore.getState();
+    if (store.sessionId) return; // same-window refresh — session still alive
+    const fileEntries = Object.entries(store.files || {});
+    if (fileEntries.length === 0) return; // nothing restored — fresh start
+
+    (async () => {
+      try {
+        const name = store.sessionName || 'Restored Workspace';
+        const username = localStorage.getItem('causify-last-username') || 'owner';
+        const session = await createSession(name, username, '0000');
+        await uploadProject(session.id, fileEntries.map(([path, content]) => ({ path, content })));
+        const s = useEditorStore.getState();
+        s.setSession(session.id, session.name || name);
+        s.setCurrentUser(session.user);
+        s.setUserRole('owner');
+        console.log('[Causify] Restored workspace attached to new session:', session.id);
+      } catch (err) {
+        console.warn('[Causify] Could not attach restored workspace to a session:', err.message);
+      }
+    })();
+  }, []);
+
   // Mouse tracking state for cursor-following background glow
   const [coords, setCoords] = useState({ x: 0, y: 0 });
   useEffect(() => {
@@ -32,21 +66,6 @@ const App = () => {
     };
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, []);
-
-  // ── First-launch setup wizard (Electron only) ──
-  const [showSetup, setShowSetup] = useState(false);
-  const [setupChecked, setSetupChecked] = useState(false);
-
-  useEffect(() => {
-    const checkFirstLaunch = async () => {
-      if (window.electronAPI && window.electronAPI.isFirstLaunch) {
-        const isFirst = await window.electronAPI.isFirstLaunch();
-        setShowSetup(isFirst);
-      }
-      setSetupChecked(true);
-    };
-    checkFirstLaunch();
   }, []);
 
   // ── Deep-link navigation handler (Electron causify:// protocol) ──
@@ -230,11 +249,6 @@ const App = () => {
       disconnectWebSocket();
     };
   }, [toggleTerminal, setTerminalActiveTab]);
-
-  // Show Setup Wizard before the main app if this is first launch
-  if (showSetup) {
-    return <SetupWizard onComplete={() => setShowSetup(false)} />;
-  }
 
   return (
     <div className="app-container" style={{

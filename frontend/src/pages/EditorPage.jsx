@@ -14,6 +14,7 @@ import FileExplorer from '../components/Editor/FileExplorer';
 import EmptyEditorState from '../components/Editor/EmptyEditorState';
 import ImpactWarningBanner from '../components/Editor/ImpactWarningBanner';
 import Whiteboard from '../components/Editor/Whiteboard';
+import ScreenCapture from '../components/Capture/ScreenCapture';
 
 /* ── Language Icon Component ── */
 const LanguageIcon = ({ filename, size = 20 }) => {
@@ -504,6 +505,7 @@ const EditorPage = () => {
       }}
     >
       <div
+        id="causify-editor-region"
         className="tile-main"
         style={{
           padding: 0,
@@ -855,6 +857,9 @@ const EditorPage = () => {
               </div>
             )}
 
+            {/* Screen capture — screenshot & recording */}
+            <ScreenCapture />
+
             {/* Run — primary action */}
             <button
               onClick={runCode}
@@ -900,7 +905,7 @@ const EditorPage = () => {
             </div>
           )}
 
-          <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, position: 'relative', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             {activeView === 'whiteboard' ? (
               <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <Whiteboard />
@@ -948,12 +953,12 @@ const EditorPage = () => {
                   </div>
                 )}
                 <ImpactWarningBanner />
-                <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+                <div id="causify-code-region" style={{ flex: 1, position: 'relative', minHeight: 0 }}>
                   <MonacoEditor />
                 </div>
               </div>
             ) : (
-              <EmptyEditorState />
+              <EmptyEditorState sidebarCollapsed={!isFileExplorerOpen} />
             )}
             <TerminalPanel />
           </div>

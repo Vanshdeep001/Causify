@@ -220,6 +220,9 @@ const FileExplorer = ({ onToggle }) => {
     setErrorMsg('');
     try {
       const session = await createSession(projName, username, password || '0000');
+      // Remembered so a restored workspace can re-create its session
+      // under the same identity after the window is closed and reopened.
+      try { localStorage.setItem('causify-last-username', username); } catch { /* best effort */ }
       if (uploadedFiles.length > 0) {
         await uploadProject(session.id, uploadedFiles);
       }
@@ -243,6 +246,7 @@ const FileExplorer = ({ onToggle }) => {
     setErrorMsg('');
     try {
       const session = await joinSession(joinId, joinPwd, joinUsername);
+      try { localStorage.setItem('causify-last-username', joinUsername); } catch { /* best effort */ }
       setSession(session.id, session.name);
       setCurrentUser(session.user);
       setUserRole('collaborator');
@@ -882,7 +886,10 @@ const FileExplorer = ({ onToggle }) => {
 
       <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
         <div>
-        {!sessionId && (
+        {/* Workspaces / session actions — only for a truly empty window.
+            A restored workspace (files, no session) opens straight into
+            Project Files; Alt+N / Alt+J can still summon the forms. */}
+        {!sessionId && (Object.keys(files).length === 0 || panel) && (
           <div style={{
             padding: '22px 16px',
             display: 'flex',
@@ -1132,7 +1139,8 @@ const FileExplorer = ({ onToggle }) => {
           <div style={{ padding: '8px 0' }}>
             <div style={{ padding: '8px 14px', ...sectionLabelSty, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>Project Files</span>
-              {userRole === 'owner' && (
+              {/* Solo (restored) workspaces have no role — treat as owner */}
+              {(!sessionId || userRole === 'owner') && (
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',

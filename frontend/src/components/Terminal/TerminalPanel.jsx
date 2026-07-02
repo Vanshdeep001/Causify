@@ -451,8 +451,9 @@ const TerminalPanel = () => {
           className="no-scrollbar"
           style={{
             flex: 1,
-            overflow: activeTab === 'graph' || activeTab === 'deploy' ? 'hidden' : (activeTab === 'terminal' ? 'hidden' : 'auto'),
-            padding: activeTab === 'graph' || activeTab === 'output' || activeTab === 'terminal' || activeTab === 'deploy' ? 0 : '16px 20px',
+            minWidth: 0,
+            overflow: ['graph', 'deploy', 'terminal', 'git'].includes(activeTab) ? 'hidden' : 'auto',
+            padding: ['graph', 'output', 'terminal', 'deploy', 'git'].includes(activeTab) ? 0 : '16px 20px',
             borderRight: terminalLayoutMode === 'split' ? '1px solid var(--line-strong)' : 'none',
             position: 'relative'
           }}
@@ -494,8 +495,9 @@ const TerminalPanel = () => {
             className="no-scrollbar"
             style={{
               flex: 1,
-              overflow: terminalSecondActiveTab === 'graph' || terminalSecondActiveTab === 'deploy' ? 'hidden' : 'auto',
-              padding: terminalSecondActiveTab === 'graph' || terminalSecondActiveTab === 'output' || terminalSecondActiveTab === 'deploy' ? 0 : '16px 20px',
+              minWidth: 0,
+              overflow: ['graph', 'deploy', 'git'].includes(terminalSecondActiveTab) ? 'hidden' : 'auto',
+              padding: ['graph', 'output', 'deploy', 'git'].includes(terminalSecondActiveTab) ? 0 : '16px 20px',
               position: 'relative',
               background: 'var(--s0)'
             }}

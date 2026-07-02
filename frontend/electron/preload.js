@@ -118,6 +118,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   writeImageToClipboard: (dataUrl) =>
     ipcRenderer.invoke('clipboard:write-image', dataUrl),
 
+  /* ── Screen Capture / Recording ── */
+  captureScreenshot: () =>
+    ipcRenderer.invoke('capture:screen-thumbnail'),
+
+  saveBinaryFile: (base64, defaultName, filters) =>
+    ipcRenderer.invoke('capture:save-binary', base64, defaultName, filters),
+
   /* ── Terminal PTY ── */
   createPty: (options) =>
     ipcRenderer.invoke('pty:create', options),
@@ -198,4 +205,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   pushEnvVars: (options) =>
     ipcRenderer.invoke('deploy:push-env', options),
+
+  /* ── Repository Guardian ── */
+  guardianDetect: () =>
+    ipcRenderer.invoke('guardian:detect'),
+
+  guardianGetToken: () =>
+    ipcRenderer.invoke('guardian:get-token'),
+
+  guardianSetup: (options) =>
+    ipcRenderer.invoke('guardian:setup', options),
+
+  guardianStart: (repoUrl) =>
+    ipcRenderer.invoke('guardian:start', repoUrl),
+
+  guardianStop: () =>
+    ipcRenderer.invoke('guardian:stop'),
 });

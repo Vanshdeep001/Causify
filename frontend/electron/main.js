@@ -9,7 +9,7 @@
  *   - Single instance lock
  * ------------------------------------------------------- */
 
-const { app, BrowserWindow, dialog, crashReporter } = require('electron');
+const { app, BrowserWindow, dialog, crashReporter, session, desktopCapturer } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -21,6 +21,8 @@ const { registerSecurityHandlers } = require('./ipc/security');
 const { registerClipboardHandlers } = require('./ipc/clipboard');
 const { registerPtyHandlers, killAllPtySessions } = require('./ipc/pty');
 const { registerDeployHandlers, killAllDeploySessions } = require('./ipc/deploy');
+const { registerCaptureHandlers } = require('./ipc/capture');
+const { registerGuardianHandlers } = require('./ipc/guardian');
 
 /* ── Constants ── */
 const isDev = !app.isPackaged;
@@ -184,6 +186,22 @@ app.whenReady().then(async () => {
   registerClipboardHandlers();
   registerPtyHandlers();
   registerDeployHandlers();
+  registerCaptureHandlers();
+  registerGuardianHandlers();
+
+  // Allow renderer getDisplayMedia() to record the screen without a picker.
+  // Electron requires an explicit handler; we auto-grant the primary screen.
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    desktopCapturer.getSources({ types: ['screen'] })
+      .then((sources) => {
+        if (sources && sources.length > 0) {
+          callback({ video: sources[0] }); // primary screen, video only
+        } else {
+          callback({});
+        }
+      })
+      .catch(() => callback({}));
+  });
 
   // Register causify:// custom protocol for deep links
   app.setAsDefaultProtocolClient('causify');

@@ -185,6 +185,12 @@ const parseExecutionGraph = (code, language) => {
   return { nodes, edges };
 };
 
+// State keys that must NOT survive a window close: they are kept in
+// sessionStorage (per-window), so a refresh reconnects the session but
+// closing the app disconnects it. Everything else that is persisted goes
+// to localStorage and is restored on the next launch.
+const SESSION_ONLY_KEYS = ['sessionId', 'currentUser', 'userRole'];
+
 const useEditorStore = create(persist((set, get) => ({
 
   // ---- Session State ----
@@ -1052,7 +1058,6 @@ const useEditorStore = create(persist((set, get) => ({
   setTerminalOpen: (isOpen) => set({ isTerminalOpen: isOpen }),
   setTerminalHeight: (height) => set({ terminalHeight: height }),
   setTerminalLayoutMode: (mode) => set({ terminalLayoutMode: mode }),
-  setFileExplorerOpen: (isOpen) => set({ isFileExplorerOpen: isOpen }),
   clearPendingTerminalCommand: () => set({ pendingTerminalCommand: null }),
 
   // ---- Compound Actions ----
@@ -1273,27 +1278,74 @@ const useEditorStore = create(persist((set, get) => ({
   },
 }), {
   name: 'causify-session',
-  // Use sessionStorage so each tab gets its own independent session
+  // Split persistence:
+  //  - Session identity lives in sessionStorage: it survives a page refresh
+  //    (so the WebSocket auto-reconnects) but dies with the window, so
+  //    closing the app always disconnects the session.
+  //  - Everything else (workspace files, layout, whiteboard) lives in
+  //    localStorage so the user picks up exactly where they left off
+  //    after closing and reopening the app.
   storage: {
     getItem: (name) => {
-      const str = sessionStorage.getItem(name);
-      return str ? JSON.parse(str) : null;
+      const localStr = localStorage.getItem(name);
+      const sessionStr = sessionStorage.getItem(name);
+      if (!localStr && !sessionStr) return null;
+      const local = localStr ? JSON.parse(localStr) : null;
+      const session = sessionStr ? JSON.parse(sessionStr) : null;
+      // Session-only keys must never be resurrected from localStorage
+      // (covers entries written before a key became session-only).
+      const localState = { ...(local?.state || {}) };
+      SESSION_ONLY_KEYS.forEach((key) => delete localState[key]);
+      return {
+        version: (session ?? local)?.version ?? 0,
+        state: { ...localState, ...(session?.state || {}) },
+      };
     },
-    setItem: (name, value) => sessionStorage.setItem(name, JSON.stringify(value)),
-    removeItem: (name) => sessionStorage.removeItem(name),
+    setItem: (name, value) => {
+      const sessionState = {};
+      const localState = {};
+      Object.entries(value.state || {}).forEach(([key, val]) => {
+        if (SESSION_ONLY_KEYS.includes(key)) sessionState[key] = val;
+        else localState[key] = val;
+      });
+      sessionStorage.setItem(name, JSON.stringify({ version: value.version, state: sessionState }));
+      try {
+        localStorage.setItem(name, JSON.stringify({ version: value.version, state: localState }));
+      } catch (e) {
+        // Quota exceeded (very large projects) — workspace restore degrades
+        // gracefully; session behavior is unaffected.
+        console.warn('[Causify] Could not persist workspace state:', e.message);
+      }
+    },
+    removeItem: (name) => {
+      sessionStorage.removeItem(name);
+      localStorage.removeItem(name);
+    },
   },
-  // Only persist the essential session state — not transient UI data or large file content
+  // Persist the workspace + session identity — not transient collab/UI data
   partialize: (state) => ({
+    // Session identity (sessionStorage — dropped when the window closes)
     sessionId: state.sessionId,
-    sessionName: state.sessionName,
     currentUser: state.currentUser,
     userRole: state.userRole,
+    // Workspace (localStorage — restored when the app reopens)
+    sessionName: state.sessionName,
+    files: state.files,
     activePath: state.activePath,
+    code: state.code,
     language: state.language,
+    savedContents: state.savedContents,
+    fileSavedPaths: state.fileSavedPaths,
     activeView: state.activeView,
     whiteboardElements: state.whiteboardElements,
     whiteboardPan: state.whiteboardPan,
     whiteboardZoom: state.whiteboardZoom,
+    terminalActiveTab: state.terminalActiveTab,
+    terminalSecondActiveTab: state.terminalSecondActiveTab,
+    isTerminalOpen: state.isTerminalOpen,
+    terminalHeight: state.terminalHeight,
+    terminalLayoutMode: state.terminalLayoutMode,
+    isFileExplorerOpen: state.isFileExplorerOpen,
   }),
 }));
 

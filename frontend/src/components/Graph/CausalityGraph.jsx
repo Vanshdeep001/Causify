@@ -130,7 +130,7 @@ const CausalityMode = ({ causalityGraph }) => {
   }
 
   return (
-    <div style={{ width: '100%', height: '100%', minHeight: '400px', background: 'var(--bg-creme)' }}>
+    <div style={{ width: '100%', height: '100%', minHeight: '400px', background: '#FFFFFF' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -142,7 +142,7 @@ const CausalityMode = ({ causalityGraph }) => {
         nodesConnectable={false}
         proOptions={{ hideAttribution: true }}
       >
-        <Background color="#242424" gap={40} variant="dots" size={1} />
+        <Background color="#D4D4D4" gap={40} variant="dots" size={1} />
         <Controls
           position="bottom-left"
           showInteractive={false}
@@ -417,7 +417,7 @@ const LayeredDepMode = ({ depMap, files, activePath }) => {
           defaultEdgeOptions={{ animated: false }}
           proOptions={{ hideAttribution: true }}
         >
-          <Background color="#242424" gap={40} variant="dots" size={1} />
+          <Background color="#D4D4D4" gap={40} variant="dots" size={1} />
           <Controls
             position="bottom-left"
             showInteractive={false}
