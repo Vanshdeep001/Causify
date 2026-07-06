@@ -207,6 +207,7 @@ const useEditorStore = create(persist((set, get) => ({
 
   // ---- Editor State ----
   files: {},                // Map of { path: content }
+  projectRootPath: null,    // Real disk folder of the imported project (Electron) — terminal cwd
   activePath: '',           // Currently opened file path
   code: '',                 // Code content
   language: 'javascript',  // Editor language mode
@@ -301,6 +302,18 @@ const useEditorStore = create(persist((set, get) => ({
   vercelUsername: null,           // Vercel account display name
   deployFramework: null,          // Detected framework for current deploy
   pendingRedeploy: false,         // Flag to trigger deployment from another tab
+  deployTarget: 'frontend',       // 'frontend' (Vercel) | 'backend' (Render) — active Deploy HQ tab
+
+  // ---- Render (backend) Deployment State ----
+  renderDeployStatus: 'idle',     // 'idle' | 'connecting' | 'env-confirm' | 'pushing-env' | 'deploying' | 'success' | 'error'
+  renderDeployLogs: [],           // Array of log line strings
+  renderDeployUrl: null,          // Live service URL on success
+  renderDeployError: null,        // Error message on failure
+  renderDeployStartTime: null,    // Deploy start timestamp
+  currentRenderDeployId: null,    // Active Render deploy ID
+  renderConnected: false,         // Whether a Render API key is stored
+  renderOwnerName: null,          // Render account display name
+  renderRuntime: null,            // Detected backend runtime label
 
   // ---- UI Layout State ----
   activeView: 'code',               // 'code' | 'whiteboard'
@@ -336,6 +349,7 @@ const useEditorStore = create(persist((set, get) => ({
 
   // ---- Actions: Session ----
   setSession: (sessionId, sessionName) => set({ sessionId, sessionName }),
+  setProjectRootPath: (path) => set({ projectRootPath: path }),
   setCurrentUser: (user) => set({ currentUser: user }),
   setUserRole: (role) => set({ userRole: role }),
   isOwner: () => get().userRole === 'owner',
@@ -659,6 +673,11 @@ const useEditorStore = create(persist((set, get) => ({
 
   setLanguage: (language) => set({ language }),
   setFileExplorerOpen: (isOpen) => set({ isFileExplorerOpen: isOpen }),
+  // Welcome-screen actions: open the explorer and optionally ask it to
+  // run one of its flows (e.g. 'import-project' clicks the folder picker)
+  pendingExplorerAction: null,
+  requestExplorerAction: (action) => set({ pendingExplorerAction: action, isFileExplorerOpen: true }),
+  clearPendingExplorerAction: () => set({ pendingExplorerAction: null }),
   setActiveView: (activeView) => set({ activeView }),
   setWhiteboardElements: (val) => set((s) => ({
     whiteboardElements: typeof val === 'function' ? val(s.whiteboardElements) : val
@@ -1172,6 +1191,23 @@ const useEditorStore = create(persist((set, get) => ({
     deployError: null, currentDeployId: null, deployStartTime: null,
     deployFramework: null,
   }),
+  setDeployTarget: (target) => set({ deployTarget: target }),
+
+  // ---- Actions: Render (backend) Deployment ----
+  setRenderDeployStatus: (status) => set({ renderDeployStatus: status }),
+  addRenderDeployLog: (line) => set((s) => ({ renderDeployLogs: [...s.renderDeployLogs, line] })),
+  clearRenderDeployLogs: () => set({ renderDeployLogs: [] }),
+  setRenderDeployUrl: (url) => set({ renderDeployUrl: url }),
+  setRenderDeployError: (error) => set({ renderDeployError: error }),
+  setRenderDeployStartTime: (time) => set({ renderDeployStartTime: time }),
+  setCurrentRenderDeployId: (id) => set({ currentRenderDeployId: id }),
+  setRenderConnected: (connected, ownerName) => set({ renderConnected: connected, renderOwnerName: ownerName }),
+  setRenderRuntime: (runtime) => set({ renderRuntime: runtime }),
+  resetRenderDeploy: () => set({
+    renderDeployStatus: 'idle', renderDeployLogs: [], renderDeployUrl: null,
+    renderDeployError: null, currentRenderDeployId: null, renderDeployStartTime: null,
+    renderRuntime: null,
+  }),
 
   // ---- Actions: Impact Detection ----
   addImpactWarning: (warning) => {
@@ -1233,6 +1269,7 @@ const useEditorStore = create(persist((set, get) => ({
       impactWarnings: [],
       revertNotification: null,
       files: {},
+      projectRootPath: null,
       activePath: '',
       code: '',
       language: 'javascript',
@@ -1251,6 +1288,17 @@ const useEditorStore = create(persist((set, get) => ({
       activeView: 'code',
       whiteboardElements: [],
       whiteboardCursors: {},
+      // Terminal — close it so the welcome screen comes back clean
+      isTerminalOpen: false,
+      terminalLayoutMode: 'normal',
+      // Git — a disconnected session must not show stale repo state
+      gitRepoConnected: false,
+      gitRepoUrl: '',
+      gitStatus: '',
+      gitLog: '',
+      gitLoading: false,
+      gitError: null,
+      commitSuggestion: null,
       // Voice room
       voiceRoomUsers: [],
       isInVoiceRoom: false,
@@ -1274,6 +1322,17 @@ const useEditorStore = create(persist((set, get) => ({
       vercelUsername: null,
       deployFramework: null,
       pendingRedeploy: false,
+      deployTarget: 'frontend',
+      // Render (backend) deployment
+      renderDeployStatus: 'idle',
+      renderDeployLogs: [],
+      renderDeployUrl: null,
+      renderDeployError: null,
+      renderDeployStartTime: null,
+      currentRenderDeployId: null,
+      renderConnected: false,
+      renderOwnerName: null,
+      renderRuntime: null,
     });
   },
 }), {
@@ -1331,6 +1390,7 @@ const useEditorStore = create(persist((set, get) => ({
     // Workspace (localStorage — restored when the app reopens)
     sessionName: state.sessionName,
     files: state.files,
+    projectRootPath: state.projectRootPath,
     activePath: state.activePath,
     code: state.code,
     language: state.language,

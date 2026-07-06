@@ -11,7 +11,7 @@ import TimelineSlider from '../Timeline/TimelineSlider';
 import CausalityGraph from '../Graph/CausalityGraph';
 import GitAssistantPanel from './GitAssistantPanel';
 import XTermTab from './XTermTab';
-import DeployPanel from '../Deploy/DeployPanel';
+import DeployHub from '../Deploy/DeployHub';
 
 const DEFAULT_HEIGHT = 280;
 const MIN_HEIGHT = 120;
@@ -29,12 +29,14 @@ const TerminalPanel = () => {
   const commitSuggestion = useEditorStore((s) => s.commitSuggestion);
   const detectedProjects = useEditorStore((s) => s.detectedProjects);
   const deployStatus = useEditorStore((s) => s.deployStatus);
+  const renderDeployStatus = useEditorStore((s) => s.renderDeployStatus);
 
   const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
   const setTerminalSecondActiveTab = useEditorStore((s) => s.setTerminalSecondActiveTab);
   const setTerminalHeight = useEditorStore((s) => s.setTerminalHeight);
   const setTerminalLayoutMode = useEditorStore((s) => s.setTerminalLayoutMode);
   const toggleTerminal = useEditorStore((s) => s.toggleTerminal);
+  const projectRootPath = useEditorStore((s) => s.projectRootPath);
 
   const [isResizing, setIsResizing] = useState(false);
   const prevHeightRef = useRef(DEFAULT_HEIGHT);
@@ -87,8 +89,9 @@ const TerminalPanel = () => {
   const showTimelineBadge =
     Boolean(error && error.trim()) && snapshots.length > 0 && activeTab !== 'timeline';
 
-  // Pulsing badge on DEPLOY tab when deploying
-  const showDeployBadge = deployStatus === 'deploying' && activeTab !== 'deploy';
+  // Pulsing badge on DEPLOY tab when either target is deploying
+  const showDeployBadge =
+    (deployStatus === 'deploying' || renderDeployStatus === 'deploying') && activeTab !== 'deploy';
 
   // ── Maximize / Split / Normal Logic ──
   const handleMaximize = () => {
@@ -474,7 +477,7 @@ const TerminalPanel = () => {
                     zIndex: idx === activeTermIdx ? 1 : 0,
                   }}
                 >
-                  <XTermTab key={session.id} isActive={idx === activeTermIdx} />
+                  <XTermTab key={session.id} isActive={idx === activeTermIdx} cwd={projectRootPath || undefined} />
                 </div>
               ))}
             </div>
@@ -482,7 +485,7 @@ const TerminalPanel = () => {
           {activeTab === 'timeline' && <TimelineSlider />}
           {activeTab === 'graph' && <CausalityGraph />}
           {activeTab === 'git' && <GitAssistantPanel />}
-          {activeTab === 'deploy' && <DeployPanel />}
+          {activeTab === 'deploy' && <DeployHub />}
 
           {terminalLayoutMode === 'split' && (
             <div style={{ position: 'absolute', top: 0, right: 0, padding: '3px 8px', background: 'var(--s3)', fontSize: '0.5rem', color: 'var(--t3)', fontFamily: 'var(--font-number)', borderRadius: '0 0 0 5px' }}>PANE 1</div>
@@ -506,7 +509,7 @@ const TerminalPanel = () => {
             {terminalSecondActiveTab === 'timeline' && <TimelineSlider />}
             {terminalSecondActiveTab === 'graph' && <CausalityGraph />}
             {terminalSecondActiveTab === 'git' && <GitAssistantPanel />}
-            {terminalSecondActiveTab === 'deploy' && <DeployPanel />}
+            {terminalSecondActiveTab === 'deploy' && <DeployHub />}
 
             <div style={{ position: 'absolute', top: 0, right: 0, padding: '3px 8px', background: 'var(--lime-dim)', fontSize: '0.5rem', color: 'var(--lime)', fontFamily: 'var(--font-number)', fontWeight: 600, borderRadius: '0 0 0 5px' }}>PANE 2</div>
           </div>

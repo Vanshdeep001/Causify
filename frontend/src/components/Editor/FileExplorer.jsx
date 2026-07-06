@@ -60,6 +60,26 @@ const FileExplorer = ({ onToggle }) => {
   const setDetectedProjects = useEditorStore((s) => s.setDetectedProjects);
   const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
   const setTerminalOpen = useEditorStore((s) => s.setTerminalOpen);
+  const setProjectRootPath = useEditorStore((s) => s.setProjectRootPath);
+  const pendingExplorerAction = useEditorStore((s) => s.pendingExplorerAction);
+  const clearPendingExplorerAction = useEditorStore((s) => s.clearPendingExplorerAction);
+
+  // Welcome-screen requests (the Mario block's power-ups) land here:
+  // run the matching explorer flow once, then clear. Deferred via a
+  // cancellable timeout so StrictMode's throwaway first mount can't
+  // consume the action — only the surviving mount executes it.
+  useEffect(() => {
+    if (!pendingExplorerAction) return;
+    const timer = setTimeout(() => {
+      if (pendingExplorerAction === 'import-project') {
+        folderInputRef.current?.click();
+      } else if (pendingExplorerAction === 'new-file') {
+        setNewItem({ type: 'file', parent: '', name: '' });
+      }
+      clearPendingExplorerAction();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [pendingExplorerAction, clearPendingExplorerAction]);
 
   // Compute set of file paths that are affected by active impacts
   const affectedPaths = new Set();
@@ -335,7 +355,25 @@ const FileExplorer = ({ onToggle }) => {
   };
 
   const handleFolderUpload = (e) => {
-    const filesArray = Array.from(e.target.files).filter(shouldUploadFile);
+    const allFiles = Array.from(e.target.files);
+
+    // Desktop app: remember the imported folder's real disk path so
+    // integrated terminals open directly inside the project.
+    const first = allFiles[0];
+    if (first?.webkitRelativePath && window.electronAPI?.getPathForFile) {
+      try {
+        const abs = window.electronAPI.getPathForFile(first);
+        const rel = first.webkitRelativePath;
+        // abs ends with rel (same length, OS separators) — strip it to get
+        // the parent dir, then re-append the project folder name.
+        if (abs && abs.length > rel.length) {
+          const parentDir = abs.slice(0, abs.length - rel.length);
+          setProjectRootPath(parentDir + rel.split('/')[0]);
+        }
+      } catch { /* browser mode — terminal falls back to the home dir */ }
+    }
+
+    const filesArray = allFiles.filter(shouldUploadFile);
     if (filesArray.length > 0) readAndProcess(filesArray);
   };
 
@@ -888,8 +926,10 @@ const FileExplorer = ({ onToggle }) => {
         <div>
         {/* Workspaces / session actions — only for a truly empty window.
             A restored workspace (files, no session) opens straight into
-            Project Files; Alt+N / Alt+J can still summon the forms. */}
-        {!sessionId && (Object.keys(files).length === 0 || panel) && (
+            Project Files; Alt+N / Alt+J can still summon the forms.
+            Hidden while a new-file input is active so the input sits at
+            the top of the sidebar instead of below the fold. */}
+        {!sessionId && (Object.keys(files).length === 0 || panel) && !newItem && (
           <div style={{
             padding: '22px 16px',
             display: 'flex',
@@ -1135,7 +1175,7 @@ const FileExplorer = ({ onToggle }) => {
           </div>
         )}
 
-        {(sessionId || Object.keys(files).length > 0) && (
+        {(sessionId || Object.keys(files).length > 0 || newItem) && (
           <div style={{ padding: '8px 0' }}>
             <div style={{ padding: '8px 14px', ...sectionLabelSty, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>Project Files</span>

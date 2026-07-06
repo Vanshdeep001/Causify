@@ -22,7 +22,7 @@ function getClientTag(key) {
   return null;
 }
 
-const EnvConfirmModal = ({ envVars = [], onConfirm, onSkip, onCancel }) => {
+const EnvConfirmModal = ({ envVars = [], provider = 'Vercel', providerColor = '#38BDF8', onConfirm, onSkip, onCancel }) => {
   // State: which vars are checked (all checked by default)
   const [checked, setChecked] = useState(() => {
     const map = {};
@@ -108,7 +108,7 @@ const EnvConfirmModal = ({ envVars = [], onConfirm, onSkip, onCancel }) => {
             letterSpacing: '0.04em',
             lineHeight: 1.5,
           }}>
-            These {envVars.length} variables will be uploaded to your Vercel project's <span style={{ color: '#38BDF8', fontWeight: 700 }}>production</span> environment before the build starts.
+            These {envVars.length} variables will be uploaded to your {provider} project's <span style={{ color: providerColor, fontWeight: 700 }}>production</span> environment before the build starts.
             Uncheck any variable you don't want uploaded.
           </div>
         </div>

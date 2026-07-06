@@ -145,6 +145,21 @@ export const gitLog = async (sessionId, count = 10) => {
   return response.data;
 };
 
+export const gitUndoCommit = async (sessionId) => {
+  const response = await api.post('/git/undo-commit', { sessionId });
+  return response.data;
+};
+
+export const gitBranches = async (sessionId) => {
+  const response = await api.get(`/git/branches?sessionId=${sessionId}`);
+  return response.data;
+};
+
+export const gitCheckout = async (sessionId, branch, create = false) => {
+  const response = await api.post('/git/checkout', { sessionId, branch, create });
+  return response.data;
+};
+
 export const gitIsConnected = async (sessionId) => {
   const response = await api.get(`/git/connected?sessionId=${sessionId}`);
   return response.data;

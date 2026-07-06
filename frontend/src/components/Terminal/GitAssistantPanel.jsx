@@ -20,10 +20,11 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import useEditorStore from '../../store/useEditorStore';
 import {
   executeGitCommit, cloneGitRepo, gitPush, gitPull,
-  gitStatus, gitLog, gitIsConnected, gitDisconnect
+  gitStatus, gitLog, gitIsConnected, gitDisconnect,
+  gitBranches, gitCheckout, gitUndoCommit
 } from '../../services/api';
 import { getProjectKey, getSavedRepoUrl, saveRepoUrl, clearSavedRepoUrl } from '../../utils/gitRepoMemory';
-import GuardianPanel from './GuardianPanel';
+import { GuardianPrZone } from './GuardianPanel';
 
 /* ═══════════════════════════════════════════════════════
  * Panel-local design primitives
@@ -53,12 +54,10 @@ const ZoneLabel = ({ index, children, right }) => (
   </div>
 );
 
-const StatusDot = ({ color, pulse }) => (
+const StatusDot = ({ color }) => (
   <span style={{
     display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%',
-    background: color, boxShadow: `0 0 6px ${color}`,
-    animation: pulse ? 'pulse-live 1.5s ease-in-out infinite' : 'none',
-    flexShrink: 0,
+    background: color, flexShrink: 0,
   }} />
 );
 
@@ -142,6 +141,41 @@ const TYPE_META = {
  * GIT module
  * ═══════════════════════════════════════════════════════ */
 
+const parseCommitText = (text) => {
+  const result = {
+    branch: '',
+    hash: '',
+    message: '',
+    filesChanged: 0,
+    insertions: 0,
+    deletions: 0
+  };
+  
+  if (!text) return result;
+  
+  // Try to parse first line: [branch hash] message
+  const firstLineMatch = text.match(/^\[(.*?)\s+([a-f0-9]{7,40})\]\s+(.*)/);
+  if (firstLineMatch) {
+    result.branch = firstLineMatch[1].trim();
+    result.hash = firstLineMatch[2].trim();
+    result.message = firstLineMatch[3].trim();
+  } else {
+    // Fallback: search for hash
+    const hashMatch = text.match(/\[(?:.*\s+)?([a-f0-9]{7,40})\]/);
+    if (hashMatch) result.hash = hashMatch[1];
+  }
+
+  // Parse stats: X files changed, Y insertions(+), Z deletions(-)
+  const statsMatch = text.match(/(\d+)\s+file[s]?\s+changed(?:,\s+(\d+)\s+insertion[s]?\(\+\))?(?:,\s+(\d+)\s+deletion[s]?\(-\))?/);
+  if (statsMatch) {
+    result.filesChanged = parseInt(statsMatch[1], 10) || 0;
+    result.insertions = parseInt(statsMatch[2], 10) || 0;
+    result.deletions = parseInt(statsMatch[3], 10) || 0;
+  }
+
+  return result;
+};
+
 const GitAssistantCore = () => {
   const sessionId = useEditorStore(s => s.sessionId);
   const suggestion = useEditorStore(s => s.commitSuggestion);
@@ -167,10 +201,13 @@ const GitAssistantCore = () => {
   const [commitMessage, setCommitMessage] = useState('');
   const [isCommitting, setIsCommitting] = useState(false);
   const [commitResult, setCommitResult] = useState(null);
-  const [commandInput, setCommandInput] = useState('');
   const [commandOutput, setCommandOutput] = useState(null);
+  const [pullConflict, setPullConflict] = useState(null); // { files: [...] }
   const [showCommitInput, setShowCommitInput] = useState(false);
   const [inlineCommitMsg, setInlineCommitMsg] = useState('');
+  const [showBranchInput, setShowBranchInput] = useState(false);
+  const [branchInput, setBranchInput] = useState('');
+  const [branches, setBranches] = useState([]);
 
   // Sync commit message from suggestion
   useEffect(() => {
@@ -409,33 +446,275 @@ const GitAssistantCore = () => {
 
     // Post-commit success state
     if (commitResult && commitResult.success) {
+      const parsed = parseCommitText(commitResult.text);
+      const isSplit = terminalLayoutMode === 'split';
+
+      const displayMessage = parsed.message || commitResult.text || 'Changes committed successfully';
+      const displayHash = parsed.hash || '';
+      const displayBranch = parsed.branch || '';
+
       return (
-        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ textAlign: 'center', animation: 'scale-in 0.3s ease' }}>
+        <div className="no-scrollbar" style={{
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'var(--s0)',
+          overflowY: 'auto',
+          boxSizing: 'border-box',
+          position: 'relative'
+        }}>
+          {/* Ambient background glow */}
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: '10%',
+            width: '80%',
+            height: '140px',
+            background: 'radial-gradient(120px circle at 50% 0px, rgba(61,214,140,0.06), transparent 80%)',
+            pointerEvents: 'none',
+            zIndex: 0
+          }} />
+
+          {/* Main Content Area */}
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: isSplit ? 'column' : 'row',
+            padding: '24px 28px',
+            gap: isSplit ? '16px' : '32px',
+            zIndex: 1,
+            minHeight: 0
+          }}>
+            {/* Left Column: Summary & Stats */}
             <div style={{
-              width: '44px', height: '44px', borderRadius: '50%',
-              border: '1px solid var(--emerald)', color: 'var(--emerald)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '1.1rem', margin: '0 auto 18px',
-              boxShadow: '0 0 32px rgba(61,214,140,0.14)',
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              minWidth: 0
             }}>
-              ✓
+              {/* Branch & Hash Badges */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '3px 10px',
+                  borderRadius: '999px',
+                  background: 'rgba(61,214,140,0.08)',
+                  border: '1px solid rgba(61,214,140,0.15)',
+                  color: 'var(--emerald)',
+                  fontFamily: MONO,
+                  fontSize: '0.62rem',
+                  fontWeight: 700,
+                  letterSpacing: '0.04em'
+                }}>
+                  <span style={{ display: 'inline-block', width: '5px', height: '5px', borderRadius: '50%', background: 'var(--emerald)' }} />
+                  COMMIT SECURED
+                </span>
+                {displayBranch && (
+                  <span style={{
+                    fontFamily: MONO,
+                    fontSize: '0.62rem',
+                    color: 'var(--t2)',
+                    background: 'var(--s2)',
+                    padding: '3px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid var(--line)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}>
+                    ⎇ {displayBranch}
+                  </span>
+                )}
+                {displayHash && (
+                  <span style={{
+                    fontFamily: MONO,
+                    fontSize: '0.62rem',
+                    color: 'var(--t3)',
+                    letterSpacing: '0.05em'
+                  }}>
+                    #{displayHash}
+                  </span>
+                )}
+              </div>
+
+              {/* Commit Message Heading */}
+              <h2 style={{
+                fontFamily: HEADER,
+                color: 'var(--t1)',
+                fontSize: '1.15rem',
+                fontWeight: 800,
+                lineHeight: 1.35,
+                letterSpacing: '-0.01em',
+                margin: '0 0 24px 0',
+                wordBreak: 'break-word',
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden'
+              }}>
+                {displayMessage}
+              </h2>
+
+              {/* Statistics Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '12px',
+                marginBottom: '16px'
+              }}>
+                {/* Stat Item 1 */}
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.01)',
+                  border: '1px solid var(--line-faint)',
+                  borderRadius: '8px',
+                  padding: '12px 16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px'
+                }}>
+                  <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: 'var(--t4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    Files Changed
+                  </span>
+                  <span style={{ fontFamily: HEADER, fontSize: '1.2rem', fontWeight: 700, color: 'var(--t1)' }}>
+                    {parsed.filesChanged || '0'}
+                  </span>
+                </div>
+
+                {/* Stat Item 2 */}
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.01)',
+                  border: '1px solid var(--line-faint)',
+                  borderRadius: '8px',
+                  padding: '12px 16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px'
+                }}>
+                  <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: 'var(--t4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    Insertions
+                  </span>
+                  <span style={{ fontFamily: HEADER, fontSize: '1.2rem', fontWeight: 700, color: 'var(--emerald)' }}>
+                    +{parsed.insertions ? parsed.insertions.toLocaleString() : '0'}
+                  </span>
+                </div>
+
+                {/* Stat Item 3 */}
+                <div style={{
+                  background: 'rgba(255, 255, 255, 0.01)',
+                  border: '1px solid var(--line-faint)',
+                  borderRadius: '8px',
+                  padding: '12px 16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px'
+                }}>
+                  <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: 'var(--t4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    Deletions
+                  </span>
+                  <span style={{ fontFamily: HEADER, fontSize: '1.2rem', fontWeight: 700, color: 'var(--crimson)' }}>
+                    -{parsed.deletions ? parsed.deletions.toLocaleString() : '0'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action buttons embedded here in split mode */}
+              {isSplit && (
+                <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginTop: '16px' }}>
+                  <PrimaryButton onClick={handlePushAfterCommit} disabled={gitLoading} style={{ flex: 1, padding: '12px 20px' }}>
+                    {gitLoading ? 'PUSHING…' : '↑ PUSH TO REMOTE'}
+                  </PrimaryButton>
+                  <TextButton onClick={() => setCommitSuggestion(null)} style={{ padding: '12px' }}>
+                    DISMISS
+                  </TextButton>
+                </div>
+              )}
             </div>
-            <div style={{ fontFamily: HEADER, color: 'var(--t1)', fontSize: '1rem', fontWeight: 800, letterSpacing: '0.04em' }}>
-              COMMIT COMPLETE
-            </div>
-            <div style={{ fontFamily: BODY, color: 'var(--t3)', fontSize: '0.74rem', marginTop: '8px', maxWidth: '380px', lineHeight: 1.6 }}>
-              {commitResult.text}
-            </div>
-            <div style={{ marginTop: '26px', display: 'flex', gap: '18px', justifyContent: 'center', alignItems: 'center' }}>
-              <PrimaryButton onClick={handlePushAfterCommit} disabled={gitLoading}>
-                {gitLoading ? 'PUSHING…' : '↑ PUSH TO REMOTE'}
-              </PrimaryButton>
-              <TextButton onClick={() => setCommitSuggestion(null)}>
-                DISMISS
-              </TextButton>
-            </div>
+
+            {/* Right Column: Files & Raw Terminal Outputs (Only in non-split layout) */}
+            {!isSplit && (
+              <div style={{
+                flex: '0 0 380px',
+                display: 'flex',
+                flexDirection: 'column',
+                borderLeft: '1px solid var(--line-faint)',
+                paddingLeft: '32px',
+                minHeight: 0
+              }}>
+                <div style={{
+                  fontFamily: MONO,
+                  fontSize: '0.58rem',
+                  fontWeight: 700,
+                  letterSpacing: '0.24em',
+                  textTransform: 'uppercase',
+                  color: 'var(--t3)',
+                  marginBottom: '14px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <span>COMMIT READOUT</span>
+                  <span style={{ fontSize: '0.52rem', color: 'var(--t4)' }}>
+                    RAW OUTPUT
+                  </span>
+                </div>
+
+                {/* Scrollable console block for git output */}
+                <div className="no-scrollbar" style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  background: 'rgba(255, 255, 255, 0.01)',
+                  border: '1px solid var(--line-faint)',
+                  borderRadius: '8px',
+                  padding: '14px 18px',
+                  minHeight: '120px'
+                }}>
+                  <pre style={{
+                    margin: 0,
+                    fontFamily: MONO,
+                    color: 'var(--t2)',
+                    fontSize: '0.64rem',
+                    lineHeight: 1.65,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-all'
+                  }}>
+                    {commitResult.text}
+                  </pre>
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Bottom Action Dock (Only in non-split layout) */}
+          {!isSplit && (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '16px 28px',
+              borderTop: '1px solid var(--line-faint)',
+              background: 'rgba(17, 17, 17, 0.3)',
+              zIndex: 1,
+              flexShrink: 0
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--emerald)' }} />
+                <span style={{ fontFamily: BODY, fontSize: '0.68rem', color: 'var(--t3)' }}>
+                  Working tree clean. Ready to sync with remote server.
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                <TextButton onClick={() => setCommitSuggestion(null)}>
+                  DISMISS
+                </TextButton>
+                <PrimaryButton onClick={handlePushAfterCommit} disabled={gitLoading} style={{ padding: '11px 32px' }}>
+                  {gitLoading ? 'PUSHING…' : '↑ PUSH TO REMOTE'}
+                </PrimaryButton>
+              </div>
+            </div>
+          )}
           <style>{`
             @keyframes scale-in { 0% { transform: scale(0.95); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
           `}</style>
@@ -618,7 +897,12 @@ const GitAssistantCore = () => {
     setGitLoading(true);
     setGitError(null);
     try {
-      const res = await executeGitCommit({ sessionId, message: inlineCommitMsg.trim() });
+      // Send the editor's live files so unsaved buffers are committed too
+      const res = await executeGitCommit({
+        sessionId,
+        message: inlineCommitMsg.trim(),
+        files: Object.entries(files).map(([path, content]) => ({ path, content })),
+      });
       if (res.success !== false) {
         setCommandOutput({ command: 'commit', output: res.output || 'Committed successfully' });
         setInlineCommitMsg('');
@@ -642,57 +926,93 @@ const GitAssistantCore = () => {
     }
   };
 
-  const handleCommand = async (cmd) => {
-    const rawCommand = (cmd || commandInput).trim();
-    const command = rawCommand.toLowerCase();
-    if (!command) return;
-    setCommandInput('');
-    setCommandOutput(null);
+  // ── Branch switching (from the banner button) ──
+  const openBranchSwitcher = async () => {
+    setShowBranchInput(true);
+    setShowCommitInput(false);
+    try {
+      const res = await gitBranches(sessionId);
+      if (res.success !== false) {
+        const list = String(res.output || '')
+          .split('\n')
+          .map(l => l.trim())
+          .filter(Boolean)
+          .map(l => ({ current: l.startsWith('*'), name: l.replace(/^\*\s*/, '') }));
+        setBranches(list);
+      }
+    } catch { /* branch list is optional — manual input still works */ }
+  };
+
+  const handleCheckout = async (name, create = false) => {
+    const branch = (name || branchInput).trim();
+    if (!branch || gitLoading) return;
     setGitLoading(true);
     setGitError(null);
-
     try {
-      let res;
-      // Support "commit <message>" syntax
-      if (command.startsWith('commit')) {
-        const msg = rawCommand.substring(6).trim();
-        if (!msg) {
-          setShowCommitInput(true);
-          setGitLoading(false);
-          return;
-        }
-        res = await executeGitCommit({
-          sessionId,
-          message: msg,
-          files: Object.entries(files).map(([path, content]) => ({ path, content }))
-        });
-      } else {
-        switch (command) {
-          case 'push':
-            res = await gitPush(sessionId);
-            break;
-          case 'pull':
-            res = await gitPull(sessionId);
-            break;
-          case 'status':
-            res = await gitStatus(sessionId);
-            break;
-          case 'log':
-            res = await gitLog(sessionId, 10);
-            break;
-          default:
-            setGitError(`Unknown command: "${command}". Use: commit, push, pull, status, log`);
-            setGitLoading(false);
-            return;
-        }
-      }
-
+      const res = await gitCheckout(sessionId, branch, create);
       if (res.success !== false) {
-        setCommandOutput({ command: command.split(' ')[0], output: res.output || '(no output)' });
+        setCommandOutput({ command: 'checkout', output: res.output || `Switched to '${branch}'` });
+        setShowBranchInput(false);
+        setBranchInput('');
         refreshStatus();
         refreshLog();
       } else {
+        setGitError(res.error || 'Checkout failed');
+      }
+    } catch (err) {
+      setGitError(err.response?.data?.error || err.message);
+    } finally {
+      setGitLoading(false);
+    }
+  };
+
+  // One-click git action (push / pull) — output surfaces under the actions
+  const handleCommand = async (command) => {
+    setCommandOutput(null);
+    setPullConflict(null);
+    setGitLoading(true);
+    setGitError(null);
+    try {
+      const res = command === 'push' ? await gitPush(sessionId) : await gitPull(sessionId);
+      if (res.success !== false) {
+        setCommandOutput({ command, output: res.output || '(no output)' });
+        refreshStatus();
+        refreshLog();
+      } else if (res.conflict) {
+        // Backend aborted the merge — workspace is untouched. Guide the user.
+        setPullConflict({ files: res.conflictFiles || [] });
+      } else {
         setGitError(res.error || `${command} failed`);
+      }
+    } catch (err) {
+      const data = err.response?.data;
+      if (data?.conflict) {
+        setPullConflict({ files: data.conflictFiles || [] });
+      } else {
+        setGitError(data?.error || err.message);
+      }
+    } finally {
+      setGitLoading(false);
+    }
+  };
+
+  // Undo the last (unpushed) commit — soft reset, files keep their content
+  const handleUndoCommit = async () => {
+    setCommandOutput(null);
+    setPullConflict(null);
+    setGitLoading(true);
+    setGitError(null);
+    try {
+      const res = await gitUndoCommit(sessionId);
+      if (res.success !== false) {
+        setCommandOutput({
+          command: 'undo',
+          output: 'Last commit undone — your changes are back in the working tree, nothing was lost.',
+        });
+        refreshStatus();
+        refreshLog();
+      } else {
+        setGitError(res.error || 'Undo failed');
       }
     } catch (err) {
       setGitError(err.response?.data?.error || err.message);
@@ -720,6 +1040,7 @@ const GitAssistantCore = () => {
 
   const branchLine = statusLines.find(l => l.startsWith('##')) || '';
   const isAhead = branchLine.includes('[ahead');
+  const currentBranch = branchLine.replace(/^##\s*/, '').split('...')[0].split(' ')[0].trim();
 
   // Parse log lines
   const logLines = String(gitLogData || '').split('\n').filter(l => l.trim());
@@ -742,8 +1063,8 @@ const GitAssistantCore = () => {
         color: '#FFFFFF',
         title: 'READY TO COMMIT',
         detail: `${actualChanges.length} file${actualChanges.length > 1 ? 's' : ''} changed — ${summary}`,
-        action: 'commit',
-        actionLabel: 'COMMIT CHANGES',
+        action: 'branch',
+        actionLabel: '⎇ SWITCH BRANCH',
       };
     }
     // After commit, if branch is ahead, suggest push
@@ -799,11 +1120,21 @@ const GitAssistantCore = () => {
             <span style={{ fontFamily: BODY, fontSize: '0.68rem', color: 'var(--t3)' }}>
               {recommendation.detail}
             </span>
+            {currentBranch && (
+              <span style={{ fontFamily: MONO, fontSize: '0.6rem', color: 'var(--t2)', whiteSpace: 'nowrap' }}>
+                ⎇ {currentBranch}
+              </span>
+            )}
           </div>
+          {recommendation.action === 'push' && (
+            <TextButton onClick={handleUndoCommit} disabled={gitLoading}>
+              ↶ UNDO COMMIT
+            </TextButton>
+          )}
           <PrimaryButton
             onClick={() => {
-              if (recommendation.action === 'commit') {
-                setShowCommitInput(true);
+              if (recommendation.action === 'branch') {
+                openBranchSwitcher();
               } else {
                 handleCommand(recommendation.action);
               }
@@ -813,6 +1144,91 @@ const GitAssistantCore = () => {
           >
             {recommendation.actionLabel} →
           </PrimaryButton>
+        </div>
+      )}
+
+      {/* ── Branch Switcher (slides down from the banner) ── */}
+      {showBranchInput && (
+        <div style={{
+          padding: '13px 22px', background: 'rgba(255,255,255,0.015)',
+          borderBottom: '1px solid var(--line-faint)',
+          flexShrink: 0, animation: 'scale-in 0.2s ease',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <span style={{
+              fontFamily: MONO, fontSize: '0.54rem', fontWeight: 700,
+              letterSpacing: '0.2em', color: 'var(--t4)', flexShrink: 0,
+            }}>
+              BRANCH
+            </span>
+            <div style={{
+              flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '12px',
+              borderBottom: '1px solid var(--line-strong)', paddingBottom: '7px',
+              transition: 'border-color 0.2s ease',
+            }}>
+              <span style={{ color: 'var(--t4)', fontFamily: MONO, fontSize: '0.72rem', flexShrink: 0 }}>⎇</span>
+              <input
+                type="text"
+                value={branchInput}
+                onChange={e => setBranchInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleCheckout();
+                  if (e.key === 'Escape') { setShowBranchInput(false); setBranchInput(''); }
+                }}
+                onFocus={focusLine}
+                onBlur={blurLine}
+                placeholder="branch name — switch to it, or create it"
+                autoFocus
+                spellCheck={false}
+                style={{
+                  flex: 1, minWidth: 0, background: 'transparent', border: 'none',
+                  outline: 'none', color: 'var(--t1)', fontSize: '0.82rem',
+                  fontFamily: MONO, fontWeight: 500,
+                }}
+              />
+            </div>
+            <PrimaryButton
+              onClick={() => handleCheckout()}
+              disabled={gitLoading || !branchInput.trim()}
+              style={{ padding: '8px 22px', fontSize: '0.58rem' }}
+            >
+              {gitLoading ? 'SWITCHING…' : 'SWITCH'}
+            </PrimaryButton>
+            <TextButton onClick={() => handleCheckout(null, true)} disabled={gitLoading || !branchInput.trim()}>
+              + CREATE
+            </TextButton>
+            <TextButton onClick={() => { setShowBranchInput(false); setBranchInput(''); }}>
+              ✕
+            </TextButton>
+          </div>
+
+          {/* Existing branches — click to switch */}
+          {branches.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px', paddingLeft: '64px' }}>
+              {branches.map(b => (
+                <button
+                  key={b.name}
+                  onClick={() => !b.current && handleCheckout(b.name)}
+                  disabled={gitLoading || b.current}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '7px',
+                    padding: '4px 12px', borderRadius: '999px',
+                    background: b.current ? 'rgba(255,255,255,0.08)' : 'transparent',
+                    border: '1px solid var(--line)',
+                    color: b.current ? '#fff' : 'var(--t3)',
+                    cursor: b.current ? 'default' : 'pointer',
+                    fontFamily: MONO, fontSize: '0.56rem', fontWeight: 700, letterSpacing: '0.08em',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={e => { if (!b.current && !gitLoading) { e.currentTarget.style.borderColor = '#fff'; e.currentTarget.style.color = '#fff'; } }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--line)'; e.currentTarget.style.color = b.current ? '#fff' : 'var(--t3)'; }}
+                >
+                  {b.current && <StatusDot color="var(--emerald)" />}
+                  {b.name}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -948,7 +1364,7 @@ const GitAssistantCore = () => {
           {/* Actions */}
           <div style={{ marginTop: '18px', flexShrink: 0 }}>
             <PrimaryButton
-              onClick={() => setShowCommitInput(true)}
+              onClick={() => { setShowCommitInput(true); setShowBranchInput(false); }}
               disabled={gitLoading}
               style={{
                 width: '100%', padding: '10px 12px', fontSize: '0.6rem',
@@ -964,89 +1380,78 @@ const GitAssistantCore = () => {
               <TextButton onClick={() => handleCommand('pull')} disabled={gitLoading}>↓ PULL</TextButton>
               <TextButton onClick={() => { refreshStatus(); refreshLog(); setCommandOutput(null); }} disabled={gitLoading}>⟳ SYNC</TextButton>
             </div>
+
+            {/* Action feedback */}
+            {gitLoading && (
+              <div style={{
+                fontFamily: MONO, fontSize: '0.54rem', color: 'var(--t3)',
+                letterSpacing: '0.16em', marginTop: '10px',
+                animation: 'pulse-live 1s ease infinite',
+              }}>
+                ⠿ RUNNING
+              </div>
+            )}
+            {!gitLoading && pullConflict && (
+              <div style={{ marginTop: '12px', borderLeft: '2px solid var(--crimson)', paddingLeft: '12px' }}>
+                <div style={{ fontFamily: MONO, fontSize: '0.58rem', fontWeight: 800, letterSpacing: '0.14em', color: 'var(--crimson)' }}>
+                  PULL BLOCKED — MERGE CONFLICT
+                </div>
+                <div style={{ fontFamily: BODY, fontSize: '0.66rem', color: 'var(--t3)', marginTop: '5px', lineHeight: 1.55 }}>
+                  Remote changes collide with yours{pullConflict.files.length > 0 ? ' in:' : '.'}
+                </div>
+                {pullConflict.files.map((f) => (
+                  <div key={f} style={{ fontFamily: MONO, fontSize: '0.62rem', color: 'var(--t2)', marginTop: '3px', wordBreak: 'break-all' }}>
+                    · {f}
+                  </div>
+                ))}
+                <div style={{ fontFamily: BODY, fontSize: '0.66rem', color: 'var(--t3)', marginTop: '7px', lineHeight: 1.55 }}>
+                  Nothing was changed. Resolve on GitHub (open a PR → “Resolve conflicts”)
+                  or in the terminal:
+                </div>
+                <pre className="no-scrollbar" style={{
+                  margin: '7px 0 0', padding: '9px 11px',
+                  background: 'var(--s0)', border: '1px solid var(--line-faint)',
+                  borderRadius: '7px', overflow: 'auto',
+                  fontFamily: MONO, fontSize: '0.6rem', color: 'var(--t2)', lineHeight: 1.8,
+                }}>
+{`git pull --no-rebase
+# open each listed file and fix the <<<<<<< / ======= / >>>>>>> sections
+git add .
+git commit -m "merge: resolve conflicts"
+git push`}
+                </pre>
+                <div style={{ marginTop: '6px' }}>
+                  <TextButton onClick={() => setPullConflict(null)}>DISMISS</TextButton>
+                </div>
+              </div>
+            )}
+            {!gitLoading && !pullConflict && gitError && (
+              <ErrorLine style={{ marginTop: '10px' }}>{gitError}</ErrorLine>
+            )}
+            {!gitLoading && !gitError && commandOutput && (
+              <div style={{ marginTop: '10px' }}>
+                <div style={{ fontFamily: MONO, fontSize: '0.52rem', color: 'var(--t4)', letterSpacing: '0.16em', marginBottom: '4px' }}>
+                  → GIT {commandOutput.command.toUpperCase()}
+                </div>
+                <pre className="no-scrollbar" style={{
+                  margin: 0, fontFamily: MONO, fontSize: '0.6rem', color: 'var(--t3)',
+                  lineHeight: 1.6, whiteSpace: 'pre-wrap', maxHeight: '72px', overflow: 'auto',
+                }}>
+                  {commandOutput.output}
+                </pre>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* ZONE 02: Command Terminal */}
-        <div style={{
-          flex: 1, minWidth: 0, minHeight: isSplit ? '200px' : 0,
+        {/* ZONE 02: Guardian — pull request readiness */}
+        <div className="no-scrollbar" style={{
+          flex: 1, minWidth: 0, minHeight: isSplit ? '180px' : 0,
           display: 'flex', flexDirection: 'column',
           paddingRight: isSplit ? 0 : '24px',
-          overflow: 'hidden', ...zoneDivider,
+          overflowY: 'auto', ...zoneDivider,
         }}>
-          <ZoneLabel index="02" right={gitLoading && (
-            <span style={{
-              fontFamily: MONO, fontSize: '0.54rem', color: 'var(--t2)',
-              letterSpacing: '0.12em', animation: 'pulse-live 1s ease infinite',
-            }}>
-              ⠿ RUNNING
-            </span>
-          )}>
-            Terminal
-          </ZoneLabel>
-
-          {/* Command input — bare line */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '12px',
-            borderBottom: '1px solid var(--line-strong)', paddingBottom: '10px',
-            marginBottom: '14px', flexShrink: 0, transition: 'border-color 0.2s ease',
-          }}>
-            <span style={{ color: 'var(--t2)', fontFamily: MONO, fontSize: '0.78rem', fontWeight: 700 }}>❯</span>
-            <input
-              type="text"
-              value={commandInput}
-              onChange={e => setCommandInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleCommand()}
-              onFocus={focusLine}
-              onBlur={blurLine}
-              placeholder="commit <msg> · push · pull · status · log"
-              spellCheck={false}
-              style={{
-                flex: 1, minWidth: 0, background: 'transparent', border: 'none',
-                outline: 'none', color: 'var(--t1)', fontSize: '0.8rem',
-                fontFamily: MONO, fontWeight: 500,
-              }}
-            />
-          </div>
-
-          {/* Error display */}
-          {gitError && (
-            <ErrorLine style={{ marginBottom: '14px', flexShrink: 0 }}>
-              {gitError}
-            </ErrorLine>
-          )}
-
-          {/* Command output */}
-          {commandOutput && (
-            <div className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-              <div style={{
-                fontFamily: MONO, fontSize: '0.56rem', color: 'var(--t4)',
-                marginBottom: '10px', letterSpacing: '0.16em',
-              }}>
-                → GIT {commandOutput.command.toUpperCase()}
-              </div>
-              <pre className="no-scrollbar" style={{
-                margin: 0, paddingLeft: '14px',
-                borderLeft: '1px solid var(--line-faint)',
-                overflow: 'auto', color: 'var(--t2)', fontFamily: MONO,
-                fontSize: '0.7rem', lineHeight: 1.8, whiteSpace: 'pre-wrap',
-              }}>
-                {commandOutput.output}
-              </pre>
-            </div>
-          )}
-
-          {/* Default: show hint when no output */}
-          {!commandOutput && !gitError && (
-            <div style={{
-              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--t4)', fontFamily: MONO, fontSize: '0.58rem',
-              letterSpacing: '0.22em', textTransform: 'uppercase', textAlign: 'center',
-              padding: '10px', minHeight: '50px', opacity: 0.7,
-            }}>
-              Awaiting input
-            </div>
-          )}
+          <GuardianPrZone />
         </div>
 
         {/* ZONE 03: History — commit timeline */}
@@ -1083,7 +1488,6 @@ const GitAssistantCore = () => {
                       <span style={{
                         width: '5px', height: '5px', borderRadius: '50%', marginTop: '5px', flexShrink: 0,
                         background: isHead ? '#FFFFFF' : 'var(--t4)',
-                        boxShadow: isHead ? '0 0 8px rgba(255,255,255,0.5)' : 'none',
                       }} />
                       {!isLast && <span style={{ width: '1px', flex: 1, background: 'var(--line-faint)', margin: '4px 0' }} />}
                     </div>
@@ -1135,95 +1539,14 @@ const GitAssistantCore = () => {
 };
 
 /* ═══════════════════════════════════════════════════════
- * Wrapper — GIT | GUARDIAN module switch
- *
- * GIT      → the hands: commit / push / pull on your code
- * GUARDIAN → the eyes: Repository Guardian observing the
- *            whole repo (PRs, branches, approvals)
+ * Wrapper — single unified panel: git actions (zone 01),
+ * Guardian PR readiness (zone 02), history (zone 03).
  * ═══════════════════════════════════════════════════════ */
 
-const MODULES = {
-  git: {
-    label: 'GIT',
-    icon: '⎇',
-    caption: 'EXECUTION · COMMIT / PUSH / PULL',
-  },
-  guardian: {
-    label: 'GUARDIAN',
-    icon: '◈',
-    caption: 'OBSERVATION · REPO HEALTH & PRS',
-  },
-};
-
-const GitAssistantPanel = () => {
-  const [view, setView] = useState('git');
-  const gitRepoConnected = useEditorStore(s => s.gitRepoConnected);
-
-  return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--s0)' }}>
-
-      {/* Module header */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: '14px', padding: '8px 16px',
-        borderBottom: '1px solid var(--line-faint)', flexShrink: 0,
-      }}>
-        {/* Segmented switch */}
-        <div style={{
-          display: 'inline-flex', gap: '2px', padding: '3px',
-          background: 'var(--s2)', borderRadius: '999px',
-        }}>
-          {Object.entries(MODULES).map(([key, mod]) => {
-            const active = view === key;
-            return (
-              <button
-                key={key}
-                onClick={() => setView(key)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '7px',
-                  padding: '5px 18px', border: 'none', borderRadius: '999px',
-                  background: active ? '#FFFFFF' : 'transparent',
-                  color: active ? '#000' : 'var(--t3)',
-                  cursor: 'pointer', fontFamily: MONO, fontSize: '0.6rem',
-                  fontWeight: 800, letterSpacing: '0.14em',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={e => { if (!active) e.currentTarget.style.color = 'var(--t1)'; }}
-                onMouseLeave={e => { if (!active) e.currentTarget.style.color = 'var(--t3)'; }}
-              >
-                <span style={{ fontSize: '0.7rem' }}>{mod.icon}</span>
-                {mod.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Context caption */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0 }}>
-          <span style={{
-            fontFamily: MONO, fontSize: '0.52rem', color: 'var(--t4)',
-            letterSpacing: '0.16em', whiteSpace: 'nowrap', overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}>
-            {MODULES[view].caption}
-          </span>
-          {view === 'git' && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', flexShrink: 0 }}>
-              <StatusDot color={gitRepoConnected ? 'var(--emerald)' : 'var(--t4)'} pulse={gitRepoConnected} />
-              <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: gitRepoConnected ? 'var(--t3)' : 'var(--t4)', letterSpacing: '0.14em', fontWeight: 700 }}>
-                {gitRepoConnected ? 'LINKED' : 'NO REPO'}
-              </span>
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Module body */}
-      <div style={{ flex: 1, overflow: 'hidden' }}>
-        {view === 'git' ? <GitAssistantCore /> : <GuardianPanel />}
-      </div>
-    </div>
-  );
-};
+const GitAssistantPanel = () => (
+  <div style={{ height: '100%', overflow: 'hidden', background: 'var(--s0)' }}>
+    <GitAssistantCore />
+  </div>
+);
 
 export default GitAssistantPanel;

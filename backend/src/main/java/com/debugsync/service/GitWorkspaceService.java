@@ -31,7 +31,13 @@ public class GitWorkspaceService {
 
     // ── Safety: Command whitelist ──
     private static final Set<String> ALLOWED_COMMANDS = Set.of(
-        "clone", "add", "commit", "push", "pull", "status", "log", "remote"
+        "clone", "add", "commit", "push", "pull", "status", "log", "remote",
+        "branch", "checkout", "merge", "reset", "config"
+    );
+
+    // ── Safety: Branch names — no shell metachars, no leading dash, no ".." ──
+    private static final Pattern BRANCH_NAME_PATTERN = Pattern.compile(
+        "^[A-Za-z0-9][A-Za-z0-9._/-]{0,100}$"
     );
 
     // ── Safety: URL validation (HTTPS only, no shell metacharacters) ──
@@ -83,7 +89,15 @@ public class GitWorkspaceService {
         log.info("[GitWorkspace] Cloning repo for session {}: {}", sessionId, safeUrl);
 
         String[] command = {"git", "clone", repoUrl, "."};
-        return executeGitCommand(workspace, command);
+        Map<String, Object> cloneResult = executeGitCommand(workspace, command);
+
+        // Session files are written with LF; stop the user's global
+        // autocrlf setting from generating phantom line-ending diffs
+        // and "LF will be replaced by CRLF" noise in this sandbox.
+        if (Boolean.TRUE.equals(cloneResult.get("success"))) {
+            executeGitCommand(workspace, new String[]{"git", "config", "core.autocrlf", "false"});
+        }
+        return cloneResult;
     }
 
     /**
@@ -101,6 +115,11 @@ public class GitWorkspaceService {
     public Map<String, Object> commitAll(String sessionId, String message, List<Map<String, String>> files) throws Exception {
         validateSessionId(sessionId);
         Path workspace = ensureWorkspaceExists(sessionId);
+
+        // Self-heal before committing (same rationale as getStatus): never
+        // let stale sandbox noise — like line-ending pollution from older
+        // syncs — sneak into a commit alongside the user's real changes.
+        executeGitCommand(workspace, new String[]{"git", "checkout", "--", "."});
 
         // Sync files to workspace before committing
         syncFilesToWorkspace(sessionId, workspace, files);
@@ -136,13 +155,114 @@ public class GitWorkspaceService {
 
     /**
      * Pull latest from remote origin.
+     *
+     * A conflicting pull must NEVER leave the sandbox mid-merge (a later
+     * commit would silently complete the merge with the editor's versions).
+     * On conflict the merge is aborted immediately — the workspace returns
+     * to its pre-pull state — and the conflicting files are reported so the
+     * UI can guide the user through resolving them properly.
      */
     public Map<String, Object> pull(String sessionId) throws Exception {
         validateSessionId(sessionId);
         Path workspace = ensureWorkspaceExists(sessionId);
 
         log.info("[GitWorkspace] Pulling for session {}", sessionId);
-        return executeGitCommand(workspace, new String[]{"git", "pull"});
+
+        // The sandbox is a derived artifact: its uncommitted modifications
+        // come from editor/DB syncs and always survive in the session itself.
+        // Restore tracked files to HEAD first so background sync noise can
+        // never block the merge with "local changes would be overwritten".
+        executeGitCommand(workspace, new String[]{"git", "checkout", "--", "."});
+
+        // --no-rebase: force merge semantics so newer git doesn't refuse
+        // divergent branches outright, and conflicts stay detectable/abortable.
+        Map<String, Object> result = executeGitCommand(workspace, new String[]{"git", "pull", "--no-rebase"});
+
+        String output = String.valueOf(result.getOrDefault("output", ""));
+        if (Boolean.FALSE.equals(result.get("success")) && output.contains("CONFLICT")) {
+            log.info("[GitWorkspace] Pull conflict for session {} — aborting merge", sessionId);
+            executeGitCommand(workspace, new String[]{"git", "merge", "--abort"});
+
+            List<String> conflictFiles = new ArrayList<>();
+            for (String line : output.split("\n")) {
+                int idx = line.indexOf("Merge conflict in ");
+                if (idx >= 0) {
+                    conflictFiles.add(line.substring(idx + "Merge conflict in ".length()).trim());
+                }
+            }
+
+            Map<String, Object> res = new HashMap<>();
+            res.put("success", false);
+            res.put("conflict", true);
+            res.put("conflictFiles", conflictFiles);
+            res.put("error", "Pull would create merge conflicts — the workspace was left untouched");
+            res.put("output", output);
+            return res;
+        }
+        return result;
+    }
+
+    /**
+     * Undo the most recent commit — ONLY while it hasn't been pushed.
+     *
+     * Uses `git reset --soft HEAD~1`: every file keeps its exact content;
+     * only the commit itself is removed, so the changes return to the
+     * working tree. Refuses when the branch isn't ahead of the remote,
+     * because rewriting pushed history would break the remote.
+     */
+    public Map<String, Object> undoLastCommit(String sessionId) throws Exception {
+        validateSessionId(sessionId);
+        Path workspace = ensureWorkspaceExists(sessionId);
+
+        Map<String, Object> status = executeGitCommand(workspace, new String[]{"git", "status", "--porcelain", "-b"});
+        String statusOut = String.valueOf(status.getOrDefault("output", ""));
+        if (!statusOut.contains("[ahead")) {
+            return Map.of(
+                "success", false,
+                "error", "Nothing to undo — the last commit is already on the remote"
+            );
+        }
+
+        log.info("[GitWorkspace] Undoing last (unpushed) commit for session {}", sessionId);
+        return executeGitCommand(workspace, new String[]{"git", "reset", "--soft", "HEAD~1"});
+    }
+
+    /**
+     * List local branches (current one is marked with '*').
+     */
+    public Map<String, Object> listBranches(String sessionId) throws Exception {
+        validateSessionId(sessionId);
+        Path workspace = ensureWorkspaceExists(sessionId);
+
+        return executeGitCommand(workspace, new String[]{"git", "branch"});
+    }
+
+    /**
+     * Switch to a branch; optionally create it first (checkout -b).
+     */
+    public Map<String, Object> checkoutBranch(String sessionId, String branch, boolean create) throws Exception {
+        validateSessionId(sessionId);
+        Path workspace = ensureWorkspaceExists(sessionId);
+
+        String safeBranch = validateBranchName(branch);
+        log.info("[GitWorkspace] Checkout for session {}: '{}' (create={})", sessionId, safeBranch, create);
+
+        String[] command = create
+            ? new String[]{"git", "checkout", "-b", safeBranch}
+            : new String[]{"git", "checkout", safeBranch};
+        return executeGitCommand(workspace, command);
+    }
+
+    private String validateBranchName(String branch) {
+        if (branch == null || branch.isBlank()) {
+            throw new IllegalArgumentException("Branch name is required");
+        }
+        String trimmed = branch.trim();
+        if (trimmed.contains("..") || !BRANCH_NAME_PATTERN.matcher(trimmed).matches()) {
+            throw new IllegalArgumentException(
+                "Invalid branch name — use letters, digits, '.', '_', '/', '-' (no leading '-')");
+        }
+        return trimmed;
     }
 
     /**
@@ -158,6 +278,13 @@ public class GitWorkspaceService {
     public Map<String, Object> getStatus(String sessionId, List<Map<String, String>> files) throws Exception {
         validateSessionId(sessionId);
         Path workspace = ensureWorkspaceExists(sessionId);
+
+        // Self-heal: the sandbox is a derived artifact (see pull()) — any
+        // difference that didn't come from HEAD or the sync below is stale
+        // noise (e.g. files once written with the wrong line endings).
+        // Restore tracked files first; the sync re-applies real edits, so
+        // the status reflects exactly editor-vs-HEAD.
+        executeGitCommand(workspace, new String[]{"git", "checkout", "--", "."});
 
         // Sync files before checking status so changed files are detected
         syncFilesToWorkspace(sessionId, workspace, files);
@@ -225,6 +352,13 @@ public class GitWorkspaceService {
             }
         }
 
+        // Imported sessions wrap every path in the project's root folder
+        // (e.g. "My Project/src/app.js") while the cloned repo tracks files
+        // from the repository root ("src/app.js"). Syncing wrapped paths
+        // would duplicate the whole tree inside the repo — strip the common
+        // wrapper segment when every file shares one.
+        filesToSync = stripCommonRootFolder(filesToSync);
+
         for (Map<String, String> fileData : filesToSync) {
             String pathStr = fileData.get("path");
             String content = fileData.get("content");
@@ -241,11 +375,96 @@ public class GitWorkspaceService {
                 }
                 
                 Files.createDirectories(filePath.getParent());
-                Files.writeString(filePath, content != null ? content : "");
+                String newContent = content != null ? content : "";
+
+                // Blindly rewriting every file makes git report the whole
+                // tree as modified when the editor and the checkout disagree
+                // only on line endings (CRLF vs LF) or the trailing newline.
+                // Adapt to the existing file's conventions and skip the write
+                // when nothing really changed.
+                if (Files.exists(filePath)) {
+                    String existing = null;
+                    try {
+                        existing = Files.readString(filePath);
+                    } catch (IOException notText) {
+                        // Binary or non-UTF-8 file — sync it as-is below.
+                    }
+                    if (existing != null) {
+                        String adapted = adaptToExistingStyle(newContent, existing);
+                        if (!adapted.equals(existing)) {
+                            Files.writeString(filePath, adapted);
+                        }
+                        continue;
+                    }
+                }
+
+                Files.writeString(filePath, newContent);
             } catch (IOException e) {
                 log.error("[GitWorkspace] Failed to sync file to workspace: {}", pathStr, e);
             }
         }
+    }
+
+    /**
+     * Match synced content to the workspace file's existing line-ending
+     * style and trailing-newline convention. Only formatting that git would
+     * otherwise flag on EVERY line is normalized — real edits still differ.
+     */
+    private String adaptToExistingStyle(String content, String existing) {
+        boolean crlf = existing.contains("\r\n");
+        String eol = crlf ? "\r\n" : "\n";
+
+        String adapted = content.replace("\r\n", "\n");
+        if (crlf) adapted = adapted.replace("\n", "\r\n");
+
+        // Trailing-newline drift: editors often drop (or add) the final
+        // newline. When that is the ONLY difference, keep the file as-is.
+        if (existing.endsWith(eol) && !adapted.endsWith(eol) && existing.equals(adapted + eol)) {
+            return existing;
+        }
+        if (!existing.endsWith(eol) && adapted.endsWith(eol) && adapted.equals(existing + eol)) {
+            return existing;
+        }
+        // A genuinely edited file keeps the checkout's trailing-newline style.
+        if (existing.endsWith(eol) && !adapted.endsWith(eol)) {
+            adapted += eol;
+        }
+        return adapted;
+    }
+
+    /**
+     * If ALL paths share a single top-level folder, return copies with that
+     * folder stripped; otherwise return the list unchanged. Any top-level
+     * file (no '/') or a second distinct root disables stripping.
+     */
+    private List<Map<String, String>> stripCommonRootFolder(List<Map<String, String>> files) {
+        if (files == null || files.size() < 2) return files;
+        String root = null;
+        for (Map<String, String> f : files) {
+            String p = f.get("path");
+            if (p == null) continue;
+            String normalized = p.replace("\\", "/");
+            int idx = normalized.indexOf('/');
+            if (idx <= 0) return files;                 // top-level file → real layout
+            String seg = normalized.substring(0, idx);
+            if (root == null) root = seg;
+            else if (!root.equals(seg)) return files;   // multiple roots → real layout
+        }
+        if (root == null) return files;
+
+        String prefix = root + "/";
+        List<Map<String, String>> stripped = new ArrayList<>();
+        for (Map<String, String> f : files) {
+            Map<String, String> copy = new HashMap<>(f);
+            String p = f.get("path");
+            if (p != null) {
+                String normalized = p.replace("\\", "/");
+                copy.put("path", normalized.startsWith(prefix) ? normalized.substring(prefix.length()) : normalized);
+            }
+            stripped.add(copy);
+        }
+        log.info("[GitWorkspace] Stripped wrapper folder '{}' from {} synced paths", root, stripped.size());
+        return stripped;
     }
 
     // ── CORE EXECUTOR ───────────────────────────────────────

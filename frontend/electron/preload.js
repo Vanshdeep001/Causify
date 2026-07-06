@@ -9,11 +9,15 @@
  * The renderer never has direct access to Node.js or Electron.
  * ------------------------------------------------------- */
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
 
   /* ── File System ── */
+  // Real disk path of a File picked in the renderer (Electron ≥32 removed
+  // File.path). Used to open integrated terminals inside imported projects.
+  getPathForFile: (file) => webUtils.getPathForFile(file),
+
   saveFile: (content, defaultName, filters) =>
     ipcRenderer.invoke('dialog:save-file', content, defaultName, filters),
 
@@ -205,6 +209,60 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   pushEnvVars: (options) =>
     ipcRenderer.invoke('deploy:push-env', options),
+
+  /* ── Deploy (Render — backend) ── */
+  setRenderApiKey: (key) =>
+    ipcRenderer.invoke('render-deploy:set-key', key),
+
+  hasRenderApiKey: () =>
+    ipcRenderer.invoke('render-deploy:has-key'),
+
+  clearRenderApiKey: () =>
+    ipcRenderer.invoke('render-deploy:clear-key'),
+
+  validateRenderApiKey: (key) =>
+    ipcRenderer.invoke('render-deploy:validate-key', key),
+
+  listRenderOwners: () =>
+    ipcRenderer.invoke('render-deploy:list-owners'),
+
+  listRenderServices: () =>
+    ipcRenderer.invoke('render-deploy:list-services'),
+
+  getLinkedRenderService: (options) =>
+    ipcRenderer.invoke('render-deploy:get-linked', options),
+
+  linkRenderService: (options) =>
+    ipcRenderer.invoke('render-deploy:link-service', options),
+
+  unlinkRenderService: (options) =>
+    ipcRenderer.invoke('render-deploy:unlink-service', options),
+
+  createRenderService: (options) =>
+    ipcRenderer.invoke('render-deploy:create-service', options),
+
+  pushRenderEnvVars: (options) =>
+    ipcRenderer.invoke('render-deploy:push-env', options),
+
+  runRenderDeploy: (options) =>
+    ipcRenderer.invoke('render-deploy:run', options),
+
+  cancelRenderDeploy: (deployId) =>
+    ipcRenderer.invoke('render-deploy:cancel', deployId),
+
+  onRenderDeployLog: (deployId, callback) => {
+    const channel = `render-deploy:log-${deployId}`;
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
+
+  onRenderDeployComplete: (deployId, callback) => {
+    const channel = `render-deploy:complete-${deployId}`;
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on(channel, handler);
+    return () => ipcRenderer.removeListener(channel, handler);
+  },
 
   /* ── Repository Guardian ── */
   guardianDetect: () =>

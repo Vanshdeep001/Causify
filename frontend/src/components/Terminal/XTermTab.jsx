@@ -50,7 +50,9 @@ const TERM_OPTIONS = {
   theme: TERM_THEME,
   fontFamily: "'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace",
   fontSize: 13,
-  lineHeight: 1.4,
+  fontWeight: '400',
+  fontWeightBold: '700',
+  lineHeight: 1.55,
   letterSpacing: 0,
   cursorBlink: true,
   cursorStyle: 'bar',
@@ -95,11 +97,6 @@ const XTermTab = ({ ptyId: externalPtyId, onExit, cwd, isActive }) => {
     termRef.current = term;
     fitAddonRef.current = fitAddon;
 
-    // Initial fit
-    requestAnimationFrame(() => {
-      try { fitAddon.fit(); } catch {}
-    });
-
     // Start the PTY session
     const initPty = async () => {
       try {
@@ -143,7 +140,13 @@ const XTermTab = ({ ptyId: externalPtyId, onExit, cwd, isActive }) => {
       }
     };
 
-    initPty();
+    // Fit BEFORE spawning: the PTY must start at the panel's real size.
+    // Spawning at the default 80x24 and resizing afterwards makes ConPTY
+    // repaint and strand the prompt in the middle of the screen.
+    requestAnimationFrame(() => {
+      try { fitAddon.fit(); } catch {}
+      initPty();
+    });
 
     // ResizeObserver for auto-fit
     const resizeObserver = new ResizeObserver(() => {
@@ -218,7 +221,7 @@ const XTermTab = ({ ptyId: externalPtyId, onExit, cwd, isActive }) => {
         style={{
           width: '100%',
           height: '100%',
-          padding: '4px 0 0 8px',
+          padding: '10px 0 0 14px',
         }}
       />
 

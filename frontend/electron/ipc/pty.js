@@ -46,6 +46,8 @@ function getShellArgs(shell) {
     if (shell.toLowerCase().includes('powershell') || shell.toLowerCase().includes('pwsh')) {
       return ['-NoLogo'];
     }
+    // Note: no `/k cls` for cmd — clearing at startup makes ConPTY
+    // absolute-position the prompt at row 3+, leaving a dead gap above it.
     return [];
   }
   // Unix: login shell
@@ -84,6 +86,7 @@ function registerPtyHandlers() {
     const rows = options.rows || 24;
 
     try {
+      const isCmdShell = shell.toLowerCase().includes('cmd');
       const ptyProcess = pty.spawn(shell, getShellArgs(shell), {
         name: 'xterm-256color',
         cols,
@@ -93,6 +96,12 @@ function registerPtyHandlers() {
           ...process.env,
           TERM: 'xterm-256color',
           COLORTERM: 'truecolor',
+          // Styled cmd.exe prompt ($E = ESC, so it carries its own ANSI
+          // colors): blank line between command blocks, soft-blue path,
+          // bold white arrow. Makes each command visually scannable.
+          ...(isCmdShell
+            ? { PROMPT: '$_$E[38;2;147;184;255m$P$E[0m $E[1m$E[97m$G$E[0m ' }
+            : {}),
         },
       });
 

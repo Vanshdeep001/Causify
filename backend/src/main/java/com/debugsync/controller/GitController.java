@@ -119,6 +119,68 @@ public class GitController {
     }
 
     /**
+     * Undo the most recent (unpushed) commit — soft reset, no content lost.
+     * Body: { "sessionId": "..." }
+     */
+    @PostMapping("/undo-commit")
+    public ResponseEntity<?> undoCommit(@RequestBody Map<String, String> payload) {
+        try {
+            String sessionId = payload.get("sessionId");
+            log.info("[Git] Undo last commit requested for session {}", sessionId);
+
+            Map<String, Object> result = gitWorkspaceService.undoLastCommit(sessionId);
+            return ResponseEntity.ok(result);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("[Git] Undo commit failed", e);
+            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Undo failed: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * List local branches.
+     * Query: ?sessionId=...
+     */
+    @GetMapping("/branches")
+    public ResponseEntity<?> branches(@RequestParam String sessionId) {
+        try {
+            Map<String, Object> result = gitWorkspaceService.listBranches(sessionId);
+            return ResponseEntity.ok(result);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("[Git] Branch list failed", e);
+            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Branch list failed: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Switch to a branch, optionally creating it.
+     * Body: { "sessionId": "...", "branch": "feature-x", "create": false }
+     */
+    @PostMapping("/checkout")
+    public ResponseEntity<?> checkout(@RequestBody Map<String, Object> payload) {
+        try {
+            String sessionId = (String) payload.get("sessionId");
+            String branch = (String) payload.get("branch");
+            boolean create = Boolean.TRUE.equals(payload.get("create"));
+
+            log.info("[Git] Checkout requested for session {}: '{}' (create={})", sessionId, branch, create);
+
+            Map<String, Object> result = gitWorkspaceService.checkoutBranch(sessionId, branch, create);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", e.getMessage()));
+        } catch (SecurityException e) {
+            return ResponseEntity.status(403).body(Map.of("success", false, "error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("[Git] Checkout failed", e);
+            return ResponseEntity.status(500).body(Map.of("success", false, "error", "Checkout failed: " + e.getMessage()));
+        }
+    }
+
+    /**
      * Get workspace git status.
      * Query: ?sessionId=...
      */

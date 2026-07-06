@@ -21,6 +21,7 @@ const { registerSecurityHandlers } = require('./ipc/security');
 const { registerClipboardHandlers } = require('./ipc/clipboard');
 const { registerPtyHandlers, killAllPtySessions } = require('./ipc/pty');
 const { registerDeployHandlers, killAllDeploySessions } = require('./ipc/deploy');
+const { registerRenderDeployHandlers, killAllRenderDeploySessions } = require('./ipc/renderDeploy');
 const { registerCaptureHandlers } = require('./ipc/capture');
 const { registerGuardianHandlers } = require('./ipc/guardian');
 
@@ -186,6 +187,7 @@ app.whenReady().then(async () => {
   registerClipboardHandlers();
   registerPtyHandlers();
   registerDeployHandlers();
+  registerRenderDeployHandlers();
   registerCaptureHandlers();
   registerGuardianHandlers();
 
@@ -251,6 +253,7 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   killAllPtySessions();
   killAllDeploySessions();
+  killAllRenderDeploySessions();
   killBackend();
   if (process.platform !== 'darwin') {
     app.quit();

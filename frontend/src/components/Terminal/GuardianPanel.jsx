@@ -19,37 +19,147 @@ import {
   guardianStop, resetGuardianToken, isElectron,
 } from '../../services/guardian';
 
-const HudLabel = ({ children }) => (
+/* ── Design primitives — shared visual language with GitAssistantPanel ── */
+
+const MONO = 'var(--font-number)';
+const HEADER = 'var(--font-header)';
+const BODY = 'var(--font-body)';
+
+/* Numbered editorial section label with trailing hairline */
+const ZoneLabel = ({ index, children, right }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexShrink: 0 }}>
+    {index && (
+      <span style={{ fontFamily: MONO, fontSize: '0.54rem', color: 'var(--t4)', fontWeight: 500 }}>
+        {index}
+      </span>
+    )}
+    <span style={{
+      fontFamily: MONO, fontSize: '0.58rem', fontWeight: 700,
+      letterSpacing: '0.24em', textTransform: 'uppercase', color: 'var(--t3)',
+      whiteSpace: 'nowrap',
+    }}>
+      {children}
+    </span>
+    <span style={{ flex: 1, height: '1px', background: 'var(--line-faint)' }} />
+    {right}
+  </div>
+);
+
+const StatusDot = ({ color }) => (
+  <span style={{
+    display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%',
+    background: color, flexShrink: 0,
+  }} />
+);
+
+const PrimaryButton = ({ children, onClick, disabled, style }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    style={{
+      padding: '10px 26px', background: '#FFFFFF', color: '#000',
+      border: 'none', borderRadius: '999px',
+      cursor: disabled ? 'default' : 'pointer',
+      fontFamily: MONO, fontSize: '0.64rem', fontWeight: 800,
+      letterSpacing: '0.12em', whiteSpace: 'nowrap',
+      opacity: disabled ? 0.35 : 1,
+      transition: 'filter 0.15s ease, transform 0.1s ease, box-shadow 0.2s ease',
+      ...style,
+    }}
+    onMouseEnter={e => {
+      if (disabled) return;
+      e.currentTarget.style.filter = 'brightness(0.85)';
+      e.currentTarget.style.boxShadow = '0 4px 24px rgba(255,255,255,0.12)';
+    }}
+    onMouseLeave={e => {
+      e.currentTarget.style.filter = 'none';
+      e.currentTarget.style.transform = 'none';
+      e.currentTarget.style.boxShadow = 'none';
+    }}
+    onMouseDown={e => { if (!disabled) e.currentTarget.style.transform = 'scale(0.97)'; }}
+    onMouseUp={e => { e.currentTarget.style.transform = 'none'; }}
+  >
+    {children}
+  </button>
+);
+
+/* Quiet text action — no chrome, just type */
+const TextButton = ({ children, onClick, disabled, danger, style }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    style={{
+      background: 'none', border: 'none', padding: '4px 0',
+      color: 'var(--t3)', cursor: disabled ? 'default' : 'pointer',
+      fontFamily: MONO, fontSize: '0.6rem', fontWeight: 700,
+      letterSpacing: '0.14em', whiteSpace: 'nowrap',
+      opacity: disabled ? 0.35 : 1, transition: 'color 0.15s ease',
+      ...style,
+    }}
+    onMouseEnter={e => { if (!disabled) e.currentTarget.style.color = danger ? 'var(--crimson)' : '#FFFFFF'; }}
+    onMouseLeave={e => { e.currentTarget.style.color = 'var(--t3)'; }}
+  >
+    {children}
+  </button>
+);
+
+/* Minimal error line — crimson bar, no box */
+const ErrorLine = ({ children, style }) => (
   <div style={{
-    fontFamily: 'var(--font-number)', fontSize: '0.65rem', color: '#666',
-    letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: '12px',
-    fontWeight: 900
+    borderLeft: '2px solid var(--crimson)', paddingLeft: '12px',
+    color: 'var(--crimson)', fontFamily: MONO, fontSize: '0.64rem',
+    fontWeight: 600, lineHeight: 1.6, wordBreak: 'break-word', ...style,
   }}>
     {children}
   </div>
 );
 
-const StatusDot = ({ color, pulse }) => (
-  <span style={{
-    display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%',
-    background: color, boxShadow: `0 0 8px ${color}`,
-    animation: pulse ? 'pulse-live 1.5s ease-in-out infinite' : 'none',
-    marginRight: '8px', flexShrink: 0,
-  }} />
+/* Focus helpers for underline inputs */
+const focusLine = e => { e.currentTarget.style.borderBottomColor = 'rgba(255,255,255,0.45)'; };
+const blurLine = e => { e.currentTarget.style.borderBottomColor = 'var(--line-strong)'; };
+
+/* Underline form field */
+const Field = ({ label, hint, ...inputProps }) => (
+  <div>
+    <div style={{
+      fontFamily: MONO, fontSize: '0.54rem', fontWeight: 700,
+      letterSpacing: '0.2em', color: 'var(--t4)', marginBottom: '8px',
+      textTransform: 'uppercase',
+    }}>
+      {label}
+    </div>
+    <input
+      spellCheck={false}
+      onFocus={focusLine}
+      onBlur={blurLine}
+      style={{
+        width: '100%', background: 'transparent', border: 'none', outline: 'none',
+        color: 'var(--t1)', fontSize: '0.82rem', fontFamily: MONO, fontWeight: 500,
+        borderBottom: '1px solid var(--line-strong)', paddingBottom: '9px',
+        transition: 'border-color 0.2s ease',
+      }}
+      {...inputProps}
+    />
+    {hint && (
+      <div style={{ fontFamily: BODY, fontSize: '0.62rem', color: 'var(--t4)', marginTop: '7px', lineHeight: 1.5 }}>
+        {hint}
+      </div>
+    )}
+  </div>
 );
 
 const RECOMMENDATION_COLORS = {
-  'ready-to-merge': '#4ade80',
-  'needs-review': '#fbbf24',
-  'blocked': '#E5484D',
+  'ready-to-merge': 'var(--emerald)',
+  'needs-review': 'var(--amber)',
+  'blocked': 'var(--crimson)',
   'needs-attention': '#818cf8',
 };
 
 const CLASSIFICATION_COLORS = {
-  active: '#4ade80',
-  stale: '#E5484D',
+  active: 'var(--emerald)',
+  stale: 'var(--crimson)',
   release: '#818cf8',
-  uncertain: '#fbbf24',
+  uncertain: 'var(--amber)',
 };
 
 const GuardianPanel = () => {
@@ -247,9 +357,9 @@ const GuardianPanel = () => {
 
   if (phase === 'checking' || phase === 'busy') {
     return (
-      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a' }}>
-        <div style={{ fontFamily: 'var(--font-number)', color: '#888', fontSize: '0.75rem', letterSpacing: '0.2em', animation: 'pulse-live 1.2s ease infinite' }}>
-          ⠿ {phase === 'busy' ? busyLabel : 'SCANNING FOR REPOSITORY GUARDIAN...'}
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontFamily: MONO, color: 'var(--t3)', fontSize: '0.66rem', letterSpacing: '0.24em', animation: 'pulse-live 1.2s ease infinite' }}>
+          ⠿ {phase === 'busy' ? busyLabel : 'SCANNING FOR REPOSITORY GUARDIAN…'}
         </div>
         <style>{`@keyframes pulse-live { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
       </div>
@@ -258,31 +368,43 @@ const GuardianPanel = () => {
 
   if (phase === 'no-electron' || phase === 'not-installed') {
     return (
-      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', padding: '30px' }}>
-        <div style={{ maxWidth: '520px', textAlign: 'center' }}>
-          <div style={{ fontFamily: 'var(--font-header)', fontSize: '1.3rem', fontWeight: 900, color: '#fff', textTransform: 'uppercase', marginBottom: '12px' }}>
-            Repository Guardian Not Detected
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '30px' }}>
+        <div style={{ maxWidth: '520px', textAlign: 'center', animation: 'fade-in 0.4s ease-out' }}>
+          <div style={{
+            fontFamily: MONO, fontSize: '0.56rem', fontWeight: 700,
+            letterSpacing: '0.3em', color: 'var(--t4)', marginBottom: '14px',
+          }}>
+            REPOSITORY GUARDIAN
           </div>
-          <div style={{ fontFamily: 'var(--font-number)', fontSize: '0.7rem', color: '#666', lineHeight: 1.8 }}>
+          <div style={{ fontFamily: HEADER, fontSize: '1.15rem', fontWeight: 800, color: 'var(--t1)', marginBottom: '10px' }}>
+            Guardian not detected
+          </div>
+          <div style={{ fontFamily: BODY, fontSize: '0.74rem', color: 'var(--t3)', lineHeight: 1.7 }}>
             {phase === 'no-electron'
               ? 'Guardian management needs the desktop app. Start the daemon manually with "gitpilot start" and refresh.'
               : 'Install the Guardian engine first: pip install -e <GitPilot folder>, then reopen this tab.'}
           </div>
           {error && (
-            <div style={{
-              marginTop: '14px', fontFamily: 'var(--font-number)', fontSize: '0.62rem',
-              color: '#E5484D', lineHeight: 1.7, wordBreak: 'break-word',
-            }}>
+            <ErrorLine style={{ marginTop: '16px', textAlign: 'left', display: 'inline-block' }}>
               {error}
-            </div>
+            </ErrorLine>
           )}
-          <button onClick={() => { setError(null); setPhase('checking'); detect(); }} style={{
-            marginTop: '20px', padding: '8px 24px', background: 'transparent',
-            border: '1.5px solid #333', color: '#888', cursor: 'pointer',
-            fontFamily: 'var(--font-number)', fontSize: '0.65rem', fontWeight: 900, letterSpacing: '0.1em',
-          }}>
-            ⟳ RECHECK
-          </button>
+          <div style={{ marginTop: '24px' }}>
+            <button
+              onClick={() => { setError(null); setPhase('checking'); detect(); }}
+              style={{
+                padding: '9px 26px', background: 'transparent',
+                border: '1px solid var(--line-strong)', borderRadius: '999px',
+                color: 'var(--t2)', cursor: 'pointer', fontFamily: MONO,
+                fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.14em',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#FFFFFF'; e.currentTarget.style.color = '#FFFFFF'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--line-strong)'; e.currentTarget.style.color = 'var(--t2)'; }}
+            >
+              ⟳ RECHECK
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -290,110 +412,72 @@ const GuardianPanel = () => {
 
   if (phase === 'stopped') {
     return (
-      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: '30px 20px', background: '#0a0a0a', overflow: 'auto' }} className="no-scrollbar">
-        <div style={{ width: '100%', animation: 'fade-in 0.5s ease-out' }}>
-          <div style={{ marginBottom: '26px', borderLeft: '3px solid #FFFFFF', paddingLeft: '20px' }}>
-            <div style={{ fontFamily: 'var(--font-number)', fontSize: '0.6rem', color: '#555', letterSpacing: '0.5em', marginBottom: '8px' }}>
-              REPOSITORY GUARDIAN MODULE
-            </div>
-            <div style={{ fontFamily: 'var(--font-header)', fontSize: '1.6rem', fontWeight: 900, color: '#fff', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-              Launch Your Repo's Guardian
-            </div>
-            <div style={{ fontFamily: 'var(--font-number)', fontSize: '0.65rem', color: '#666', marginTop: '8px', lineHeight: 1.7 }}>
-              Watches PRs, branches, and releases on GitHub. Observes and recommends — never acts without your approval.
-            </div>
+      <div className="no-scrollbar" style={{
+        height: '100%', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', padding: '28px', overflow: 'auto',
+      }}>
+        <div style={{ width: '100%', maxWidth: '560px', animation: 'fade-in 0.4s ease-out' }}>
+          <div style={{
+            fontFamily: MONO, fontSize: '0.56rem', fontWeight: 700,
+            letterSpacing: '0.3em', color: 'var(--t4)', marginBottom: '14px',
+          }}>
+            REPOSITORY GUARDIAN
+          </div>
+          <div style={{
+            fontFamily: HEADER, fontSize: '1.3rem', fontWeight: 800,
+            color: 'var(--t1)', letterSpacing: '0.01em', marginBottom: '8px',
+          }}>
+            Launch your repo's Guardian
+          </div>
+          <div style={{
+            fontFamily: BODY, fontSize: '0.74rem', color: 'var(--t3)',
+            lineHeight: 1.7, marginBottom: '30px', maxWidth: '440px',
+          }}>
+            Watches PRs, branches, and releases on GitHub. Observes and
+            recommends — never acts without your approval.
           </div>
 
-          <div style={{ border: '1px solid #1a1a1a', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px', background: 'rgba(255,255,255,0.01)' }}>
-            <div>
-              <HudLabel>Repository</HudLabel>
-              <input
-                type="text"
-                value={repoUrlInput}
-                onChange={(e) => setRepoUrlInput(e.target.value)}
-                placeholder={savedRepoUrl || 'https://github.com/user/repository.git'}
-                spellCheck={false}
-                style={{
-                  width: '100%', background: 'transparent', border: 'none', outline: 'none',
-                  color: '#fff', fontSize: '0.95rem', fontFamily: 'var(--font-header)', fontWeight: 700,
-                  borderBottom: '1px solid #222', paddingBottom: '8px',
-                }}
-              />
-            </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            <Field
+              label="Repository"
+              type="text"
+              value={repoUrlInput}
+              onChange={(e) => setRepoUrlInput(e.target.value)}
+              placeholder={savedRepoUrl || 'https://github.com/user/repository.git'}
+            />
 
             {needsSetup && (
               <>
-                <div>
-                  <HudLabel>GitHub Personal Access Token</HudLabel>
-                  <input
-                    type="password"
-                    value={patInput}
-                    onChange={(e) => setPatInput(e.target.value)}
-                    placeholder="ghp_… (auto-detected from repo URL when embedded)"
-                    spellCheck={false}
-                    style={{
-                      width: '100%', background: 'transparent', border: 'none', outline: 'none',
-                      color: '#fff', fontSize: '0.95rem', fontFamily: 'var(--font-header)', fontWeight: 700,
-                      borderBottom: '1px solid #222', paddingBottom: '8px',
-                    }}
-                  />
-                </div>
-                <div>
-                  <HudLabel>OpenRouter Key — optional</HudLabel>
-                  <input
-                    type="password"
-                    value={llmKeyInput}
-                    onChange={(e) => setLlmKeyInput(e.target.value)}
-                    placeholder="Blank = reuse this machine's key, or run rules-only"
-                    spellCheck={false}
-                    style={{
-                      width: '100%', background: 'transparent', border: 'none', outline: 'none',
-                      color: '#fff', fontSize: '0.95rem', fontFamily: 'var(--font-header)', fontWeight: 700,
-                      borderBottom: '1px solid #222', paddingBottom: '8px',
-                    }}
-                  />
-                  <div style={{ fontFamily: 'var(--font-number)', fontSize: '0.58rem', color: '#555', marginTop: '6px' }}>
-                    Keys are stored in the OS keychain by the Guardian itself — DebugSync never saves them.
-                  </div>
-                </div>
+                <Field
+                  label="GitHub Personal Access Token"
+                  type="password"
+                  value={patInput}
+                  onChange={(e) => setPatInput(e.target.value)}
+                  placeholder="ghp_… (auto-detected from repo URL when embedded)"
+                />
+                <Field
+                  label="OpenRouter Key — optional"
+                  type="password"
+                  value={llmKeyInput}
+                  onChange={(e) => setLlmKeyInput(e.target.value)}
+                  placeholder="Blank = reuse this machine's key, or run rules-only"
+                  hint="Keys are stored in the OS keychain by the Guardian itself — DebugSync never saves them."
+                />
               </>
             )}
 
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-              <button
-                onClick={needsSetup ? handleSetupAndLaunch : handleLaunch}
-                style={{
-                  padding: '12px 36px', background: '#FFFFFF', color: '#000', border: 'none',
-                  cursor: 'pointer', fontFamily: 'var(--font-number)', fontSize: '0.75rem',
-                  fontWeight: 900, letterSpacing: '0.15em',
-                  boxShadow: '0 0 25px rgba(255,255,255,0.12)',
-                }}
-              >
-                {needsSetup ? '⚙ CONFIGURE & LAUNCH' : '▶ LAUNCH AGENT'}
-              </button>
+            <div style={{ display: 'flex', gap: '20px', alignItems: 'center', marginTop: '4px' }}>
+              <PrimaryButton onClick={needsSetup ? handleSetupAndLaunch : handleLaunch} style={{ padding: '11px 34px' }}>
+                {needsSetup ? 'CONFIGURE & LAUNCH' : '▶ LAUNCH AGENT'}
+              </PrimaryButton>
               {!needsSetup && (
-                <button
-                  onClick={() => setNeedsSetup(true)}
-                  style={{
-                    padding: '12px 16px', background: 'transparent', border: 'none',
-                    color: '#555', cursor: 'pointer', fontFamily: 'var(--font-number)',
-                    fontSize: '0.65rem', fontWeight: 900, letterSpacing: '0.1em',
-                  }}
-                >
+                <TextButton onClick={() => setNeedsSetup(true)}>
                   FIRST-TIME SETUP
-                </button>
+                </TextButton>
               )}
             </div>
 
-            {error && (
-              <div style={{
-                padding: '10px 14px', background: 'rgba(229,72,77,0.05)',
-                borderLeft: '3px solid #E5484D', color: '#E5484D',
-                fontFamily: 'var(--font-number)', fontSize: '0.68rem', fontWeight: 800,
-              }}>
-                {error}
-              </div>
-            )}
+            {error && <ErrorLine>{error}</ErrorLine>}
           </div>
         </div>
         <style>{`@keyframes pulse-live { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
@@ -404,102 +488,122 @@ const GuardianPanel = () => {
   /* ═══════════ RENDER: running dashboard ═══════════ */
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#0a0a0a' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
       {/* ── Status strip ── */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: '14px', padding: '10px 20px',
-        borderBottom: '1px solid #1a1a1a', flexShrink: 0, flexWrap: 'wrap',
+        display: 'flex', alignItems: 'center', gap: '20px', padding: '13px 22px',
+        background: 'linear-gradient(90deg, rgba(255,255,255,0.035), transparent 55%)',
+        borderBottom: '1px solid var(--line-faint)', flexShrink: 0, flexWrap: 'wrap',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <StatusDot color="#4ade80" pulse />
-          <span style={{ fontFamily: 'var(--font-number)', fontSize: '0.68rem', color: '#4ade80', fontWeight: 900, letterSpacing: '0.12em' }}>
-            GUARDIAN ACTIVE
-          </span>
-        </div>
-        {status?.repo && (
-          <span style={{ fontFamily: 'var(--font-number)', fontSize: '0.65rem', color: '#888' }}>
-            {status.repo}
-          </span>
-        )}
-        <span style={{ fontFamily: 'var(--font-number)', fontSize: '0.6rem', color: status?.llm_available ? '#818cf8' : '#555' }}>
-          AI: {status?.llm_available ? 'ON' : 'RULES ONLY'}
-        </span>
-        <span style={{ fontFamily: 'var(--font-number)', fontSize: '0.6rem', color: approvals.length > 0 ? '#fbbf24' : '#555' }}>
-          {approvals.length} AWAITING APPROVAL
-        </span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-          <button onClick={loadLocalData} style={{
-            padding: '4px 12px', background: 'transparent', border: '1px solid #333',
-            color: '#888', cursor: 'pointer', fontFamily: 'var(--font-number)',
-            fontSize: '0.58rem', fontWeight: 900, letterSpacing: '0.1em', borderRadius: '2px',
-          }}>
-            ⟳ REFRESH
-          </button>
-          {isElectron() && (
-            <button onClick={handleStop} style={{
-              padding: '4px 12px', background: 'transparent', border: '1px solid #333',
-              color: '#555', cursor: 'pointer', fontFamily: 'var(--font-number)',
-              fontSize: '0.58rem', fontWeight: 900, letterSpacing: '0.1em', borderRadius: '2px',
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+          <StatusDot color="var(--emerald)" pulse />
+          {/* Solid + outline wordmark — the app's signature type treatment */}
+          <span style={{ fontFamily: HEADER, fontSize: '0.78rem', fontWeight: 800, letterSpacing: '0.02em', whiteSpace: 'nowrap', lineHeight: 1 }}>
+            <span style={{ color: '#FFFFFF' }}>GUARDIAN</span>
+            <span style={{
+              marginLeft: '7px', color: 'transparent',
+              WebkitTextStroke: '1px rgba(255,255,255,0.55)',
             }}>
-              ■ STOP
-            </button>
+              ACTIVE
+            </span>
+          </span>
+        </span>
+        {status?.repo && (
+          <>
+            <span style={{ width: '1px', height: '16px', background: 'var(--line-faint)' }} />
+            <span style={{ fontFamily: MONO, fontSize: '0.62rem', color: 'var(--t2)' }}>
+              {status.repo}
+            </span>
+          </>
+        )}
+        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '20px' }}>
+          <span style={{
+            fontFamily: MONO, fontSize: '0.54rem', fontWeight: 700, letterSpacing: '0.16em',
+            color: status?.llm_available ? '#818cf8' : 'var(--t4)',
+          }}>
+            AI {status?.llm_available ? 'ON' : 'RULES ONLY'}
+          </span>
+          <span style={{
+            fontFamily: MONO, fontSize: '0.54rem', fontWeight: 700, letterSpacing: '0.16em',
+            color: approvals.length > 0 ? 'var(--amber)' : 'var(--t4)',
+          }}>
+            {approvals.length} PENDING
+          </span>
+          <TextButton onClick={loadLocalData}>⟳ REFRESH</TextButton>
+          {isElectron() && (
+            <TextButton danger onClick={handleStop}>■ STOP</TextButton>
           )}
-        </div>
+        </span>
       </div>
 
       {error && (
-        <div style={{
-          padding: '8px 20px', background: 'rgba(229,72,77,0.05)', color: '#E5484D',
-          fontFamily: 'var(--font-number)', fontSize: '0.65rem', fontWeight: 800, flexShrink: 0,
-        }}>
+        <ErrorLine style={{ margin: '14px 22px 0', flexShrink: 0 }}>
           {error}
-        </div>
+        </ErrorLine>
       )}
 
-      {/* ── Main content: 3 columns ── */}
-      <div className="no-scrollbar" style={{ flex: 1, display: 'flex', gap: '0', overflow: 'auto', padding: '16px 10px' }}>
+      {/* ── Main content: 3 zones divided by hairlines ── */}
+      <div className="no-scrollbar" style={{ flex: 1, display: 'flex', overflow: 'auto', padding: '18px 22px' }}>
 
-        {/* Approvals inbox */}
-        <div className="no-scrollbar" style={{ flex: '0 1 320px', minWidth: '230px', padding: '0 12px', overflowY: 'auto', borderRight: '1px solid #151515' }}>
-          <HudLabel>Awaiting Your Approval</HudLabel>
-          {approvals.length === 0 ? (
-            <div style={{ fontFamily: 'var(--font-number)', fontSize: '0.65rem', color: '#444', fontStyle: 'italic' }}>
-              Inbox clear — nothing needs your decision.
-            </div>
-          ) : approvals.map((a) => (
-            <div key={a.id} style={{ border: '1px solid #1a1a1a', marginBottom: '10px', background: 'rgba(255,255,255,0.01)' }}>
+        {/* ZONE 01: Approvals inbox */}
+        <div className="no-scrollbar" style={{
+          flex: '0 1 320px', minWidth: '240px', paddingRight: '24px',
+          overflowY: 'auto', display: 'flex', flexDirection: 'column',
+        }}>
+          <ZoneLabel index="01">Approvals</ZoneLabel>
+
+          {/* Headline stat */}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '14px', flexShrink: 0 }}>
+            <span style={{
+              fontFamily: HEADER, fontSize: '2rem', fontWeight: 800, lineHeight: 1,
+              letterSpacing: '-0.02em',
+              color: approvals.length > 0 ? 'var(--amber)' : 'var(--t4)',
+            }}>
+              {String(approvals.length).padStart(2, '0')}
+            </span>
+            <span style={{ fontFamily: BODY, fontSize: '0.66rem', color: 'var(--t3)' }}>
+              {approvals.length > 0 ? 'awaiting your decision' : 'inbox clear'}
+            </span>
+          </div>
+
+          {approvals.map((a) => (
+            <div key={a.id} style={{ borderBottom: '1px solid var(--line-faint)', padding: '10px 0' }}>
               <div
                 onClick={() => setExpandedApproval(expandedApproval === a.id ? null : a.id)}
-                style={{ padding: '10px 14px', cursor: 'pointer' }}
+                style={{ cursor: 'pointer' }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontFamily: 'var(--font-number)', fontSize: '0.62rem', color: '#fbbf24', fontWeight: 900, letterSpacing: '0.08em' }}>
-                    #{a.id} · {String(a.action_type || '').replace(/_/g, ' ').toUpperCase()}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontFamily: MONO, fontSize: '0.6rem', color: 'var(--amber)', fontWeight: 800 }}>
+                    #{a.id}
+                  </span>
+                  <span style={{ fontFamily: MONO, fontSize: '0.56rem', color: 'var(--t3)', fontWeight: 700, letterSpacing: '0.1em' }}>
+                    {String(a.action_type || '').replace(/_/g, ' ').toUpperCase()}
                   </span>
                   <span style={{
-                    fontFamily: 'var(--font-number)', fontSize: '0.55rem', fontWeight: 900,
-                    color: a.risk_level === 'high' ? '#E5484D' : a.risk_level === 'moderate' ? '#fbbf24' : '#4ade80',
+                    marginLeft: 'auto', fontFamily: MONO, fontSize: '0.52rem', fontWeight: 800, letterSpacing: '0.14em',
+                    color: a.risk_level === 'high' ? 'var(--crimson)' : a.risk_level === 'moderate' ? 'var(--amber)' : 'var(--emerald)',
                   }}>
                     {(a.risk_level || 'low').toUpperCase()}
                   </span>
                 </div>
-                <div style={{ fontFamily: 'var(--font-header)', fontSize: '0.85rem', color: '#ddd', fontWeight: 700, marginTop: '4px' }}>
+                <div style={{ fontFamily: BODY, fontSize: '0.76rem', color: 'var(--t1)', fontWeight: 500, marginTop: '5px', lineHeight: 1.4 }}>
                   {a.target}
                 </div>
               </div>
               {expandedApproval === a.id && (
-                <div style={{ padding: '0 14px 12px' }}>
+                <div style={{ marginTop: '10px' }}>
                   <pre className="no-scrollbar" style={{
-                    margin: 0, padding: '10px', background: '#050505', border: '1px solid #151515',
-                    color: '#999', fontFamily: 'var(--font-number)', fontSize: '0.62rem',
-                    lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                    margin: 0, paddingLeft: '14px',
+                    borderLeft: '1px solid var(--line-faint)',
+                    color: 'var(--t2)', fontFamily: MONO, fontSize: '0.62rem',
+                    lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                     maxHeight: '220px', overflow: 'auto',
                   }}>
                     {typeof a.analysis === 'string' ? a.analysis : JSON.stringify(a.analysis, null, 2)}
                   </pre>
-                  <div style={{ fontFamily: 'var(--font-number)', fontSize: '0.56rem', color: '#555', marginTop: '8px' }}>
-                    To approve: run <span style={{ color: '#888' }}>gitpilot approve {a.id}</span> in a terminal.
+                  <div style={{ fontFamily: MONO, fontSize: '0.54rem', color: 'var(--t4)', marginTop: '8px', lineHeight: 1.6 }}>
+                    To approve: run <span style={{ color: 'var(--t2)' }}>gitpilot approve {a.id}</span> in a terminal.
                     In-app approval arrives in Phase 2.
                   </div>
                 </div>
@@ -508,60 +612,62 @@ const GuardianPanel = () => {
           ))}
         </div>
 
-        {/* PR readiness */}
-        <div className="no-scrollbar" style={{ flex: 1, minWidth: 0, padding: '0 16px', overflowY: 'auto', borderRight: '1px solid #151515' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <HudLabel>Pull Request Readiness</HudLabel>
-            <button onClick={scanPrs} disabled={scanningPrs} style={{
-              padding: '4px 14px', background: 'transparent', border: '1px solid #333',
-              color: '#888', cursor: 'pointer', fontFamily: 'var(--font-number)',
-              fontSize: '0.58rem', fontWeight: 900, letterSpacing: '0.1em', borderRadius: '2px',
-              opacity: scanningPrs ? 0.5 : 1, marginBottom: '12px',
-            }}>
-              {scanningPrs ? '⠿ SCANNING…' : '◉ SCAN PRS'}
-            </button>
-          </div>
+        {/* ZONE 02: PR readiness */}
+        <div className="no-scrollbar" style={{
+          flex: 1, minWidth: 0, overflowY: 'auto',
+          borderLeft: '1px solid var(--line-faint)', paddingLeft: '24px', paddingRight: '24px',
+        }}>
+          <ZoneLabel index="02" right={
+            <TextButton onClick={scanPrs} disabled={scanningPrs}>
+              {scanningPrs ? '⠿ SCANNING…' : 'SCAN PRS'}
+            </TextButton>
+          }>
+            Pull Requests
+          </ZoneLabel>
           {prs === null ? (
-            <div style={{ fontFamily: 'var(--font-number)', fontSize: '0.65rem', color: '#444', fontStyle: 'italic' }}>
+            <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)', lineHeight: 1.6 }}>
               Not scanned yet — scanning asks GitHub and (when AI is on) the LLM.
             </div>
           ) : prs.length === 0 ? (
-            <div style={{ fontFamily: 'var(--font-number)', fontSize: '0.65rem', color: '#444', fontStyle: 'italic' }}>
+            <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)' }}>
               No open pull requests.
             </div>
           ) : prs.map((pr) => (
-            <div key={pr.pr_number} style={{ borderBottom: '1px solid #131313', padding: '10px 0' }}>
+            <div key={pr.pr_number} style={{ borderBottom: '1px solid var(--line-faint)', padding: '11px 0' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontFamily: 'var(--font-number)', fontSize: '0.75rem', color: '#fff', fontWeight: 900 }}>
-                  PR #{pr.pr_number}
+                <span style={{ fontFamily: MONO, fontSize: '0.72rem', color: 'var(--t1)', fontWeight: 800 }}>
+                  #{pr.pr_number}
                 </span>
-                <span style={{
-                  fontFamily: 'var(--font-number)', fontSize: '0.58rem', fontWeight: 900, letterSpacing: '0.08em',
-                  color: RECOMMENDATION_COLORS[pr.recommendation] || '#888',
-                }}>
-                  {String(pr.recommendation || '').toUpperCase()}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                  <StatusDot color={RECOMMENDATION_COLORS[pr.recommendation] || 'var(--t3)'} />
+                  <span style={{
+                    fontFamily: MONO, fontSize: '0.54rem', fontWeight: 800, letterSpacing: '0.14em',
+                    color: RECOMMENDATION_COLORS[pr.recommendation] || 'var(--t3)',
+                  }}>
+                    {String(pr.recommendation || '').replace(/-/g, ' ').toUpperCase()}
+                  </span>
                 </span>
                 {pr.has_conflicts && (
-                  <span style={{ fontFamily: 'var(--font-number)', fontSize: '0.55rem', color: '#E5484D', fontWeight: 900 }}>
-                    ⚠ CONFLICTS
+                  <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: 'var(--crimson)', fontWeight: 800, letterSpacing: '0.12em' }}>
+                    CONFLICTS
                   </span>
                 )}
-                <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-number)', fontSize: '0.58rem', color: '#555' }}>
-                  {pr.confidence}% conf
+                <span style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: '0.56rem', color: 'var(--t4)' }}>
+                  {pr.confidence}%
                 </span>
               </div>
               {pr.summary && (
-                <div style={{ fontFamily: 'var(--font-number)', fontSize: '0.63rem', color: '#999', marginTop: '5px', lineHeight: 1.6 }}>
+                <div style={{ fontFamily: BODY, fontSize: '0.72rem', color: 'var(--t2)', marginTop: '6px', lineHeight: 1.55 }}>
                   {pr.summary}
                 </div>
               )}
               {(pr.blocking_reasons || []).map((reason, i) => (
-                <div key={i} style={{ fontFamily: 'var(--font-number)', fontSize: '0.6rem', color: '#E5484D', marginTop: '3px' }}>
+                <div key={i} style={{ fontFamily: MONO, fontSize: '0.6rem', color: 'var(--crimson)', marginTop: '4px', lineHeight: 1.5 }}>
                   ✕ {reason}
                 </div>
               ))}
               {(pr.warnings || []).map((w, i) => (
-                <div key={i} style={{ fontFamily: 'var(--font-number)', fontSize: '0.6rem', color: '#fbbf24', marginTop: '3px' }}>
+                <div key={i} style={{ fontFamily: MONO, fontSize: '0.6rem', color: 'var(--amber)', marginTop: '4px', lineHeight: 1.5 }}>
                   ⚠ {w}
                 </div>
               ))}
@@ -569,44 +675,42 @@ const GuardianPanel = () => {
           ))}
         </div>
 
-        {/* Branch health */}
-        <div className="no-scrollbar" style={{ flex: '0 1 300px', minWidth: '200px', padding: '0 14px', overflowY: 'auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <HudLabel>Branch Health</HudLabel>
-            <button onClick={scanBranches} disabled={scanningBranches} style={{
-              padding: '4px 14px', background: 'transparent', border: '1px solid #333',
-              color: '#888', cursor: 'pointer', fontFamily: 'var(--font-number)',
-              fontSize: '0.58rem', fontWeight: 900, letterSpacing: '0.1em', borderRadius: '2px',
-              opacity: scanningBranches ? 0.5 : 1, marginBottom: '12px',
-            }}>
-              {scanningBranches ? '⠿ SCANNING…' : '⌥ SCAN'}
-            </button>
-          </div>
+        {/* ZONE 03: Branch health */}
+        <div className="no-scrollbar" style={{
+          flex: '0 1 300px', minWidth: '210px', overflowY: 'auto',
+          borderLeft: '1px solid var(--line-faint)', paddingLeft: '24px',
+        }}>
+          <ZoneLabel index="03" right={
+            <TextButton onClick={scanBranches} disabled={scanningBranches}>
+              {scanningBranches ? '⠿ SCANNING…' : 'SCAN'}
+            </TextButton>
+          }>
+            Branches
+          </ZoneLabel>
           {branchList === null ? (
-            <div style={{ fontFamily: 'var(--font-number)', fontSize: '0.65rem', color: '#444', fontStyle: 'italic' }}>
+            <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)' }}>
               Not scanned yet.
             </div>
           ) : branchList.length === 0 ? (
-            <div style={{ fontFamily: 'var(--font-number)', fontSize: '0.65rem', color: '#444', fontStyle: 'italic' }}>
+            <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)' }}>
               No branches found.
             </div>
           ) : branchList.map((b) => (
-            <div key={b.name} style={{ borderBottom: '1px solid #131313', padding: '8px 0' }}>
+            <div key={b.name} style={{ borderBottom: '1px solid var(--line-faint)', padding: '9px 0' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{
-                  width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
-                  background: CLASSIFICATION_COLORS[b.classification] || '#888',
-                }} />
-                <span style={{ fontFamily: 'var(--font-header)', fontSize: '0.8rem', color: '#ddd', fontWeight: 700, wordBreak: 'break-all' }}>
+                <StatusDot color={CLASSIFICATION_COLORS[b.classification] || 'var(--t3)'} />
+                <span style={{ fontFamily: MONO, fontSize: '0.72rem', color: 'var(--t1)', fontWeight: 600, wordBreak: 'break-all' }}>
                   {b.name}
                 </span>
                 {b.protected && (
-                  <span style={{ fontFamily: 'var(--font-number)', fontSize: '0.52rem', color: '#818cf8', fontWeight: 900 }}>🛡</span>
+                  <span style={{ fontFamily: MONO, fontSize: '0.5rem', color: '#818cf8', fontWeight: 800, letterSpacing: '0.14em', flexShrink: 0 }}>
+                    PROTECTED
+                  </span>
                 )}
               </div>
-              <div style={{ fontFamily: 'var(--font-number)', fontSize: '0.58rem', color: '#666', marginTop: '3px', paddingLeft: '17px' }}>
+              <div style={{ fontFamily: MONO, fontSize: '0.56rem', color: 'var(--t4)', marginTop: '4px', paddingLeft: '16px', lineHeight: 1.5 }}>
                 {String(b.classification || '').toUpperCase()}
-                {b.age_days > 0 ? ` · ${b.age_days}d` : ''} — {b.recommendation}
+                {b.age_days > 0 ? ` · ${b.age_days}D` : ''} — {b.recommendation}
               </div>
             </div>
           ))}
@@ -615,6 +719,179 @@ const GuardianPanel = () => {
 
       <style>{`@keyframes pulse-live { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
     </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════
+ * GuardianPrZone — compact PR-readiness scanner
+ *
+ * Embedded inside the Git Assistant dashboard (zone 02).
+ * Read-only: probes the daemon, scans PRs on demand. No
+ * daemon management here — that stays with the CLI/daemon.
+ * ═══════════════════════════════════════════════════════ */
+
+// Module-level so StrictMode's double-mount can't spawn the daemon twice
+let autoStartInFlight = false;
+
+export const GuardianPrZone = () => {
+  // 'checking' | 'starting' | 'offline' | 'ready'
+  const [state, setState] = useState('checking');
+  const [prs, setPrs] = useState(null);
+  const [scanning, setScanning] = useState(false);
+  const [error, setError] = useState(null);
+
+  const files = useEditorStore(s => s.files);
+  const sessionName = useEditorStore(s => s.sessionName);
+  const gitRepoUrl = useEditorStore(s => s.gitRepoUrl);
+  const repoUrl = getSavedRepoUrl(getProjectKey(files, sessionName)) || gitRepoUrl || '';
+
+  const check = useCallback(async () => {
+    setState('checking');
+    if (await guardianHealth()) {
+      setState('ready');
+      return;
+    }
+    // Desktop app: auto-start the daemon for this repo (best-effort).
+    // Needs the repo's workspace config from a previous Guardian setup.
+    if (isElectron() && repoUrl && !autoStartInFlight) {
+      autoStartInFlight = true;
+      setState('starting');
+      try {
+        const res = await guardianStart(repoUrl);
+        if (res?.running) {
+          setState('ready');
+          return;
+        }
+      } catch { /* fall through to offline */ } finally {
+        autoStartInFlight = false;
+      }
+    }
+    setState('offline');
+  }, [repoUrl]);
+
+  useEffect(() => { check(); }, [check]);
+
+  const scan = async () => {
+    setScanning(true);
+    setError(null);
+    try {
+      const res = await guardianPrs();
+      setPrs(res.prs || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  return (
+    <>
+      <ZoneLabel index="02" right={
+        state === 'ready' ? (
+          <TextButton onClick={scan} disabled={scanning}>
+            {scanning ? '⠿ SCANNING…' : 'SCAN PRS'}
+          </TextButton>
+        ) : state === 'offline' ? (
+          <TextButton onClick={check}>⟳ RETRY</TextButton>
+        ) : null
+      }>
+        Guardian · Pull Requests
+      </ZoneLabel>
+
+      {(state === 'checking' || state === 'starting') && (
+        <div style={{
+          fontFamily: MONO, fontSize: '0.58rem', color: 'var(--t4)',
+          letterSpacing: '0.18em', animation: 'pulse-live 1.2s ease infinite',
+        }}>
+          {state === 'starting' ? '⠿ STARTING GUARDIAN…' : '⠿ LOOKING FOR GUARDIAN…'}
+        </div>
+      )}
+
+      {state === 'offline' && (
+        <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)', lineHeight: 1.6 }}>
+          Repository Guardian is offline — start the daemon
+          (<span style={{ fontFamily: MONO, color: 'var(--t3)' }}>gitpilot start</span>)
+          to scan pull requests.
+        </div>
+      )}
+
+      {state === 'ready' && (
+        <>
+          {error && <ErrorLine style={{ marginBottom: '12px' }}>{error}</ErrorLine>}
+          {prs === null ? (
+            <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)', lineHeight: 1.6 }}>
+              Not scanned yet — scanning asks GitHub and (when AI is on) the LLM.
+            </div>
+          ) : prs.length === 0 ? (
+            <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)' }}>
+              No open pull requests.
+            </div>
+          ) : prs.map((pr) => (
+            <div key={pr.pr_number} style={{ borderBottom: '1px solid var(--line-faint)', padding: '11px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontFamily: MONO, fontSize: '0.72rem', color: 'var(--t1)', fontWeight: 800 }}>
+                  #{pr.pr_number}
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                  <StatusDot color={RECOMMENDATION_COLORS[pr.recommendation] || 'var(--t3)'} />
+                  <span style={{
+                    fontFamily: MONO, fontSize: '0.54rem', fontWeight: 800, letterSpacing: '0.14em',
+                    color: RECOMMENDATION_COLORS[pr.recommendation] || 'var(--t3)',
+                  }}>
+                    {String(pr.recommendation || '').replace(/-/g, ' ').toUpperCase()}
+                  </span>
+                </span>
+                {pr.has_conflicts && (
+                  <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: 'var(--crimson)', fontWeight: 800, letterSpacing: '0.12em' }}>
+                    CONFLICTS
+                  </span>
+                )}
+                <span style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: '0.56rem', color: 'var(--t4)' }}>
+                  {pr.confidence}%
+                </span>
+              </div>
+              {pr.title && (
+                <div style={{ fontFamily: BODY, fontSize: '0.78rem', fontWeight: 600, color: 'var(--t1)', marginTop: '6px', lineHeight: 1.4 }}>
+                  {pr.title}
+                </div>
+              )}
+              {(pr.author || pr.head_branch) && (
+                <div style={{ fontFamily: MONO, fontSize: '0.56rem', color: 'var(--t4)', marginTop: '4px', letterSpacing: '0.04em' }}>
+                  {pr.author && <>by {pr.author}</>}
+                  {pr.age_days > 0 && <> · opened {pr.age_days}d ago</>}
+                  {pr.head_branch && <> · ⎇ {pr.head_branch} → {pr.base_branch}</>}
+                </div>
+              )}
+              {pr.summary && (
+                <div style={{ fontFamily: BODY, fontSize: '0.72rem', color: 'var(--t2)', marginTop: '6px', lineHeight: 1.55 }}>
+                  {pr.summary}
+                </div>
+              )}
+              {pr.merge_impact && (
+                <div style={{
+                  display: 'flex', gap: '8px', marginTop: '6px',
+                  fontFamily: MONO, fontSize: '0.62rem', lineHeight: 1.55,
+                  color: 'var(--emerald)',
+                }}>
+                  <span style={{ flexShrink: 0 }}>⇄</span>
+                  <span>{pr.merge_impact}</span>
+                </div>
+              )}
+              {(pr.blocking_reasons || []).map((reason, i) => (
+                <div key={i} style={{ fontFamily: MONO, fontSize: '0.6rem', color: 'var(--crimson)', marginTop: '4px', lineHeight: 1.5 }}>
+                  ✕ {reason}
+                </div>
+              ))}
+              {(pr.warnings || []).map((w, i) => (
+                <div key={i} style={{ fontFamily: MONO, fontSize: '0.6rem', color: 'var(--amber)', marginTop: '4px', lineHeight: 1.5 }}>
+                  ⚠ {w}
+                </div>
+              ))}
+            </div>
+          ))}
+        </>
+      )}
+    </>
   );
 };
 

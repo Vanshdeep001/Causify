@@ -1,19 +1,27 @@
 /* -------------------------------------------------------
- * DeployPanel.jsx — One-Click Vercel Deployment Panel
+ * RenderDeployPanel.jsx — One-Click Render Backend Deployment
  *
- * Full deployment panel with split-column layout:
- *   Left:  Deploy controls, status, telemetry
- *   Right: Live build log stream (CRT console aesthetic)
+ * Backend counterpart of DeployPanel.jsx (Vercel / frontend).
+ * Same split-column layout and design language:
+ *   Left:  Deploy controls, status, telemetry, explainer
+ *   Right: Live deploy status stream (CRT console aesthetic)
  *
- * Follows the same design language as DevServerPanel.jsx —
- * flat, cardless, premium typography.
+ * Key difference from the Vercel flow: Render builds from the
+ * session's Git repository — nothing is uploaded from the editor.
+ * The session is linked to a Render service (existing or newly
+ * created), deploys are triggered via the Render API, and status
+ * is polled and streamed into the console.
  * ------------------------------------------------------- */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import useEditorStore from '../../store/useEditorStore';
-import ConnectVercelModal from './ConnectVercelModal';
+import ConnectRenderModal from './ConnectRenderModal';
 import EnvConfirmModal from './EnvConfirmModal';
-import LinkProjectModal from './LinkProjectModal';
+import LinkServiceModal from './LinkServiceModal';
+import CreateServiceModal from './CreateServiceModal';
+import { detectBackend, detectBackendEnvVars } from './detectBackend';
+
+const RENDER_MINT = '#46E3B7';
 
 /* ── Utility: Strip ANSI color codes ── */
 const stripAnsi = (str) => {
@@ -23,20 +31,24 @@ const stripAnsi = (str) => {
 
 /* ── Status Configuration ── */
 const STATUS_CONFIG = {
-  idle:        { label: 'READY',       color: '#6E6E6E', pulse: false },
-  connecting:  { label: 'CONNECTING',  color: '#FFB224', pulse: true },
-  'env-confirm':{ label: 'CONFIRMING', color: '#FFB224', pulse: false },
-  'pushing-env':{ label: 'PUSHING ENV',color: '#FFB224', pulse: true },
-  deploying:   { label: 'DEPLOYING',   color: '#38BDF8', pulse: true },
-  success:     { label: 'READY',       color: '#4ADE80', pulse: false },
-  error:       { label: 'FAILED',      color: '#E5484D', pulse: false },
+  idle:         { label: 'READY',       color: '#6E6E6E', pulse: false },
+  connecting:   { label: 'CONNECTING',  color: '#FFB224', pulse: true },
+  'env-confirm':{ label: 'CONFIRMING',  color: '#FFB224', pulse: false },
+  'pushing-env':{ label: 'PUSHING ENV', color: '#FFB224', pulse: true },
+  deploying:    { label: 'DEPLOYING',   color: RENDER_MINT, pulse: true },
+  success:      { label: 'LIVE',        color: '#4ADE80', pulse: false },
+  error:        { label: 'FAILED',      color: '#E5484D', pulse: false },
 };
 
-/* ── Vercel Triangle Icon ── */
-const VercelIcon = ({ size = 22, color = '#FFFFFF' }) => (
-  <svg width={size} height={size} viewBox="0 0 76 65" fill={color}
+/* ── Server Stack Icon ── */
+const ServerIcon = ({ size = 18, color = '#FFFFFF' }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
     style={{ transition: 'all 0.3s ease' }}>
-    <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" />
+    <rect x="2" y="2" width="20" height="8" rx="2" />
+    <rect x="2" y="14" width="20" height="8" rx="2" />
+    <line x1="6" y1="6" x2="6.01" y2="6" />
+    <line x1="6" y1="18" x2="6.01" y2="18" />
   </svg>
 );
 
@@ -76,6 +88,7 @@ const TelemetryLine = ({ label, value, color }) => (
     <span style={{
       fontFamily: 'var(--font-number)', fontSize: '0.7rem',
       color: color || 'var(--t1)', fontWeight: 600, whiteSpace: 'nowrap',
+      overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px',
     }}>
       {value}
     </span>
@@ -83,71 +96,83 @@ const TelemetryLine = ({ label, value, color }) => (
 );
 
 /* ══════════════════════════════════════════════════════════
- *  DEPLOY PANEL COMPONENT
+ *  RENDER DEPLOY PANEL COMPONENT
  * ══════════════════════════════════════════════════════════ */
-const DeployPanel = () => {
-  const deployStatus = useEditorStore((s) => s.deployStatus);
-  const deployLogs = useEditorStore((s) => s.deployLogs);
-  const deployUrl = useEditorStore((s) => s.deployUrl);
-  const deployError = useEditorStore((s) => s.deployError);
-  const deployStartTime = useEditorStore((s) => s.deployStartTime);
-  const currentDeployId = useEditorStore((s) => s.currentDeployId);
-  const vercelConnected = useEditorStore((s) => s.vercelConnected);
-  const vercelUsername = useEditorStore((s) => s.vercelUsername);
-  const deployFramework = useEditorStore((s) => s.deployFramework);
+const RenderDeployPanel = () => {
+  const deployStatus = useEditorStore((s) => s.renderDeployStatus);
+  const deployLogs = useEditorStore((s) => s.renderDeployLogs);
+  const deployUrl = useEditorStore((s) => s.renderDeployUrl);
+  const deployError = useEditorStore((s) => s.renderDeployError);
+  const deployStartTime = useEditorStore((s) => s.renderDeployStartTime);
+  const currentDeployId = useEditorStore((s) => s.currentRenderDeployId);
+  const renderConnected = useEditorStore((s) => s.renderConnected);
+  const renderOwnerName = useEditorStore((s) => s.renderOwnerName);
+  const renderRuntime = useEditorStore((s) => s.renderRuntime);
   const sessionId = useEditorStore((s) => s.sessionId);
+  const sessionName = useEditorStore((s) => s.sessionName);
+  const gitRepoUrl = useEditorStore((s) => s.gitRepoUrl);
+  const gitRepoConnected = useEditorStore((s) => s.gitRepoConnected);
 
-  const setDeployStatus = useEditorStore((s) => s.setDeployStatus);
-  const addDeployLog = useEditorStore((s) => s.addDeployLog);
-  const clearDeployLogs = useEditorStore((s) => s.clearDeployLogs);
-  const setDeployUrl = useEditorStore((s) => s.setDeployUrl);
-  const setDeployError = useEditorStore((s) => s.setDeployError);
-  const setDeployStartTime = useEditorStore((s) => s.setDeployStartTime);
-  const setCurrentDeployId = useEditorStore((s) => s.setCurrentDeployId);
-  const setVercelConnected = useEditorStore((s) => s.setVercelConnected);
-  const setDeployFramework = useEditorStore((s) => s.setDeployFramework);
-  const resetDeploy = useEditorStore((s) => s.resetDeploy);
+  const setDeployStatus = useEditorStore((s) => s.setRenderDeployStatus);
+  const addDeployLog = useEditorStore((s) => s.addRenderDeployLog);
+  const clearDeployLogs = useEditorStore((s) => s.clearRenderDeployLogs);
+  const setDeployUrl = useEditorStore((s) => s.setRenderDeployUrl);
+  const setDeployError = useEditorStore((s) => s.setRenderDeployError);
+  const setDeployStartTime = useEditorStore((s) => s.setRenderDeployStartTime);
+  const setCurrentDeployId = useEditorStore((s) => s.setCurrentRenderDeployId);
+  const setRenderConnected = useEditorStore((s) => s.setRenderConnected);
+  const setRenderRuntime = useEditorStore((s) => s.setRenderRuntime);
+  const resetDeploy = useEditorStore((s) => s.resetRenderDeploy);
   const addDeploymentRecord = useEditorStore((s) => s.addDeploymentRecord);
-  const pendingRedeploy = useEditorStore((s) => s.pendingRedeploy);
-  const setPendingRedeploy = useEditorStore((s) => s.setPendingRedeploy);
 
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showEnvModal, setShowEnvModal] = useState(false);
   const [showLinkModal, setShowLinkModal] = useState(false);
-  const [linkedProject, setLinkedProject] = useState(null); // name of linked Vercel project
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [linkedService, setLinkedService] = useState(null); // { name, url }
+  const [detection, setDetection] = useState(null);
   const [detectedEnvVars, setDetectedEnvVars] = useState([]);
   const [elapsed, setElapsed] = useState(0);
   const logContainerRef = useRef(null);
   const cleanupRef = useRef({ log: null, complete: null });
 
-  // Check token on mount
+  // Check API key on mount
   useEffect(() => {
-    const checkToken = async () => {
-      if (window.electronAPI?.hasVercelToken) {
-        const hasToken = await window.electronAPI.hasVercelToken();
-        if (hasToken && !vercelConnected) {
-          // Validate the stored token
-          // We can't retrieve it from renderer, but we know it exists
-          setVercelConnected(true, vercelUsername || 'Connected');
+    const checkKey = async () => {
+      if (window.electronAPI?.hasRenderApiKey) {
+        const hasKey = await window.electronAPI.hasRenderApiKey();
+        if (hasKey && !renderConnected) {
+          setRenderConnected(true, renderOwnerName || 'Connected');
         }
       }
     };
-    checkToken();
+    checkKey();
   }, []);
 
-  // Load any existing project link for this session (so redeploys show the target)
+  // Load any existing service link for this session
   useEffect(() => {
     const loadLink = async () => {
-      if (!sessionId || !window.electronAPI?.getLinkedVercelProject) return;
+      if (!sessionId || !window.electronAPI?.getLinkedRenderService) return;
       try {
-        const info = await window.electronAPI.getLinkedVercelProject({ sessionId });
-        if (info?.projectName) setLinkedProject(info.projectName);
+        const info = await window.electronAPI.getLinkedRenderService({ sessionId });
+        if (info?.serviceName || info?.serviceId) {
+          setLinkedService({ name: info.serviceName || info.serviceId, url: info.serviceUrl || null });
+        }
       } catch {
         // No link yet — fine
       }
     };
     loadLink();
   }, [sessionId]);
+
+  // Detect the backend from the session files so the RUNTIME telemetry
+  // and the Create Service form are prefilled.
+  useEffect(() => {
+    const files = useEditorStore.getState().files;
+    const result = detectBackend(files);
+    setDetection(result);
+    setRenderRuntime(result ? result.framework : null);
+  }, [sessionId, setRenderRuntime]);
 
   // Elapsed timer
   useEffect(() => {
@@ -156,8 +181,6 @@ const DeployPanel = () => {
       interval = setInterval(() => {
         setElapsed(Math.floor((Date.now() - deployStartTime) / 1000));
       }, 1000);
-    } else if (deployStatus !== 'deploying') {
-      // Keep the final elapsed time
     }
     return () => clearInterval(interval);
   }, [deployStatus, deployStartTime]);
@@ -175,7 +198,7 @@ const DeployPanel = () => {
     return `${m}:${s}`;
   };
 
-  /* ── Proceed with PTY deployment ── */
+  /* ── Trigger the deploy on the linked service ── */
   const proceedWithDeployment = useCallback(async () => {
     setDeployStatus('deploying');
     setDeployStartTime(Date.now());
@@ -183,76 +206,64 @@ const DeployPanel = () => {
 
     try {
       const store = useEditorStore.getState();
-      const deployOptions = { sessionId: store.sessionId };
-
-      const result = await window.electronAPI.runDeploy(deployOptions);
+      const result = await window.electronAPI.runRenderDeploy({ sessionId: store.sessionId });
       const deployId = result.deployId;
       setCurrentDeployId(deployId);
-      setDeployFramework(result.framework);
 
-      // Subscribe to live logs
-      const unsubLog = window.electronAPI.onDeployLog(deployId, (data) => {
+      // Subscribe to live status stream
+      const unsubLog = window.electronAPI.onRenderDeployLog(deployId, (data) => {
         const lines = stripAnsi(data).split('\n').filter(l => l.trim());
         lines.forEach(line => addDeployLog(line));
       });
 
       // Subscribe to completion
-      const unsubComplete = window.electronAPI.onDeployComplete(deployId, async (data) => {
+      const unsubComplete = window.electronAPI.onRenderDeployComplete(deployId, async (data) => {
         if (data.success) {
           setDeployStatus('success');
           setDeployUrl(data.url);
-          addDeployLog(`✓ Deployment successful!`);
-          addDeployLog(`→ ${data.url}`);
+          setLinkedService((prev) => prev ? { ...prev, url: data.url || prev.url } : prev);
+          addDeployLog('✓ Backend deployed successfully!');
+          if (data.url) addDeployLog(`→ ${data.url}`);
 
-          // Fetch Git and Snapshot details
+          // Record in deployment history (same store/API as the Vercel flow)
           const store = useEditorStore.getState();
           const statusText = store.gitStatus || '';
           const branchMatch = statusText.match(/On branch (\S+)/) || statusText.match(/^##\s+(\S+)/m);
           const gitBranch = branchMatch ? branchMatch[1] : 'main';
-          
           const logText = store.gitLog || '';
           const commitMatch = logText.match(/^(\w+)/);
           const gitCommit = commitMatch ? commitMatch[1] : undefined;
-          
-          const latestSnapshot = store.snapshots[store.snapshots.length - 1];
-          const snapshotId = latestSnapshot?.id || null;
 
-          const deploymentData = {
+          const record = {
             sessionId: store.sessionId,
             deploymentUrl: data.url,
-            vercelDeploymentId: deployId,
             target: 'production',
             gitBranch,
             gitCommit,
-            snapshotId,
             status: 'success',
-            framework: result.framework,
+            framework: `Render · ${store.renderRuntime || 'Backend'}`,
           };
 
           try {
             const { createDeployment } = await import('../../services/api');
-            const savedRecord = await createDeployment(deploymentData);
-            
-            // Record in history
+            const savedRecord = await createDeployment(record);
             addDeploymentRecord(savedRecord);
           } catch (apiErr) {
-            console.error('[DeployPanel] Failed to save deployment record:', apiErr);
-            // Fallback: local only
+            console.error('[RenderDeployPanel] Failed to save deployment record:', apiErr);
             addDeploymentRecord({
-              id: deployId,
+              id: data.deployId || deployId,
               url: data.url,
               timestamp: new Date().toISOString(),
               status: 'success',
-              framework: result.framework,
+              framework: record.framework,
             });
           }
         } else {
           setDeployStatus('error');
-          setDeployError(data.error || 'Deployment failed');
-          addDeployLog(`✗ Deployment failed: ${data.error || 'Unknown error'}`);
+          setDeployError(data.error || 'Deploy failed');
+          addDeployLog(`✗ Deploy failed: ${data.error || 'Unknown error'}`);
         }
 
-        // Cleanup subscriptions
         unsubLog?.();
         unsubComplete?.();
       });
@@ -260,15 +271,13 @@ const DeployPanel = () => {
       cleanupRef.current = { log: unsubLog, complete: unsubComplete };
     } catch (err) {
       setDeployStatus('error');
-      setDeployError(err.message || 'Failed to start deployment');
+      setDeployError(err.message || 'Failed to start deploy');
       addDeployLog(`✗ Error: ${err.message}`);
     }
   }, [
     setDeployStatus,
     setDeployStartTime,
-    setElapsed,
     setCurrentDeployId,
-    setDeployFramework,
     addDeployLog,
     setDeployUrl,
     addDeploymentRecord,
@@ -277,56 +286,45 @@ const DeployPanel = () => {
 
   /* ── Deploy Action ── */
   const handleDeploy = useCallback(async () => {
-    if (!window.electronAPI?.runDeploy) {
+    if (!window.electronAPI?.runRenderDeploy) {
       setDeployError('Electron API not available. This feature requires the desktop app.');
       setDeployStatus('error');
       return;
     }
 
-    // Check if token exists
-    const hasToken = await window.electronAPI.hasVercelToken();
-    if (!hasToken) {
+    // 1. Account connected?
+    const hasKey = await window.electronAPI.hasRenderApiKey();
+    if (!hasKey) {
       setShowConnectModal(true);
       return;
     }
 
-    // Reset state for new deploy
+    // 2. Service linked? Render builds from Git, so a target service is
+    //    required — either an existing one or one created from the repo.
+    const link = await window.electronAPI.getLinkedRenderService({ sessionId });
+    if (!link?.serviceId) {
+      setShowLinkModal(true);
+      return;
+    }
+
+    // Reset state for a new deploy
     resetDeploy();
     clearDeployLogs();
     setDeployStatus('connecting');
 
     try {
       const store = useEditorStore.getState();
-      const deployOptions = { sessionId: store.sessionId };
 
-      // Write the current in-memory files to the deploy workspace. This is what
-      // makes plain static (HTML/CSS/JS) projects deployable and ensures the
-      // very latest edits are what gets pushed.
-      if (window.electronAPI.prepareDeployWorkspace) {
-        const prep = await window.electronAPI.prepareDeployWorkspace({
-          sessionId: store.sessionId,
-          files: store.files,
-        });
-        if (!prep?.success) {
-          throw new Error(prep?.error || 'Failed to prepare deploy workspace');
-        }
-        if (!prep.fileCount) {
-          throw new Error('No files to deploy — add or open files in this session first.');
-        }
-        addDeployLog(`📦 Prepared ${prep.fileCount} file(s) for deployment.`);
-      }
+      // Render deploys the repo's latest commit — remind the user.
+      addDeployLog('ℹ Render builds from your Git repository — unpushed local changes are not included.');
 
-      // Detect framework
-      const framework = await window.electronAPI.detectFramework(deployOptions);
-      setDeployFramework(framework);
+      // Detect backend + env files from the session files.
+      const det = detectBackend(store.files);
+      setDetection(det);
+      if (det) setRenderRuntime(det.framework);
 
-      // Detect env files
-      let envVars = [];
-      if (window.electronAPI.detectEnvFiles) {
-        envVars = await window.electronAPI.detectEnvFiles(deployOptions);
-      }
-
-      if (envVars && envVars.length > 0) {
+      const envVars = detectBackendEnvVars(store.files, det?.rootDir);
+      if (envVars.length > 0) {
         setDetectedEnvVars(envVars);
         setDeployStatus('env-confirm');
         setShowEnvModal(true);
@@ -335,16 +333,15 @@ const DeployPanel = () => {
       }
     } catch (err) {
       setDeployStatus('error');
-      setDeployError(err.message || 'Failed to start deployment');
+      setDeployError(err.message || 'Failed to start deploy');
       addDeployLog(`✗ Error: ${err.message}`);
     }
   }, [
+    sessionId,
     resetDeploy,
     clearDeployLogs,
     setDeployStatus,
-    setDeployFramework,
-    setShowEnvModal,
-    setDetectedEnvVars,
+    setRenderRuntime,
     proceedWithDeployment,
     setDeployError,
     addDeployLog,
@@ -354,13 +351,10 @@ const DeployPanel = () => {
   const handleConfirmEnv = useCallback(async (selectedVars) => {
     setShowEnvModal(false);
     setDeployStatus('pushing-env');
-    addDeployLog('⚙ Uploading environment variables to Vercel...');
+    addDeployLog('⚙ Uploading environment variables to Render...');
 
     try {
-      const store = useEditorStore.getState();
-      const deployOptions = { sessionId: store.sessionId };
-
-      const res = await window.electronAPI.pushEnvVars({ ...deployOptions, vars: selectedVars });
+      const res = await window.electronAPI.pushRenderEnvVars({ sessionId, vars: selectedVars });
       if (res.success) {
         addDeployLog('✓ Environment variables successfully uploaded.');
         proceedWithDeployment();
@@ -374,37 +368,26 @@ const DeployPanel = () => {
       setDeployError(err.message || 'Failed to upload environment variables');
       setDeployStatus('error');
     }
-  }, [proceedWithDeployment, setDeployStatus, addDeployLog, setDeployError]);
+  }, [sessionId, proceedWithDeployment, setDeployStatus, addDeployLog, setDeployError]);
 
-  /* ── Skip Env Variables ── */
+  /* ── Skip / Cancel Env Step ── */
   const handleSkipEnv = useCallback(() => {
     setShowEnvModal(false);
     addDeployLog('⚠ Skipped environment variable upload.');
     proceedWithDeployment();
   }, [proceedWithDeployment, addDeployLog]);
 
-  /* ── Cancel Env Variable Step ── */
   const handleCancelEnv = useCallback(() => {
     setShowEnvModal(false);
     resetDeploy();
   }, [resetDeploy]);
 
-  // Handle pending redeploy trigger from Timeline
-  useEffect(() => {
-    if (pendingRedeploy) {
-      setPendingRedeploy(false);
-      handleDeploy();
-    }
-  }, [pendingRedeploy, setPendingRedeploy, handleDeploy]);
-
-
   /* ── Cancel Deploy ── */
   const handleCancel = useCallback(async () => {
-    if (currentDeployId && window.electronAPI?.cancelDeploy) {
-      await window.electronAPI.cancelDeploy(currentDeployId);
-      addDeployLog('⚠ Deployment cancelled by user');
+    if (currentDeployId && window.electronAPI?.cancelRenderDeploy) {
+      await window.electronAPI.cancelRenderDeploy(currentDeployId);
+      addDeployLog('⚠ Deploy cancelled by user');
     }
-    // Cleanup subscriptions
     cleanupRef.current.log?.();
     cleanupRef.current.complete?.();
     setDeployStatus('idle');
@@ -412,17 +395,16 @@ const DeployPanel = () => {
 
   /* ── Disconnect ── */
   const handleDisconnect = useCallback(async () => {
-    if (window.electronAPI?.clearVercelToken) {
-      await window.electronAPI.clearVercelToken();
+    if (window.electronAPI?.clearRenderApiKey) {
+      await window.electronAPI.clearRenderApiKey();
     }
-    setVercelConnected(false, null);
+    setRenderConnected(false, null);
     resetDeploy();
   }, []);
 
-  const isDeploying = deployStatus === 'deploying';
+  const isDeploying = deployStatus === 'deploying' || deployStatus === 'pushing-env';
   const isSuccess = deployStatus === 'success';
   const isError = deployStatus === 'error';
-  const statusColor = STATUS_CONFIG[deployStatus]?.color || '#6E6E6E';
   const logs = deployLogs.map(stripAnsi);
 
   return (
@@ -437,14 +419,14 @@ const DeployPanel = () => {
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <div style={{
             width: '32px', height: '32px',
-            border: `1px solid ${isDeploying ? '#38BDF8' : isSuccess ? '#4ADE80' : '#2E2E2E'}`,
+            border: `1px solid ${isDeploying ? RENDER_MINT : isSuccess ? '#4ADE80' : '#2E2E2E'}`,
             borderRadius: '2px',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             transition: 'all 0.3s ease',
           }}>
-            <VercelIcon
-              size={18}
-              color={isDeploying ? '#38BDF8' : isSuccess ? '#4ADE80' : isError ? '#E5484D' : '#6E6E6E'}
+            <ServerIcon
+              size={16}
+              color={isDeploying ? RENDER_MINT : isSuccess ? '#4ADE80' : isError ? '#E5484D' : '#6E6E6E'}
             />
           </div>
           <div>
@@ -465,14 +447,14 @@ const DeployPanel = () => {
               color: 'var(--t4)', letterSpacing: '0.08em',
               textTransform: 'uppercase',
             }}>
-              One-click frontend deployment · Powered by Vercel
+              One-click backend deployment · Powered by Render
             </span>
           </div>
         </div>
 
         {/* Connection status */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {vercelConnected && (
+          {renderConnected && (
             <span style={{
               fontFamily: 'var(--font-number)',
               fontSize: '0.52rem',
@@ -487,10 +469,10 @@ const DeployPanel = () => {
                 background: '#4ADE80',
                 boxShadow: '0 0 4px rgba(74, 222, 128, 0.4)',
               }} />
-              {vercelUsername || 'CONNECTED'}
+              {renderOwnerName || 'CONNECTED'}
             </span>
           )}
-          {vercelConnected ? (
+          {renderConnected ? (
             <button
               onClick={handleDisconnect}
               style={{
@@ -520,7 +502,7 @@ const DeployPanel = () => {
               onMouseEnter={e => { e.currentTarget.style.background = 'var(--t1)'; e.currentTarget.style.color = 'var(--s0)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--t1)'; }}
             >
-              CONNECT VERCEL
+              CONNECT RENDER
             </button>
           )}
         </div>
@@ -536,24 +518,24 @@ const DeployPanel = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <TelemetryLine label="STATUS" value={<StatusLabel status={deployStatus} />} />
             <TelemetryLine
-              label="FRAMEWORK"
-              value={deployFramework || 'DETECTING...'}
-              color={deployFramework ? 'var(--t1)' : 'var(--t4)'}
+              label="RUNTIME"
+              value={renderRuntime || 'NOT DETECTED'}
+              color={renderRuntime ? 'var(--t1)' : 'var(--t4)'}
             />
             <TelemetryLine
-              label="PROJECT"
-              value={linkedProject || 'NEW PROJECT'}
-              color={linkedProject ? 'var(--t1)' : 'var(--t4)'}
+              label="SERVICE"
+              value={linkedService?.name || 'NOT LINKED'}
+              color={linkedService ? 'var(--t1)' : 'var(--t4)'}
             />
             <TelemetryLine
               label="TARGET"
               value="PRODUCTION"
-              color={isDeploying ? '#38BDF8' : 'var(--t2)'}
+              color={isDeploying ? RENDER_MINT : 'var(--t2)'}
             />
             <TelemetryLine
               label="ELAPSED"
               value={isDeploying || isSuccess || isError ? formatElapsed(elapsed) : 'IDLE'}
-              color={isDeploying ? '#38BDF8' : isSuccess ? '#4ADE80' : 'var(--t4)'}
+              color={isDeploying ? RENDER_MINT : isSuccess ? '#4ADE80' : 'var(--t4)'}
             />
           </div>
 
@@ -563,38 +545,38 @@ const DeployPanel = () => {
               <button
                 onClick={handleDeploy}
                 disabled={isDeploying}
-                title="Deploys the frontend files of this session to Vercel as a production build. Backend code is not deployed."
+                title="Triggers a build of your backend's Git repository on Render. Frontend files are not deployed here."
                 style={{
                   height: '38px',
                   borderRadius: '3px',
                   border: 'none',
-                  background: 'linear-gradient(135deg, #00A2FF 0%, #0066FF 100%)',
-                  color: '#FFFFFF',
+                  background: `linear-gradient(135deg, ${RENDER_MINT} 0%, #1BA57B 100%)`,
+                  color: '#06251C',
                   fontFamily: "'Space Grotesk', sans-serif",
                   fontWeight: 700,
                   fontSize: '0.72rem',
                   letterSpacing: '0.06em',
                   cursor: 'pointer',
                   transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                  boxShadow: '0 4px 14px rgba(0, 162, 255, 0.3)',
+                  boxShadow: '0 4px 14px rgba(70, 227, 183, 0.3)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '8px',
                 }}
                 onMouseEnter={e => {
-                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(0, 162, 255, 0.45)';
+                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(70, 227, 183, 0.45)';
                   e.currentTarget.style.transform = 'translateY(-1px)';
                 }}
                 onMouseLeave={e => {
-                  e.currentTarget.style.boxShadow = '0 4px 14px rgba(0, 162, 255, 0.3)';
+                  e.currentTarget.style.boxShadow = '0 4px 14px rgba(70, 227, 183, 0.3)';
                   e.currentTarget.style.transform = 'translateY(0)';
                 }}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M22 2L11 13" /><path d="M22 2L15 22L11 13L2 9L22 2Z" />
                 </svg>
-                {isSuccess ? 'REDEPLOY' : 'DEPLOY TO PRODUCTION'}
+                {isSuccess ? 'REDEPLOY BACKEND' : 'DEPLOY BACKEND'}
               </button>
             ) : (
               <button
@@ -619,42 +601,77 @@ const DeployPanel = () => {
               </button>
             )}
 
-            {/* Link existing Vercel project (push updates to an app already on Vercel) */}
-            {vercelConnected && !isDeploying && (
-              <button
-                onClick={() => setShowLinkModal(true)}
-                style={{
-                  background: 'transparent',
-                  color: 'var(--t3)',
-                  border: '1px solid var(--line)',
-                  borderRadius: '3px',
-                  fontFamily: "'Space Grotesk', sans-serif",
-                  fontWeight: 600,
-                  fontSize: '0.58rem',
-                  letterSpacing: '0.06em',
-                  padding: '7px 10px',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.color = 'var(--t1)'; e.currentTarget.style.borderColor = 'var(--t3)'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = 'var(--t3)'; e.currentTarget.style.borderColor = 'var(--line)'; }}
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                </svg>
-                {linkedProject ? `LINKED: ${linkedProject.toUpperCase()}` : 'LINK EXISTING PROJECT'}
-              </button>
+            {/* Link existing service / create new one */}
+            {renderConnected && !isDeploying && (
+              <>
+                <button
+                  onClick={() => setShowLinkModal(true)}
+                  style={{
+                    background: 'transparent',
+                    color: 'var(--t3)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '3px',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontWeight: 600,
+                    fontSize: '0.58rem',
+                    letterSpacing: '0.06em',
+                    padding: '7px 10px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--t1)'; e.currentTarget.style.borderColor = 'var(--t3)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--t3)'; e.currentTarget.style.borderColor = 'var(--line)'; }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                  </svg>
+                  {linkedService ? `LINKED: ${String(linkedService.name).toUpperCase()}` : 'LINK EXISTING SERVICE'}
+                </button>
+
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  title={gitRepoConnected
+                    ? 'Create a new Render web service from this session’s GitHub repository.'
+                    : 'Connect a GitHub repository in the Git tab first, or paste a repo URL in the form.'}
+                  style={{
+                    background: 'transparent',
+                    color: 'var(--t3)',
+                    border: '1px solid var(--line)',
+                    borderRadius: '3px',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontWeight: 600,
+                    fontSize: '0.58rem',
+                    letterSpacing: '0.06em',
+                    padding: '7px 10px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--t1)'; e.currentTarget.style.borderColor = 'var(--t3)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--t3)'; e.currentTarget.style.borderColor = 'var(--line)'; }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="16" />
+                    <line x1="8" y1="12" x2="16" y2="12" />
+                  </svg>
+                  CREATE NEW SERVICE
+                </button>
+              </>
             )}
 
-            {/* Deployment URL */}
-            {deployUrl && (
+            {/* Service URL */}
+            {(deployUrl || linkedService?.url) && (
               <a
-                href={deployUrl}
+                href={deployUrl || linkedService.url}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -675,7 +692,7 @@ const DeployPanel = () => {
                 onMouseEnter={e => { e.currentTarget.style.color = '#FFFFFF'; e.currentTarget.style.borderBottomColor = '#FFFFFF'; }}
                 onMouseLeave={e => { e.currentTarget.style.color = '#4ADE80'; e.currentTarget.style.borderBottomColor = 'rgba(74, 222, 128, 0.4)'; }}
               >
-                OPEN DEPLOYMENT
+                OPEN SERVICE
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                   <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
@@ -700,6 +717,23 @@ const DeployPanel = () => {
                 {deployError}
               </div>
             )}
+
+            {/* Java-without-Dockerfile note from detection */}
+            {detection?.note && (
+              <div style={{
+                fontFamily: "'Space Grotesk', sans-serif",
+                fontSize: '0.58rem',
+                lineHeight: 1.6,
+                color: '#FFB224',
+                letterSpacing: '0.01em',
+                padding: '8px 12px',
+                background: 'rgba(255, 178, 36, 0.05)',
+                border: '1px solid rgba(255, 178, 36, 0.2)',
+                borderRadius: '3px',
+              }}>
+                {detection.note}
+              </div>
+            )}
           </div>
 
           {/* What this does / How it works */}
@@ -719,15 +753,16 @@ const DeployPanel = () => {
               fontSize: '0.62rem', lineHeight: 1.65,
               color: 'var(--t3)', letterSpacing: '0.01em',
             }}>
-              Publishes the{' '}
-              <span style={{ color: 'var(--t1)', fontWeight: 600 }}>frontend of this session</span>{' '}
-              to Vercel and gives you a live production URL. Works with static
-              sites (HTML/CSS/JS) and frontend frameworks like React, Vite and
-              Next.js.{' '}
+              Deploys the{' '}
+              <span style={{ color: 'var(--t1)', fontWeight: 600 }}>backend of this session</span>{' '}
+              to Render as a live web service. Works with Node.js, Python, Go,
+              Rust, Ruby, Elixir and Docker backends (Java/Spring via Docker).{' '}
               <span style={{ color: '#FFB224' }}>
-                Backend servers, databases and APIs are not deployed
+                Render builds from your Git repository — commit and push your
+                changes first
               </span>{' '}
-              — host those separately.
+              (the Git tab handles that). Your frontend is deployed separately
+              via the Vercel tab.
             </p>
 
             <span style={{
@@ -742,10 +777,10 @@ const DeployPanel = () => {
               display: 'flex', flexDirection: 'column', gap: '5px',
             }}>
               {[
-                'Your latest session files are packaged for deployment.',
-                'The framework is auto-detected (React, Vite, Next.js, static…).',
-                'Detected .env variables can be reviewed and uploaded first.',
-                'Vercel builds the frontend and returns a live production URL.',
+                'Link an existing Render service, or create one from your GitHub repo.',
+                'Your backend runtime is auto-detected (Node, Python, Go, Docker…).',
+                'Detected .env variables can be reviewed and uploaded to the service.',
+                'Render pulls the repo, builds it, and serves your API on a live URL.',
               ].map((step, i) => (
                 <li key={i} style={{
                   display: 'flex', gap: '8px', alignItems: 'baseline',
@@ -772,7 +807,7 @@ const DeployPanel = () => {
           alignSelf: 'stretch', margin: '4px 0', minHeight: '140px',
         }} />
 
-        {/* RIGHT COLUMN: Live Build Log Console */}
+        {/* RIGHT COLUMN: Live Deploy Status Console */}
         <div style={{ flex: '2 2 400px', display: 'flex', flexDirection: 'column', minWidth: '300px', overflow: 'hidden' }}>
 
           {/* Console Header */}
@@ -787,16 +822,16 @@ const DeployPanel = () => {
             <span style={{
               fontFamily: 'var(--font-number)', fontSize: '8px',
               color: 'var(--t3)', letterSpacing: '0.12em', fontWeight: 600,
-            }}>BUILD LOG</span>
+            }}>DEPLOY LOG</span>
             <span style={{
               fontFamily: 'var(--font-number)',
               fontSize: '7px',
-              color: isDeploying ? '#38BDF8' : isSuccess ? '#4ADE80' : 'var(--t4)',
+              color: isDeploying ? RENDER_MINT : isSuccess ? '#4ADE80' : 'var(--t4)',
               letterSpacing: '0.04em',
-              textShadow: isDeploying ? '0 0 6px rgba(56, 189, 248, 0.4)' : 'none',
+              textShadow: isDeploying ? '0 0 6px rgba(70, 227, 183, 0.4)' : 'none',
               transition: 'all 0.3s ease',
             }}>
-              {isDeploying ? 'RECEIVING_FEED' : isSuccess ? 'DEPLOY_COMPLETE' : isError ? 'DEPLOY_FAILED' : 'OFFLINE'}
+              {isDeploying ? 'RECEIVING_FEED' : isSuccess ? 'SERVICE_LIVE' : isError ? 'DEPLOY_FAILED' : 'OFFLINE'}
             </span>
           </div>
 
@@ -845,11 +880,13 @@ const DeployPanel = () => {
               ) : (
                 <div>
                   {logs.map((line, i) => {
-                    const isSuccess = line.includes('✓') || line.includes('Ready') || line.includes('Production');
-                    const isError = line.includes('✗') || line.includes('Error') || line.includes('ERR!');
-                    const isUrl = line.includes('https://') || line.includes('→');
-                    const isPhase = line.includes('Uploading') || line.includes('Building') || line.includes('Deploying') || line.includes('Linking');
-                    const isWarn = line.includes('⚠') || line.includes('Warning');
+                    // Render prefixes its own build phases with "==>"
+                    // (e.g. "==> Cloning from ...", "==> Build successful 🎉").
+                    const lineSuccess = line.includes('✓') || /successful|🎉|is live/i.test(line);
+                    const lineError = line.includes('✗') || /\berror\b|failed|ERR!/i.test(line);
+                    const lineUrl = line.includes('https://') || line.includes('→');
+                    const linePhase = line.startsWith('==>') || line.includes('Building') || line.includes('Triggering') || line.includes('rolling out') || line.includes('Queued');
+                    const lineWarn = line.includes('⚠') || line.includes('ℹ') || /\bwarn(ing)?\b/i.test(line);
 
                     return (
                       <div key={i} style={{
@@ -857,13 +894,13 @@ const DeployPanel = () => {
                         fontSize: '0.62rem',
                         lineHeight: 1.6,
                         letterSpacing: '0.01em',
-                        color: isSuccess ? '#4ADE80'
-                          : isError ? '#E5484D'
-                          : isUrl ? '#38BDF8'
-                          : isPhase ? 'var(--t2)'
-                          : isWarn ? '#FFB224'
+                        color: lineSuccess ? '#4ADE80'
+                          : lineError ? '#E5484D'
+                          : lineUrl ? RENDER_MINT
+                          : linePhase ? 'var(--t2)'
+                          : lineWarn ? '#FFB224'
                           : 'var(--t3)',
-                        fontWeight: isSuccess || isUrl || isPhase ? 600 : 400,
+                        fontWeight: lineSuccess || lineUrl || linePhase ? 600 : 400,
                         marginBottom: '1px',
                         wordBreak: 'break-all',
                       }}>
@@ -878,12 +915,12 @@ const DeployPanel = () => {
         </div>
       </div>
 
-      {/* Connect Vercel Modal */}
+      {/* Connect Render Modal */}
       {showConnectModal && (
-        <ConnectVercelModal
+        <ConnectRenderModal
           onClose={() => setShowConnectModal(false)}
-          onConnected={(username) => {
-            setVercelConnected(true, username);
+          onConnected={(name) => {
+            setRenderConnected(true, name);
             setShowConnectModal(false);
           }}
         />
@@ -893,20 +930,38 @@ const DeployPanel = () => {
       {showEnvModal && (
         <EnvConfirmModal
           envVars={detectedEnvVars}
+          provider="Render"
+          providerColor={RENDER_MINT}
           onConfirm={handleConfirmEnv}
           onSkip={handleSkipEnv}
           onCancel={handleCancelEnv}
         />
       )}
 
-      {/* Link Existing Project Modal */}
+      {/* Link Existing Service Modal */}
       {showLinkModal && (
-        <LinkProjectModal
+        <LinkServiceModal
           sessionId={sessionId}
           onClose={() => setShowLinkModal(false)}
-          onLinked={(name) => {
-            setLinkedProject(name);
+          onLinked={(name, url) => {
+            setLinkedService({ name, url: url || null });
             setShowLinkModal(false);
+          }}
+        />
+      )}
+
+      {/* Create New Service Modal */}
+      {showCreateModal && (
+        <CreateServiceModal
+          sessionId={sessionId}
+          detection={detection}
+          repoUrl={gitRepoUrl}
+          defaultName={(sessionName || 'causify-backend')
+            .toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'causify-backend'}
+          onClose={() => setShowCreateModal(false)}
+          onCreated={(name, url) => {
+            setLinkedService({ name, url: url || null });
+            setShowCreateModal(false);
           }}
         />
       )}
@@ -914,4 +969,4 @@ const DeployPanel = () => {
   );
 };
 
-export default DeployPanel;
+export default RenderDeployPanel;
