@@ -95,6 +95,7 @@ public class RootCauseService {
             null, code, lang, semContext
         );
 
+        result.setAiGenerated(aiResult != null);
         if (aiResult != null) {
             if (aiResult.getWhatHappened() != null) result.setWhatHappened(aiResult.getWhatHappened());
             result.setRootCauseChain(aiResult.getRootCauseChain());
@@ -284,6 +285,7 @@ public class RootCauseService {
             suspectedVariable, code, lang, semContext
         );
 
+        result.setAiGenerated(aiResult != null);
         if (aiResult != null) {
             result.setWhatHappened(aiResult.getWhatHappened());
             result.setRootCauseChain(aiResult.getRootCauseChain());
@@ -345,6 +347,7 @@ public class RootCauseService {
             null, code, lang, semContext
         );
 
+        result.setAiGenerated(aiResult != null);
         if (aiResult != null) {
             result.setWhatHappened(aiResult.getWhatHappened());
             result.setRootCauseChain(aiResult.getRootCauseChain());

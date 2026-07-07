@@ -17,48 +17,32 @@ import RenderDeployPanel from './RenderDeployPanel';
 const RENDER_MINT = '#46E3B7';
 const VERCEL_BLUE = '#38BDF8';
 
-const TargetButton = ({ active, accent, onClick, icon, title, caption }) => (
+const VercelGlyph = (
+  <svg width="15" height="13" viewBox="0 0 76 65" fill="currentColor">
+    <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" />
+  </svg>
+);
+
+const RenderGlyph = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2.5" y="3" width="19" height="7" rx="2" />
+    <rect x="2.5" y="14" width="19" height="7" rx="2" />
+    <line x1="6.5" y1="6.5" x2="6.51" y2="6.5" />
+    <line x1="6.5" y1="17.5" x2="6.51" y2="17.5" />
+  </svg>
+);
+
+const Segment = ({ active, accent, onClick, icon, name, provider }) => (
   <button
     onClick={onClick}
-    style={{
-      flex: 1,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '8px',
-      padding: '8px 12px',
-      background: 'transparent',
-      border: 'none',
-      borderBottom: `2px solid ${active ? accent : 'transparent'}`,
-      cursor: 'pointer',
-      transition: 'all 0.2s ease',
-    }}
-    onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
-    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+    aria-pressed={active}
+    className={`dhub-seg${active ? ' is-active' : ''}`}
+    style={{ '--dhub-accent': accent }}
   >
-    <span style={{ display: 'flex', color: active ? accent : 'var(--t4)', transition: 'color 0.2s ease' }}>
-      {icon}
-    </span>
-    <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
-      <span style={{
-        fontFamily: "'Space Grotesk', sans-serif",
-        fontSize: '0.62rem', fontWeight: 700,
-        letterSpacing: '0.08em',
-        color: active ? 'var(--t1)' : 'var(--t3)',
-        transition: 'color 0.2s ease',
-      }}>
-        {title}
-      </span>
-      <span style={{
-        fontFamily: 'var(--font-number)',
-        fontSize: '0.48rem',
-        letterSpacing: '0.06em',
-        color: active ? accent : 'var(--t4)',
-        transition: 'color 0.2s ease',
-      }}>
-        {caption}
-      </span>
-    </span>
+    <span className="dhub-seg-glyph">{icon}</span>
+    <span className="dhub-seg-name">{name}</span>
+    <span className="dhub-seg-provider">{provider}</span>
   </button>
 );
 
@@ -75,48 +59,44 @@ const DeployHub = () => {
     }
   }, [pendingRedeploy, deployTarget, setDeployTarget]);
 
+  const isBackend = deployTarget === 'backend';
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--s0)' }}>
 
-      {/* Target switcher */}
-      <div style={{
-        display: 'flex',
-        flexShrink: 0,
-        borderBottom: '1px solid var(--line)',
-      }}>
-        <TargetButton
-          active={deployTarget === 'frontend'}
-          accent={VERCEL_BLUE}
-          onClick={() => setDeployTarget('frontend')}
-          title="FRONTEND"
-          caption="STATIC & WEB APPS · VERCEL"
-          icon={(
-            <svg width="12" height="12" viewBox="0 0 76 65" fill="currentColor">
-              <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" />
-            </svg>
-          )}
-        />
-        <div style={{ width: '1px', background: 'var(--line)' }} />
-        <TargetButton
-          active={deployTarget === 'backend'}
-          accent={RENDER_MINT}
-          onClick={() => setDeployTarget('backend')}
-          title="BACKEND"
-          caption="APIS & SERVERS · RENDER"
-          icon={(
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="2" width="20" height="8" rx="2" />
-              <rect x="2" y="14" width="20" height="8" rx="2" />
-              <line x1="6" y1="6" x2="6.01" y2="6" />
-              <line x1="6" y1="18" x2="6.01" y2="18" />
-            </svg>
-          )}
-        />
+      {/* Target switcher — segmented control with a sliding thumb */}
+      <div className="dhub-switcher">
+        <div className="dhub-track">
+          <div
+            className="dhub-thumb"
+            style={{
+              '--dhub-accent': isBackend ? RENDER_MINT : VERCEL_BLUE,
+              transform: isBackend ? 'translateX(100%)' : 'translateX(0)',
+            }}
+          />
+
+          <Segment
+            active={!isBackend}
+            accent={VERCEL_BLUE}
+            onClick={() => setDeployTarget('frontend')}
+            name="FRONTEND"
+            provider="VERCEL"
+            icon={VercelGlyph}
+          />
+          <Segment
+            active={isBackend}
+            accent={RENDER_MINT}
+            onClick={() => setDeployTarget('backend')}
+            name="BACKEND"
+            provider="RENDER"
+            icon={RenderGlyph}
+          />
+        </div>
       </div>
 
       {/* Active panel */}
       <div style={{ flex: 1, overflow: 'hidden' }}>
-        {deployTarget === 'backend' ? <RenderDeployPanel /> : <DeployPanel />}
+        {isBackend ? <RenderDeployPanel /> : <DeployPanel />}
       </div>
     </div>
   );

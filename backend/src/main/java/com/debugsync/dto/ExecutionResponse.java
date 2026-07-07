@@ -77,6 +77,7 @@ public class ExecutionResponse {
         private String howToFix;
         private String proTip;
         private String fullAiAnalysis;
+        private boolean aiGenerated;
         private java.util.Map<String, String> semanticContext;
 
         public RootCauseData() {}
@@ -108,6 +109,8 @@ public class ExecutionResponse {
         public void setProTip(String proTip) { this.proTip = proTip; }
         public String getFullAiAnalysis() { return fullAiAnalysis; }
         public void setFullAiAnalysis(String fullAiAnalysis) { this.fullAiAnalysis = fullAiAnalysis; }
+        public boolean isAiGenerated() { return aiGenerated; }
+        public void setAiGenerated(boolean aiGenerated) { this.aiGenerated = aiGenerated; }
         public java.util.Map<String, String> getSemanticContext() { return semanticContext; }
         public void setSemanticContext(java.util.Map<String, String> semanticContext) { this.semanticContext = semanticContext; }
     }

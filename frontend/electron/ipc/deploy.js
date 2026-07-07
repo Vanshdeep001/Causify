@@ -52,9 +52,11 @@ function resolveWorkspaceCwd(options) {
  * (HTML/CSS/JS) projects deployable — their files only live in the renderer
  * until written here.
  *
- * Returns { cwd, fileCount }.
+ * Returns { cwd, fileCount, webRoot } — or { needsChoice, candidates } when
+ * several distinct web apps are detected and no explicit `chosenWebRoot` was
+ * passed ('.' means the project root).
  */
-function prepareWorkspace(sessionId, files) {
+function prepareWorkspace(sessionId, files, chosenWebRoot = null) {
   if (!sessionId) throw new Error('sessionId is required to prepare a deploy workspace');
 
   const dir = path.join(os.tmpdir(), 'causify-deploy', sessionId);
@@ -83,10 +85,32 @@ function prepareWorkspace(sessionId, files) {
   // deploy ROOT, so the platform must figure out which directory is the
   // deployable web app — whether it's nested under a single project folder
   // (e.g. "Late night reminder/") or sitting beside a backend (e.g. "frontend/"
-  // next to "backend/"). detectWebRoot picks that directory; we then strip its
-  // prefix so it becomes the deploy root and drop everything outside it (the
-  // backend, infra, etc.).
-  const webRoot = detectWebRoot(items);
+  // next to "backend/"). listWebRootCandidates finds those directories; when
+  // exactly one exists we use it, and when several distinct web apps exist we
+  // stop and ask the user instead of guessing (the caller re-invokes with
+  // options.webRoot set to the chosen directory, '.' meaning the project root).
+  // The chosen prefix is then stripped so it becomes the deploy root, and
+  // everything outside it (the backend, infra, etc.) is dropped.
+  let webRoot;
+  if (chosenWebRoot != null) {
+    webRoot = chosenWebRoot === '.' ? '' : String(chosenWebRoot).replace(/\/+$/, '');
+  } else {
+    const candidates = listWebRootCandidates(items);
+    if (candidates.length > 1) {
+      return {
+        needsChoice: true,
+        candidates: candidates.map((c) => ({
+          dir: c.dir === '' ? '.' : c.dir,
+          framework: c.framework,
+          label: c.label,
+          fileCount: c.dir === ''
+            ? items.length
+            : items.filter((i) => i.rel.startsWith(c.dir + '/')).length,
+        })),
+      };
+    }
+    webRoot = candidates.length === 1 ? candidates[0].dir : null;
+  }
   let kept = items;
   if (webRoot != null) {
     const prefix = webRoot === '' ? '' : webRoot + '/';
@@ -128,16 +152,24 @@ const FRONTEND_DEPS = [
   '@angular/core', 'nuxt', 'gatsby', 'astro', 'react', 'preact', 'solid-js',
 ];
 
+/* Display names for the framework dep that qualified a candidate. */
+const FRAMEWORK_LABELS = {
+  next: 'Next.js', vite: 'Vite', 'react-scripts': 'Create React App',
+  vue: 'Vue', svelte: 'Svelte', '@sveltejs/kit': 'SvelteKit',
+  '@angular/core': 'Angular', nuxt: 'Nuxt', gatsby: 'Gatsby', astro: 'Astro',
+  react: 'React', preact: 'Preact', 'solid-js': 'Solid',
+};
+
 /**
- * Decide which directory in the project is the deployable web root.
- *
- * Returns the directory prefix to deploy ('' for the project root), or null when
- * no obvious web app is found (caller falls back to a generic strip). Candidates
- * are directories that either contain an index.html (static) or a package.json
- * with a frontend framework / build script. Backend-looking directories are
- * excluded, and the shallowest non-backend candidate wins.
+ * List every directory in the project that could be the deployable web root,
+ * best candidate first. Candidates are directories that either contain an
+ * index.html (static) or a package.json with a frontend framework / build
+ * script. Backend-looking directories are excluded, static candidates nested
+ * inside a framework app (its public/ or build output) are collapsed into it,
+ * and the remaining list is ranked: non-backend paths, then shallowest, then
+ * framework apps over static HTML.
  */
-function detectWebRoot(items) {
+function listWebRootCandidates(items) {
   // Map each directory to the set of files directly inside it.
   const dirFiles = new Map();
   for (const { rel } of items) {
@@ -160,7 +192,7 @@ function detectWebRoot(items) {
 
     // Static site: a directory with an index.html (and not a backend).
     if (names.has('index.html') && !isBackend) {
-      candidates.push({ dir, depth, framework: false });
+      candidates.push({ dir, depth, framework: false, label: 'Static HTML' });
     }
 
     // Framework app: a package.json with a frontend dep or a build script.
@@ -169,10 +201,13 @@ function detectWebRoot(items) {
         const pkgRel = dir === '' ? 'package.json' : `${dir}/package.json`;
         const pkg = JSON.parse(contentOf(pkgRel) || '{}');
         const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-        const hasFramework = FRONTEND_DEPS.some((d) => deps[d]);
+        const frameworkDep = FRONTEND_DEPS.find((d) => deps[d]);
         const hasBuild = pkg.scripts && (pkg.scripts.build || pkg.scripts['vercel-build']);
-        if (hasFramework || (hasBuild && !isBackend)) {
-          candidates.push({ dir, depth, framework: true });
+        if (frameworkDep || (hasBuild && !isBackend)) {
+          candidates.push({
+            dir, depth, framework: true,
+            label: frameworkDep ? FRAMEWORK_LABELS[frameworkDep] : 'Node build',
+          });
         }
       } catch {
         // Unparseable package.json — ignore as a framework candidate.
@@ -180,12 +215,29 @@ function detectWebRoot(items) {
     }
   }
 
-  if (candidates.length === 0) return null;
+  // Dedup by directory — a dir can qualify as both static and framework
+  // (e.g. a Vite app with index.html beside package.json). Framework wins.
+  const byDir = new Map();
+  for (const c of candidates) {
+    const prev = byDir.get(c.dir);
+    if (!prev || (c.framework && !prev.framework)) byDir.set(c.dir, c);
+  }
+
+  // A static candidate nested inside a framework app is that app's public/
+  // or build output, not a separate site — collapse it into the app.
+  let unique = [...byDir.values()];
+  unique = unique.filter((c) =>
+    c.framework ||
+    !unique.some(
+      (o) => o.framework && o.dir !== c.dir &&
+        (o.dir === '' || c.dir.startsWith(o.dir + '/'))
+    )
+  );
 
   const looksLikeBackendPath = (d) =>
     /(^|\/)(backend|server|api|services?|src\/main)($|\/)/i.test(d);
 
-  candidates.sort((a, b) => {
+  unique.sort((a, b) => {
     const ab = looksLikeBackendPath(a.dir) ? 1 : 0;
     const bb = looksLikeBackendPath(b.dir) ? 1 : 0;
     if (ab !== bb) return ab - bb;                 // non-backend paths first
@@ -193,7 +245,18 @@ function detectWebRoot(items) {
     return (a.framework ? 0 : 1) - (b.framework ? 0 : 1); // framework over static
   });
 
-  return candidates[0].dir;
+  return unique;
+}
+
+/**
+ * Decide which directory in the project is the deployable web root.
+ *
+ * Returns the directory prefix to deploy ('' for the project root), or null when
+ * no obvious web app is found (caller falls back to a generic strip).
+ */
+function detectWebRoot(items) {
+  const candidates = listWebRootCandidates(items);
+  return candidates.length > 0 ? candidates[0].dir : null;
 }
 
 /**
@@ -831,8 +894,15 @@ function registerDeployHandlers() {
 
   ipcMain.handle('deploy:prepare', async (_event, options = {}) => {
     try {
-      const { sessionId, files } = options;
-      const result = prepareWorkspace(sessionId, files);
+      const { sessionId, files, webRoot } = options;
+      const result = prepareWorkspace(sessionId, files, webRoot ?? null);
+      if (result.needsChoice) {
+        console.log(
+          `[Causify Deploy] Multiple web roots detected for ${String(sessionId).substring(0, 8)}: ` +
+          result.candidates.map((c) => c.dir).join(', ') + ' — asking user'
+        );
+        return { success: true, ...result };
+      }
       console.log(
         `[Causify Deploy] Prepared workspace for ${String(sessionId).substring(0, 8)} ` +
         `(${result.fileCount} files, web root: ${result.webRoot ?? 'auto'}) → ${result.cwd}`

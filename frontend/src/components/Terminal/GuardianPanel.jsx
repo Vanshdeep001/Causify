@@ -747,49 +747,67 @@ export const GuardianPrZone = () => {
 
   const check = useCallback(async () => {
     setState('checking');
-    if (await guardianHealth()) {
-      setState('ready');
-      return;
-    }
-    // Desktop app: auto-start the daemon for this repo (best-effort).
-    // Needs the repo's workspace config from a previous Guardian setup.
-    if (isElectron() && repoUrl && !autoStartInFlight) {
+    setPrs(null); // clear any previous repo's results while we (re)verify
+    // In the desktop app, route through start so the daemon is guaranteed to be
+    // running for THIS repo — it restarts itself if a daemon for a different
+    // repo is currently up (the daemon serves one repo at a time).
+    if (isElectron() && repoUrl) {
+      if (autoStartInFlight) return;
       autoStartInFlight = true;
       setState('starting');
       try {
         const res = await guardianStart(repoUrl);
-        if (res?.running) {
-          setState('ready');
-          return;
-        }
+        if (res?.running) { setState('ready'); return; }
       } catch { /* fall through to offline */ } finally {
         autoStartInFlight = false;
       }
+      setState('offline');
+      return;
     }
+    // Browser/dev fallback: can't manage the daemon, just report liveness.
+    if (await guardianHealth()) { setState('ready'); return; }
     setState('offline');
   }, [repoUrl]);
 
   useEffect(() => { check(); }, [check]);
 
-  const scan = async () => {
+  const scan = useCallback(async () => {
     setScanning(true);
     setError(null);
     try {
       const res = await guardianPrs();
       setPrs(res.prs || []);
     } catch (err) {
-      setError(err.message);
+      // A failed request means the daemon went away (stopped or restarting) —
+      // drop any stale results so we never show a previous repo's PRs behind
+      // an error, and give a human message instead of raw "Failed to fetch".
+      setPrs(null);
+      const raw = err?.message || '';
+      setError(/fetch|network|load failed/i.test(raw)
+        ? 'Guardian is not reachable right now — it may be starting up or was stopped. It will retry automatically.'
+        : raw);
     } finally {
       setScanning(false);
     }
-  };
+  }, []);
+
+  // Agent behavior: the moment Guardian is online it scans on its own and then
+  // keeps results fresh on an interval — the user never has to click Scan.
+  // Each scan is a live GitHub + LLM pass, so the cadence is deliberately
+  // relaxed (every 5 min) to respect API and token budgets.
+  useEffect(() => {
+    if (state !== 'ready') return;
+    scan();
+    const id = setInterval(scan, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [state, scan]);
 
   return (
     <>
       <ZoneLabel index="02" right={
         state === 'ready' ? (
           <TextButton onClick={scan} disabled={scanning}>
-            {scanning ? '⠿ SCANNING…' : 'SCAN PRS'}
+            {scanning ? '⠿ SCANNING…' : '⟳ RESCAN'}
           </TextButton>
         ) : state === 'offline' ? (
           <TextButton onClick={check}>⟳ RETRY</TextButton>
@@ -808,10 +826,21 @@ export const GuardianPrZone = () => {
       )}
 
       {state === 'offline' && (
-        <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)', lineHeight: 1.6 }}>
-          Repository Guardian is offline — start the daemon
-          (<span style={{ fontFamily: MONO, color: 'var(--t3)' }}>gitpilot start</span>)
-          to scan pull requests.
+        <div style={{
+          display: 'flex', gap: '12px', padding: '13px 14px',
+          borderRadius: '2px', border: '1px solid var(--line)',
+          background: 'rgba(255,255,255,0.012)',
+        }}>
+          <span style={{ color: 'var(--t4)', flexShrink: 0, marginTop: '1px' }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="9" /><path d="M12 8v4.5" /><path d="M12 16h.01" />
+            </svg>
+          </span>
+          <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)', lineHeight: 1.6 }}>
+            Repository Guardian is offline — start the daemon
+            (<span style={{ fontFamily: MONO, color: 'var(--t3)' }}>gitpilot start</span>)
+            to scan pull requests.
+          </div>
         </div>
       )}
 
@@ -819,12 +848,34 @@ export const GuardianPrZone = () => {
         <>
           {error && <ErrorLine style={{ marginBottom: '12px' }}>{error}</ErrorLine>}
           {prs === null ? (
-            <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)', lineHeight: 1.6 }}>
-              Not scanned yet — scanning asks GitHub and (when AI is on) the LLM.
+            <div style={{
+              display: 'flex', gap: '12px', padding: '13px 14px',
+              borderRadius: '2px', border: '1px solid var(--line)',
+              background: 'rgba(255,255,255,0.012)',
+            }}>
+              <span style={{
+                color: 'var(--t4)', flexShrink: 0, marginTop: '1px',
+                animation: scanning ? 'pulse-live 1.2s ease infinite' : 'none',
+              }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+                </svg>
+              </span>
+              <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)', lineHeight: 1.6 }}>
+                {scanning
+                  ? 'Guardian is scanning your open pull requests…'
+                  : 'Preparing to scan pull requests…'}
+              </div>
             </div>
           ) : prs.length === 0 ? (
-            <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)' }}>
-              No open pull requests.
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '10px', padding: '13px 14px',
+              borderRadius: '2px', border: '1px solid var(--line)',
+              background: 'rgba(255,255,255,0.012)',
+              fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)',
+            }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--emerald)', flexShrink: 0 }} />
+              No open pull requests — you're all clear.
             </div>
           ) : prs.map((pr) => (
             <div key={pr.pr_number} style={{ borderBottom: '1px solid var(--line-faint)', padding: '11px 0' }}>

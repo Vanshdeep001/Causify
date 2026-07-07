@@ -72,6 +72,20 @@ export const executeCode = async (sessionId, code, language = 'javascript') => {
   return response.data;
 };
 
+/* ---- AI Diagnosis Configuration APIs ---- */
+
+// Whether the backend has an OpenRouter key (env var, yml, or set at runtime)
+export const getAiStatus = async () => {
+  const response = await api.get('/ai/status');
+  return response.data;
+};
+
+// Verify a key with OpenRouter and activate it on the backend (no restart needed)
+export const saveAiKey = async (key) => {
+  const response = await api.post('/ai/key', { key });
+  return response.data;
+};
+
 /* ---- Timeline APIs ---- */
 
 export const getTimeline = async (sessionId) => {

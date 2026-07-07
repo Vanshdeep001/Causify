@@ -14,6 +14,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const net = require('net');
 const fs = require('fs');
+const { retrieveApiKey } = require('./security');
 
 /* ── State ── */
 let backendProcess = null;
@@ -165,6 +166,10 @@ async function spawnBackend(isDev = false) {
   pushLog(`[SYSTEM] Starting backend: java -jar ${path.basename(jarPath)}`);
   backendStatus = 'starting';
 
+  // Hand the stored OpenRouter key (safeStorage-encrypted) to the backend —
+  // AiAnalysisService reads it from the OPENROUTER_API_KEY env var.
+  const storedApiKey = retrieveApiKey();
+
   return new Promise((resolve, reject) => {
     try {
       backendProcess = spawn(javaExe, [
@@ -174,7 +179,10 @@ async function spawnBackend(isDev = false) {
         jarPath,
       ], {
         cwd: backendCwd,
-        env: { ...process.env },
+        env: {
+          ...process.env,
+          ...(storedApiKey ? { OPENROUTER_API_KEY: storedApiKey } : {}),
+        },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 

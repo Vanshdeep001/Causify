@@ -30,13 +30,47 @@ public class AiAnalysisService {
     private static final String OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
     // Primary: OPENROUTER_API_KEY env var. Fallback: debugsync.ai.openrouter-api-key in application.yml.
+    // Can also be set at runtime via POST /api/ai/key (see AiConfigController).
     @Value("${OPENROUTER_API_KEY:${debugsync.ai.openrouter-api-key:}}")
-    private String apiKey;
+    private volatile String apiKey;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(15))
             .build();
+
+    /** Whether an OpenRouter key is currently available (env, yml, or set at runtime). */
+    public boolean isConfigured() {
+        return apiKey != null && !apiKey.isBlank();
+    }
+
+    /** Replaces the active OpenRouter key at runtime (no restart needed). */
+    public void updateApiKey(String key) {
+        this.apiKey = key;
+        log.info("OpenRouter API key updated at runtime");
+    }
+
+    /**
+     * Verifies a key against OpenRouter's key-info endpoint without storing it.
+     * Returns null when the key is valid, otherwise a short error description.
+     */
+    public String testApiKey(String key) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://openrouter.ai/api/v1/auth/key"))
+                    .header("Authorization", "Bearer " + key)
+                    .GET()
+                    .timeout(Duration.ofSeconds(15))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            int status = response.statusCode();
+            if (status == 200) return null;
+            if (status == 401 || status == 403) return "OpenRouter rejected this key. Double-check it and try again.";
+            return "OpenRouter returned an unexpected status (" + status + "). Try again in a moment.";
+        } catch (Exception e) {
+            return "Could not reach OpenRouter: " + e.getMessage();
+        }
+    }
 
     /**
      * Generates an AI-powered root cause analysis for a given error.

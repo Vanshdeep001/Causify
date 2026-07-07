@@ -149,4 +149,4 @@ function registerSecurityHandlers() {
   });
 }
 
-module.exports = { registerSecurityHandlers };
+module.exports = { registerSecurityHandlers, retrieveApiKey };

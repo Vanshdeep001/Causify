@@ -34,11 +34,12 @@ const MONO = 'var(--font-number)';
 const HEADER = 'var(--font-header)';
 const BODY = 'var(--font-body)';
 
-/* Numbered editorial section label with trailing hairline */
+/* Numbered editorial section label — accent tick, index, fading hairline */
 const ZoneLabel = ({ index, children, right }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexShrink: 0 }}>
+  <div style={{ display: 'flex', alignItems: 'center', gap: '11px', marginBottom: '16px', flexShrink: 0 }}>
+    <span style={{ width: '3px', height: '12px', borderRadius: '2px', background: 'var(--line-strong)', flexShrink: 0 }} />
     {index && (
-      <span style={{ fontFamily: MONO, fontSize: '0.54rem', color: 'var(--t4)', fontWeight: 500 }}>
+      <span style={{ fontFamily: MONO, fontSize: '0.5rem', color: 'var(--t4)', fontWeight: 700, letterSpacing: '0.1em' }}>
         {index}
       </span>
     )}
@@ -49,7 +50,7 @@ const ZoneLabel = ({ index, children, right }) => (
     }}>
       {children}
     </span>
-    <span style={{ flex: 1, height: '1px', background: 'var(--line-faint)' }} />
+    <span style={{ flex: 1, height: '1px', background: 'linear-gradient(90deg, var(--line), transparent)' }} />
     {right}
   </div>
 );
@@ -129,52 +130,127 @@ const ErrorLine = ({ children, style }) => (
 const focusLine = e => { e.currentTarget.parentElement.style.borderBottomColor = 'rgba(255,255,255,0.45)'; };
 const blurLine = e => { e.currentTarget.parentElement.style.borderBottomColor = 'var(--line-strong)'; };
 
-const TYPE_META = {
-  fix:      { fg: '#E5484D', label: 'BUG FIX' },
-  feat:     { fg: '#FFFFFF', label: 'FEATURE' },
-  style:    { fg: '#818cf8', label: 'UI STYLE' },
-  refactor: { fg: '#FFB224', label: 'REFACTOR' },
-  default:  { fg: '#FFFFFF', label: 'CHANGE' },
+/* Git porcelain status code → classy badge descriptor.
+ * XY columns: '??' untracked, 'A' added, 'M' modified, 'D' deleted,
+ * 'R' renamed. Untracked/added read as NEW, the rest map to intent. */
+const fileStatusMeta = (code) => {
+  const c = (code || '').trim();
+  if (c === '??' || c.includes('A')) return { label: 'NEW', color: 'var(--emerald)' };
+  if (c.includes('D')) return { label: 'DEL', color: 'var(--crimson)' };
+  if (c.includes('R')) return { label: 'MOVED', color: '#818cf8' };
+  if (c.includes('M')) return { label: 'EDIT', color: 'var(--amber)' };
+  return { label: c || '•', color: '#818cf8' };
 };
+
+/* Small pill: status dot + micro-caps label, thin-bordered. */
+const FileBadge = ({ code }) => {
+  const m = fileStatusMeta(code);
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '6px',
+      padding: '2px 8px', borderRadius: '2px', flexShrink: 0,
+      border: '1px solid var(--line)', background: 'rgba(255,255,255,0.02)',
+    }}>
+      <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: m.color, flexShrink: 0 }} />
+      <span style={{ fontFamily: MONO, fontSize: '0.5rem', fontWeight: 700, letterSpacing: '0.12em', color: m.color }}>
+        {m.label}
+      </span>
+    </span>
+  );
+};
+
+/* Ghost action button — used in the segmented push/pull/sync group */
+const GhostAction = ({ icon, label, onClick, disabled }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    style={{
+      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+      padding: '9px 8px', background: 'transparent', border: 'none',
+      color: 'var(--t3)', cursor: disabled ? 'default' : 'pointer',
+      fontFamily: MONO, fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.1em',
+      opacity: disabled ? 0.4 : 1, transition: 'color 0.15s ease, background 0.15s ease',
+    }}
+    onMouseEnter={e => { if (!disabled) { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; } }}
+    onMouseLeave={e => { e.currentTarget.style.color = 'var(--t3)'; e.currentTarget.style.background = 'transparent'; }}
+  >
+    <span style={{ fontSize: '0.74rem' }}>{icon}</span>{label}
+  </button>
+);
+
+/* ═══════════════════════════════════════════════════════
+ * Super Mario commit-history graph pieces
+ * Mario marks HEAD; older commits are checkpoint flags on a
+ * flagpole; the first commit plants into a brick ground block.
+ * ═══════════════════════════════════════════════════════ */
+
+const MARIO_PAL = { R: '#E52521', S: '#FCB985', N: '#5C2E00', B: '#2A6DE0', Y: '#FBD000' };
+const MARIO_ROWS = [
+  '....RRRRRRR.....',
+  '...RRRRRRRRR....',
+  '..RRRRRRRRRRR...',
+  '..NNNSSSSNSS....',
+  '.NSNSSSSSNSSS...',
+  '.NSNNSSSSNNNN...',
+  '.NNSSSSSSNNN....',
+  '...SSSSSSSS.....',
+  '..RRRBBBBRRR....',
+  '.RRRRBYBBYBRRRR.',
+  '.SSRBBBBBBBBSS..',
+  '.SSBBBBBBBBBBSS.',
+  '..BBBBB..BBBBB..',
+  '..BBB......BBB..',
+  '.NNNN......NNNN.',
+  '.NNNN......NNNN.',
+];
+
+/* Render a character-grid sprite as crisp 1×1 pixel rects. */
+const PixelSprite = ({ rows, palette, px = 1.5, style }) => {
+  const w = rows[0].length, h = rows.length;
+  const cells = [];
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const fill = palette[row[x]];
+      if (fill) cells.push(<rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill={fill} />);
+    }
+  });
+  return (
+    <svg width={w * px} height={h * px} viewBox={`0 0 ${w} ${h}`} shapeRendering="crispEdges" style={{ display: 'block', ...style }}>
+      {cells}
+    </svg>
+  );
+};
+
+/* Checkpoint flag on a silver pole — marks each past commit. */
+const CheckpointFlag = ({ active }) => (
+  <svg width="22" height="22" viewBox="0 0 22 22" shapeRendering="crispEdges" style={{ display: 'block' }}>
+    <rect x="10" y="1" width="2" height="20" fill="#9aa0a6" />
+    <rect x="10" y="1" width="1" height="20" fill="#cdd2d7" />
+    <rect x="9" y="0" width="4" height="2" fill="#FBD000" />
+    <path d="M12 3 L20 5.5 L12 8 Z" fill={active ? '#E52521' : '#43B047'} />
+    <rect x="14" y="5" width="2" height="1" fill="#ffffff" />
+  </svg>
+);
+
+/* Brick ground block — where the flagpole plants at the first commit. */
+const GroundBase = () => (
+  <svg width="26" height="12" viewBox="0 0 26 12" shapeRendering="crispEdges" style={{ display: 'block', marginTop: '3px' }}>
+    <rect x="0" y="0" width="26" height="12" fill="#8B3A0E" />
+    <rect x="0" y="0" width="26" height="1" fill="#C05A1E" />
+    <rect x="0" y="5" width="26" height="1" fill="#4A1E06" />
+    <rect x="6" y="1" width="1" height="4" fill="#4A1E06" />
+    <rect x="13" y="1" width="1" height="4" fill="#4A1E06" />
+    <rect x="20" y="1" width="1" height="4" fill="#4A1E06" />
+    <rect x="3" y="6" width="1" height="6" fill="#4A1E06" />
+    <rect x="10" y="6" width="1" height="6" fill="#4A1E06" />
+    <rect x="17" y="6" width="1" height="6" fill="#4A1E06" />
+    <rect x="23" y="6" width="1" height="6" fill="#4A1E06" />
+  </svg>
+);
 
 /* ═══════════════════════════════════════════════════════
  * GIT module
  * ═══════════════════════════════════════════════════════ */
-
-const parseCommitText = (text) => {
-  const result = {
-    branch: '',
-    hash: '',
-    message: '',
-    filesChanged: 0,
-    insertions: 0,
-    deletions: 0
-  };
-  
-  if (!text) return result;
-  
-  // Try to parse first line: [branch hash] message
-  const firstLineMatch = text.match(/^\[(.*?)\s+([a-f0-9]{7,40})\]\s+(.*)/);
-  if (firstLineMatch) {
-    result.branch = firstLineMatch[1].trim();
-    result.hash = firstLineMatch[2].trim();
-    result.message = firstLineMatch[3].trim();
-  } else {
-    // Fallback: search for hash
-    const hashMatch = text.match(/\[(?:.*\s+)?([a-f0-9]{7,40})\]/);
-    if (hashMatch) result.hash = hashMatch[1];
-  }
-
-  // Parse stats: X files changed, Y insertions(+), Z deletions(-)
-  const statsMatch = text.match(/(\d+)\s+file[s]?\s+changed(?:,\s+(\d+)\s+insertion[s]?\(\+\))?(?:,\s+(\d+)\s+deletion[s]?\(-\))?/);
-  if (statsMatch) {
-    result.filesChanged = parseInt(statsMatch[1], 10) || 0;
-    result.insertions = parseInt(statsMatch[2], 10) || 0;
-    result.deletions = parseInt(statsMatch[3], 10) || 0;
-  }
-
-  return result;
-};
 
 const GitAssistantCore = () => {
   const sessionId = useEditorStore(s => s.sessionId);
@@ -198,9 +274,6 @@ const GitAssistantCore = () => {
   const resetGit = useEditorStore(s => s.resetGit);
 
   const [repoUrlInput, setRepoUrlInput] = useState('');
-  const [commitMessage, setCommitMessage] = useState('');
-  const [isCommitting, setIsCommitting] = useState(false);
-  const [commitResult, setCommitResult] = useState(null);
   const [commandOutput, setCommandOutput] = useState(null);
   const [pullConflict, setPullConflict] = useState(null); // { files: [...] }
   const [showCommitInput, setShowCommitInput] = useState(false);
@@ -209,11 +282,12 @@ const GitAssistantCore = () => {
   const [branchInput, setBranchInput] = useState('');
   const [branches, setBranches] = useState([]);
 
-  // Sync commit message from suggestion
+  // When an AI commit suggestion arrives, pre-fill the main panel's commit
+  // composer instead of taking over the view — the git tab always lands on
+  // the main panel (git actions + Repository Guardian).
   useEffect(() => {
     if (suggestion && suggestion.message) {
-      setCommitMessage(suggestion.message);
-      setCommitResult(null);
+      setInlineCommitMsg(suggestion.message);
     }
   }, [suggestion]);
 
@@ -394,498 +468,6 @@ const GitAssistantCore = () => {
   // STATE 3: CONNECTED + COMMIT SUGGESTION ACTIVE
   // ═══════════════════════════════════════════════════════
 
-  if (suggestion) {
-    const meta = TYPE_META[suggestion.type] || TYPE_META.default;
-
-    const handleCommit = async () => {
-      if (!commitMessage.trim()) return;
-      setIsCommitting(true);
-      try {
-        const res = await executeGitCommit({
-          sessionId,
-          message: commitMessage,
-          files: Object.entries(files).map(([path, content]) => ({ path, content }))
-        });
-        if (res.success !== false) {
-          setCommitResult({ success: true, text: res.output || res.message || 'Committed' });
-          refreshStatus();
-          refreshLog();
-        } else {
-          // If git says nothing to commit, treat as success so user can proceed to push or dismiss
-          if (res.error && res.error.toLowerCase().includes("nothing to commit")) {
-            setCommitResult({ success: true, text: 'Clean tree: nothing to commit.' });
-            refreshStatus();
-            refreshLog();
-          } else {
-            setCommitResult({ success: false, text: res.error || 'Commit failed' });
-          }
-        }
-      } catch (err) {
-        setCommitResult({ success: false, text: err.response?.data?.error || err.message });
-      } finally {
-        setIsCommitting(false);
-      }
-    };
-
-    const handlePushAfterCommit = async () => {
-      setGitLoading(true);
-      try {
-        const res = await gitPush(sessionId);
-        if (res.success) {
-          setCommitResult({ success: true, text: '✓ Pushed to remote' });
-          setTimeout(() => setCommitSuggestion(null), 2500);
-        } else {
-          setCommitResult({ success: false, text: res.error || 'Push failed' });
-        }
-      } catch (err) {
-        setCommitResult({ success: false, text: err.response?.data?.error || err.message });
-      } finally {
-        setGitLoading(false);
-      }
-    };
-
-    // Post-commit success state
-    if (commitResult && commitResult.success) {
-      const parsed = parseCommitText(commitResult.text);
-      const isSplit = terminalLayoutMode === 'split';
-
-      const displayMessage = parsed.message || commitResult.text || 'Changes committed successfully';
-      const displayHash = parsed.hash || '';
-      const displayBranch = parsed.branch || '';
-
-      return (
-        <div className="no-scrollbar" style={{
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          background: 'var(--s0)',
-          overflowY: 'auto',
-          boxSizing: 'border-box',
-          position: 'relative'
-        }}>
-          {/* Ambient background glow */}
-          <div style={{
-            position: 'absolute',
-            top: 0,
-            left: '10%',
-            width: '80%',
-            height: '140px',
-            background: 'radial-gradient(120px circle at 50% 0px, rgba(61,214,140,0.06), transparent 80%)',
-            pointerEvents: 'none',
-            zIndex: 0
-          }} />
-
-          {/* Main Content Area */}
-          <div style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: isSplit ? 'column' : 'row',
-            padding: '24px 28px',
-            gap: isSplit ? '16px' : '32px',
-            zIndex: 1,
-            minHeight: 0
-          }}>
-            {/* Left Column: Summary & Stats */}
-            <div style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              minWidth: 0
-            }}>
-              {/* Branch & Hash Badges */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
-                <span style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '3px 10px',
-                  borderRadius: '999px',
-                  background: 'rgba(61,214,140,0.08)',
-                  border: '1px solid rgba(61,214,140,0.15)',
-                  color: 'var(--emerald)',
-                  fontFamily: MONO,
-                  fontSize: '0.62rem',
-                  fontWeight: 700,
-                  letterSpacing: '0.04em'
-                }}>
-                  <span style={{ display: 'inline-block', width: '5px', height: '5px', borderRadius: '50%', background: 'var(--emerald)' }} />
-                  COMMIT SECURED
-                </span>
-                {displayBranch && (
-                  <span style={{
-                    fontFamily: MONO,
-                    fontSize: '0.62rem',
-                    color: 'var(--t2)',
-                    background: 'var(--s2)',
-                    padding: '3px 10px',
-                    borderRadius: '6px',
-                    border: '1px solid var(--line)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}>
-                    ⎇ {displayBranch}
-                  </span>
-                )}
-                {displayHash && (
-                  <span style={{
-                    fontFamily: MONO,
-                    fontSize: '0.62rem',
-                    color: 'var(--t3)',
-                    letterSpacing: '0.05em'
-                  }}>
-                    #{displayHash}
-                  </span>
-                )}
-              </div>
-
-              {/* Commit Message Heading */}
-              <h2 style={{
-                fontFamily: HEADER,
-                color: 'var(--t1)',
-                fontSize: '1.15rem',
-                fontWeight: 800,
-                lineHeight: 1.35,
-                letterSpacing: '-0.01em',
-                margin: '0 0 24px 0',
-                wordBreak: 'break-word',
-                display: '-webkit-box',
-                WebkitLineClamp: 3,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden'
-              }}>
-                {displayMessage}
-              </h2>
-
-              {/* Statistics Grid */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: '12px',
-                marginBottom: '16px'
-              }}>
-                {/* Stat Item 1 */}
-                <div style={{
-                  background: 'rgba(255, 255, 255, 0.01)',
-                  border: '1px solid var(--line-faint)',
-                  borderRadius: '8px',
-                  padding: '12px 16px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px'
-                }}>
-                  <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: 'var(--t4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                    Files Changed
-                  </span>
-                  <span style={{ fontFamily: HEADER, fontSize: '1.2rem', fontWeight: 700, color: 'var(--t1)' }}>
-                    {parsed.filesChanged || '0'}
-                  </span>
-                </div>
-
-                {/* Stat Item 2 */}
-                <div style={{
-                  background: 'rgba(255, 255, 255, 0.01)',
-                  border: '1px solid var(--line-faint)',
-                  borderRadius: '8px',
-                  padding: '12px 16px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px'
-                }}>
-                  <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: 'var(--t4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                    Insertions
-                  </span>
-                  <span style={{ fontFamily: HEADER, fontSize: '1.2rem', fontWeight: 700, color: 'var(--emerald)' }}>
-                    +{parsed.insertions ? parsed.insertions.toLocaleString() : '0'}
-                  </span>
-                </div>
-
-                {/* Stat Item 3 */}
-                <div style={{
-                  background: 'rgba(255, 255, 255, 0.01)',
-                  border: '1px solid var(--line-faint)',
-                  borderRadius: '8px',
-                  padding: '12px 16px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px'
-                }}>
-                  <span style={{ fontFamily: MONO, fontSize: '0.52rem', color: 'var(--t4)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                    Deletions
-                  </span>
-                  <span style={{ fontFamily: HEADER, fontSize: '1.2rem', fontWeight: 700, color: 'var(--crimson)' }}>
-                    -{parsed.deletions ? parsed.deletions.toLocaleString() : '0'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Action buttons embedded here in split mode */}
-              {isSplit && (
-                <div style={{ display: 'flex', gap: '14px', alignItems: 'center', marginTop: '16px' }}>
-                  <PrimaryButton onClick={handlePushAfterCommit} disabled={gitLoading} style={{ flex: 1, padding: '12px 20px' }}>
-                    {gitLoading ? 'PUSHING…' : '↑ PUSH TO REMOTE'}
-                  </PrimaryButton>
-                  <TextButton onClick={() => setCommitSuggestion(null)} style={{ padding: '12px' }}>
-                    DISMISS
-                  </TextButton>
-                </div>
-              )}
-            </div>
-
-            {/* Right Column: Files & Raw Terminal Outputs (Only in non-split layout) */}
-            {!isSplit && (
-              <div style={{
-                flex: '0 0 380px',
-                display: 'flex',
-                flexDirection: 'column',
-                borderLeft: '1px solid var(--line-faint)',
-                paddingLeft: '32px',
-                minHeight: 0
-              }}>
-                <div style={{
-                  fontFamily: MONO,
-                  fontSize: '0.58rem',
-                  fontWeight: 700,
-                  letterSpacing: '0.24em',
-                  textTransform: 'uppercase',
-                  color: 'var(--t3)',
-                  marginBottom: '14px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center'
-                }}>
-                  <span>COMMIT READOUT</span>
-                  <span style={{ fontSize: '0.52rem', color: 'var(--t4)' }}>
-                    RAW OUTPUT
-                  </span>
-                </div>
-
-                {/* Scrollable console block for git output */}
-                <div className="no-scrollbar" style={{
-                  flex: 1,
-                  overflowY: 'auto',
-                  background: 'rgba(255, 255, 255, 0.01)',
-                  border: '1px solid var(--line-faint)',
-                  borderRadius: '8px',
-                  padding: '14px 18px',
-                  minHeight: '120px'
-                }}>
-                  <pre style={{
-                    margin: 0,
-                    fontFamily: MONO,
-                    color: 'var(--t2)',
-                    fontSize: '0.64rem',
-                    lineHeight: 1.65,
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-all'
-                  }}>
-                    {commitResult.text}
-                  </pre>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Bottom Action Dock (Only in non-split layout) */}
-          {!isSplit && (
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '16px 28px',
-              borderTop: '1px solid var(--line-faint)',
-              background: 'rgba(17, 17, 17, 0.3)',
-              zIndex: 1,
-              flexShrink: 0
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--emerald)' }} />
-                <span style={{ fontFamily: BODY, fontSize: '0.68rem', color: 'var(--t3)' }}>
-                  Working tree clean. Ready to sync with remote server.
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-                <TextButton onClick={() => setCommitSuggestion(null)}>
-                  DISMISS
-                </TextButton>
-                <PrimaryButton onClick={handlePushAfterCommit} disabled={gitLoading} style={{ padding: '11px 32px' }}>
-                  {gitLoading ? 'PUSHING…' : '↑ PUSH TO REMOTE'}
-                </PrimaryButton>
-              </div>
-            </div>
-          )}
-          <style>{`
-            @keyframes scale-in { 0% { transform: scale(0.95); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-          `}</style>
-        </div>
-      );
-    }
-
-    const isSplit = terminalLayoutMode === 'split';
-    const confidencePct = suggestion.confidence === 'HIGH' ? '90%' : suggestion.confidence === 'MEDIUM' ? '60%' : '30%';
-    const stagedCount = suggestion.modifiedFiles?.length || 0;
-
-    return (
-      <div style={{
-        height: '100%', display: 'flex', flexDirection: 'column',
-        padding: '16px 22px', gap: '16px', overflow: 'hidden',
-      }}>
-
-        {/* ── Analysis strip: classification · confidence · link ── */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '22px',
-          paddingBottom: '14px', borderBottom: '1px solid var(--line-faint)',
-          flexShrink: 0, flexWrap: 'wrap',
-        }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
-            <StatusDot color={meta.fg} pulse />
-            <span style={{
-              fontFamily: HEADER, fontSize: '0.78rem', fontWeight: 800,
-              letterSpacing: '0.08em', color: meta.fg,
-            }}>
-              {meta.label}
-            </span>
-          </span>
-
-          <span style={{ width: '1px', height: '16px', background: 'var(--line-faint)' }} />
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontFamily: MONO, fontSize: '0.54rem', fontWeight: 700, letterSpacing: '0.2em', color: 'var(--t4)' }}>
-              CONFIDENCE
-            </span>
-            <div style={{ width: '70px', height: '3px', background: 'var(--s3)', borderRadius: '2px', overflow: 'hidden' }}>
-              <div style={{ width: confidencePct, height: '100%', background: meta.fg, borderRadius: '2px' }} />
-            </div>
-            <span style={{ fontFamily: MONO, fontSize: '0.58rem', color: meta.fg, fontWeight: 800, letterSpacing: '0.1em' }}>
-              {suggestion.confidence}
-            </span>
-          </div>
-
-          <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-            <StatusDot color="var(--emerald)" />
-            <span style={{ fontFamily: MONO, fontSize: '0.54rem', color: 'var(--t3)', letterSpacing: '0.16em', fontWeight: 700 }}>
-              REPO LINKED
-            </span>
-          </span>
-        </div>
-
-        {/* ── Body: composer + staged files ── */}
-        <div style={{
-          flex: 1, minHeight: 0, display: 'flex',
-          flexDirection: isSplit ? 'column' : 'row',
-          gap: isSplit ? '18px' : 0,
-        }}>
-
-          {/* Commit composer */}
-          <div style={{
-            flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column',
-            paddingRight: isSplit ? 0 : '26px',
-          }}>
-            <ZoneLabel index="01">Commit Message</ZoneLabel>
-            <div style={{ fontFamily: MONO, fontSize: '0.64rem', color: 'var(--t4)', marginBottom: '12px', userSelect: 'none' }}>
-              $ git commit -m "
-            </div>
-            <textarea
-              value={commitMessage}
-              onChange={(e) => setCommitMessage(e.target.value)}
-              spellCheck={false}
-              onFocus={e => { e.currentTarget.style.borderLeftColor = 'rgba(255,255,255,0.45)'; }}
-              onBlur={e => { e.currentTarget.style.borderLeftColor = 'var(--line-strong)'; }}
-              style={{
-                flex: 1, minHeight: '64px', background: 'transparent',
-                border: 'none', outline: 'none', resize: 'none',
-                color: 'var(--t1)', fontSize: '0.94rem', fontFamily: MONO,
-                fontWeight: 500, lineHeight: 1.65,
-                paddingLeft: '16px', borderLeft: '2px solid var(--line-strong)',
-                transition: 'border-color 0.2s ease',
-              }}
-            />
-            <div style={{ fontFamily: MONO, fontSize: '0.64rem', color: 'var(--t4)', marginTop: '12px', userSelect: 'none' }}>
-              "
-            </div>
-
-            {commitResult && !commitResult.success && (
-              <ErrorLine style={{ marginTop: '14px' }}>
-                {commitResult.text}
-              </ErrorLine>
-            )}
-          </div>
-
-          {/* Staged files */}
-          <div className="no-scrollbar" style={{
-            flex: isSplit ? '0 0 auto' : '0 0 270px',
-            maxHeight: isSplit ? '190px' : 'none',
-            minHeight: 0, display: 'flex', flexDirection: 'column',
-            borderLeft: isSplit ? 'none' : '1px solid var(--line-faint)',
-            borderTop: isSplit ? '1px solid var(--line-faint)' : 'none',
-            paddingLeft: isSplit ? 0 : '26px',
-            paddingTop: isSplit ? '16px' : 0,
-            overflow: 'hidden',
-          }}>
-            <ZoneLabel index="02" right={
-              <span style={{ fontFamily: MONO, fontSize: '0.56rem', color: 'var(--t4)' }}>{stagedCount}</span>
-            }>
-              Staged Files
-            </ZoneLabel>
-            <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-              {suggestion.modifiedFiles?.map((file) => (
-                <div key={file} style={{
-                  display: 'flex', alignItems: 'center', gap: '12px', padding: '7px 0',
-                }}>
-                  <span style={{ fontFamily: MONO, fontSize: '0.62rem', color: 'var(--emerald)', fontWeight: 700, flexShrink: 0 }}>+</span>
-                  <span style={{
-                    color: 'var(--t2)', fontSize: '0.76rem', fontFamily: MONO,
-                    fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {file}
-                  </span>
-                </div>
-              ))}
-              {suggestion.affectedFiles?.length > 0 && (
-                <div style={{ marginTop: '20px' }}>
-                  <ZoneLabel>Impact Predictions</ZoneLabel>
-                  {suggestion.affectedFiles.map(file => (
-                    <div key={file} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '5px 0' }}>
-                      <span style={{ fontFamily: MONO, fontSize: '0.62rem', color: 'var(--crimson)', flexShrink: 0 }}>!</span>
-                      <span style={{
-                        color: 'var(--crimson)', fontSize: '0.74rem', fontFamily: MONO,
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}>
-                        {file}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Footer actions ── */}
-        <div style={{
-          display: 'flex', justifyContent: 'flex-end', alignItems: 'center',
-          gap: '22px', paddingTop: '14px', borderTop: '1px solid var(--line-faint)',
-          flexShrink: 0,
-        }}>
-          <TextButton onClick={() => setCommitSuggestion(null)}>
-            DISCARD
-          </TextButton>
-          <PrimaryButton
-            onClick={handleCommit}
-            disabled={isCommitting || !commitMessage.trim()}
-            style={{ padding: '11px 36px' }}
-          >
-            {isCommitting ? 'EXECUTING…' : 'CONFIRM COMMIT'}
-          </PrimaryButton>
-        </div>
-
-        <style>{`
-          @keyframes scale-in { 0% { transform: scale(0.95); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
-        `}</style>
-      </div>
-    );
-  }
 
   // ═══════════════════════════════════════════════════════
   // STATE 2: CONNECTED, IDLE — Dashboard + Command Bar
@@ -1083,12 +665,6 @@ const GitAssistantCore = () => {
 
   const recommendation = getRecommendation();
 
-  const statusGlyphColor = (status) =>
-    status.includes('M') ? 'var(--amber)'
-      : status.includes('A') ? 'var(--emerald)'
-        : status.includes('D') ? 'var(--crimson)'
-          : '#818cf8';
-
   /* Zone separation: vertical hairlines in row mode, horizontal in split */
   const zoneDivider = isSplit
     ? { borderTop: '1px solid var(--line-faint)', paddingTop: '18px' }
@@ -1100,32 +676,52 @@ const GitAssistantCore = () => {
       overflow: 'hidden',
     }}>
 
-      {/* ── Smart Recommendation Strip ── */}
+      {/* ── Command Bar: status chip · change tokens · action ── */}
       {recommendation && (
         <div style={{
-          display: 'flex', alignItems: 'center', gap: '18px',
-          padding: '13px 22px',
-          background: 'linear-gradient(90deg, rgba(255,255,255,0.035), transparent 55%)',
-          borderBottom: '1px solid var(--line-faint)',
+          display: 'flex', alignItems: 'center', gap: '16px',
+          padding: '12px 22px',
+          background: 'var(--s1)',
+          borderBottom: '1px solid var(--line)',
           flexShrink: 0, animation: 'scale-in 0.25s ease',
         }}>
-          <StatusDot color={recommendation.color} pulse />
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: '16px', flexWrap: 'wrap' }}>
+          {/* Status chip */}
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: '9px',
+            padding: '6px 13px', borderRadius: '2px', flexShrink: 0,
+            border: '1px solid var(--line-strong)', background: 'rgba(255,255,255,0.02)',
+          }}>
             <span style={{
-              fontFamily: HEADER, fontSize: '0.72rem', color: recommendation.color,
-              fontWeight: 800, letterSpacing: '0.08em', whiteSpace: 'nowrap',
+              width: '6px', height: '6px', borderRadius: '50%', background: recommendation.color,
+              boxShadow: `0 0 7px ${recommendation.color}55`,
+              animation: 'pulse-live 1.4s ease infinite',
+            }} />
+            <span style={{
+              fontFamily: HEADER, fontSize: '0.64rem', color: recommendation.color,
+              fontWeight: 800, letterSpacing: '0.09em', whiteSpace: 'nowrap',
             }}>
               {recommendation.title}
             </span>
-            <span style={{ fontFamily: BODY, fontSize: '0.68rem', color: 'var(--t3)' }}>
+          </span>
+
+          {/* Change + branch tokens */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+            <span style={{ fontFamily: MONO, fontSize: '0.62rem', color: 'var(--t3)', letterSpacing: '0.02em' }}>
               {recommendation.detail}
             </span>
             {currentBranch && (
-              <span style={{ fontFamily: MONO, fontSize: '0.6rem', color: 'var(--t2)', whiteSpace: 'nowrap' }}>
-                ⎇ {currentBranch}
-              </span>
+              <>
+                <span style={{ width: '1px', height: '12px', background: 'var(--line-strong)' }} />
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  fontFamily: MONO, fontSize: '0.62rem', color: 'var(--t2)', whiteSpace: 'nowrap',
+                }}>
+                  <span style={{ color: 'var(--t4)' }}>⎇</span>{currentBranch}
+                </span>
+              </>
             )}
           </div>
+
           {recommendation.action === 'push' && (
             <TextButton onClick={handleUndoCommit} disabled={gitLoading}>
               ↶ UNDO COMMIT
@@ -1140,7 +736,7 @@ const GitAssistantCore = () => {
               }
             }}
             disabled={gitLoading}
-            style={{ padding: '8px 22px', fontSize: '0.58rem' }}
+            style={{ padding: '8px 20px', fontSize: '0.56rem' }}
           >
             {recommendation.actionLabel} →
           </PrimaryButton>
@@ -1305,19 +901,39 @@ const GitAssistantCore = () => {
             Repository
           </ZoneLabel>
 
-          {/* Connection */}
-          <div style={{ marginBottom: '20px', flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '7px' }}>
-              <StatusDot color="var(--emerald)" pulse />
-              <span style={{ fontFamily: MONO, fontSize: '0.62rem', color: 'var(--t1)', fontWeight: 800, letterSpacing: '0.18em' }}>
-                CONNECTED
-              </span>
-            </div>
-            <div style={{
-              fontFamily: MONO, fontSize: '0.6rem', color: 'var(--t4)',
-              wordBreak: 'break-all', lineHeight: 1.7, paddingLeft: '15px',
+          {/* Connection identity card */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '12px',
+            marginBottom: '22px', flexShrink: 0,
+            padding: '11px 13px', borderRadius: '2px',
+            border: '1px solid var(--line)', background: 'rgba(255,255,255,0.015)',
+          }}>
+            <span style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '30px', height: '30px', borderRadius: '2px', flexShrink: 0,
+              border: '1px solid var(--line-strong)', background: 'var(--s2)', color: 'var(--emerald)',
             }}>
-              {gitRepoUrl || 'Repository URL hidden'}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="6" cy="6" r="2.5" /><circle cx="6" cy="18" r="2.5" /><circle cx="18" cy="8" r="2.5" />
+                <path d="M6 8.5v7" /><path d="M18 10.5c0 3.5-4 3.5-6 3.5" />
+              </svg>
+            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{
+                  width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0,
+                  background: 'var(--emerald)', boxShadow: '0 0 6px rgba(70,227,183,0.5)',
+                }} />
+                <span style={{ fontFamily: MONO, fontSize: '0.6rem', color: 'var(--t1)', fontWeight: 800, letterSpacing: '0.16em' }}>
+                  CONNECTED
+                </span>
+              </div>
+              <div style={{
+                fontFamily: MONO, fontSize: '0.56rem', color: 'var(--t4)',
+                wordBreak: 'break-all', lineHeight: 1.5, marginTop: '4px',
+              }}>
+                {gitRepoUrl || 'Repository URL hidden'}
+              </div>
             </div>
           </div>
 
@@ -1326,14 +942,20 @@ const GitAssistantCore = () => {
               action buttons when the panel is short — the zone scrolls
               instead of collapsing. */}
           <div style={{ flex: 1, minHeight: '104px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', marginBottom: '12px', flexShrink: 0 }}>
-              <span style={{
-                fontFamily: HEADER, fontSize: '2rem', fontWeight: 800,
-                color: hasChanges ? '#FFFFFF' : 'var(--t4)', lineHeight: 1, letterSpacing: '-0.02em',
-              }}>
-                {String(actualChanges.length).padStart(2, '0')}
-              </span>
-              <span style={{ fontFamily: BODY, fontSize: '0.66rem', color: 'var(--t3)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '13px', marginBottom: '14px', flexShrink: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{
+                  fontFamily: HEADER, fontSize: '2.1rem', fontWeight: 800,
+                  color: hasChanges ? '#FFFFFF' : 'var(--t4)', lineHeight: 1, letterSpacing: '-0.02em',
+                }}>
+                  {String(actualChanges.length).padStart(2, '0')}
+                </span>
+                <span style={{
+                  width: '26px', height: '2px', marginTop: '9px', borderRadius: '2px',
+                  background: hasChanges ? '#FFFFFF' : 'var(--line-strong)',
+                }} />
+              </div>
+              <span style={{ fontFamily: BODY, fontSize: '0.66rem', color: 'var(--t3)', paddingBottom: '3px' }}>
                 {hasChanges
                   ? `file${actualChanges.length > 1 ? 's' : ''} changed`
                   : 'clean working tree'}
@@ -1342,14 +964,25 @@ const GitAssistantCore = () => {
             <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
               {actualChanges.slice(0, 8).map((line, i) => {
                 const status = line.substring(0, 2).trim();
-                const file = line.substring(3).trim();
+                // git quotes paths containing spaces ("Ayush Portfolio/") — unwrap.
+                const file = line.substring(3).trim().replace(/^"|"$/g, '');
                 return (
-                  <div key={i} style={{
-                    display: 'flex', alignItems: 'center', gap: '12px', padding: '5px 0',
-                    fontFamily: MONO, fontSize: '0.68rem',
-                  }}>
-                    <span style={{ color: statusGlyphColor(status), fontWeight: 700, width: '16px', flexShrink: 0 }}>{status}</span>
-                    <span style={{ color: 'var(--t2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file}</span>
+                  <div key={i}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '11px',
+                      padding: '6px 8px', margin: '0 -8px', borderRadius: '2px',
+                      transition: 'background 0.15s ease',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.025)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <FileBadge code={status} />
+                    <span style={{
+                      fontFamily: MONO, fontSize: '0.7rem', color: 'var(--t2)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {file}
+                    </span>
                   </div>
                 );
               })}
@@ -1375,10 +1008,15 @@ const GitAssistantCore = () => {
             >
               COMMIT CHANGES
             </PrimaryButton>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', padding: '0 6px' }}>
-              <TextButton onClick={() => handleCommand('push')} disabled={gitLoading}>↑ PUSH</TextButton>
-              <TextButton onClick={() => handleCommand('pull')} disabled={gitLoading}>↓ PULL</TextButton>
-              <TextButton onClick={() => { refreshStatus(); refreshLog(); setCommandOutput(null); }} disabled={gitLoading}>⟳ SYNC</TextButton>
+            <div style={{
+              display: 'flex', marginTop: '12px',
+              border: '1px solid var(--line)', borderRadius: '2px', overflow: 'hidden',
+            }}>
+              <GhostAction icon="↑" label="PUSH" onClick={() => handleCommand('push')} disabled={gitLoading} />
+              <span style={{ width: '1px', background: 'var(--line)', flexShrink: 0 }} />
+              <GhostAction icon="↓" label="PULL" onClick={() => handleCommand('pull')} disabled={gitLoading} />
+              <span style={{ width: '1px', background: 'var(--line)', flexShrink: 0 }} />
+              <GhostAction icon="⟳" label="SYNC" onClick={() => { refreshStatus(); refreshLog(); setCommandOutput(null); }} disabled={gitLoading} />
             </div>
 
             {/* Action feedback */}
@@ -1477,31 +1115,36 @@ git push`}
           }}>
             {logLines.length > 0 ? (
               logLines.map((line, i) => {
-                const hash = line.substring(0, 7);
                 const msg = line.substring(8);
                 const isLast = i === logLines.length - 1;
                 const isHead = i === 0;
                 return (
                   <div key={i} style={{ display: 'flex', gap: '14px' }}>
-                    {/* timeline spine */}
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '7px', flexShrink: 0 }}>
-                      <span style={{
-                        width: '5px', height: '5px', borderRadius: '50%', marginTop: '5px', flexShrink: 0,
-                        background: isHead ? '#FFFFFF' : 'var(--t4)',
-                      }} />
-                      {!isLast && <span style={{ width: '1px', flex: 1, background: 'var(--line-faint)', margin: '4px 0' }} />}
+                    {/* Mario level path — Mario at HEAD, checkpoint flags below, planted in brick */}
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '30px', flexShrink: 0 }}>
+                      {isHead
+                        ? <PixelSprite rows={MARIO_ROWS} palette={MARIO_PAL} px={1.5} style={{ animation: 'mario-bob 1.5s ease-in-out infinite' }} />
+                        : <CheckpointFlag />}
+                      {!isLast
+                        ? <span style={{
+                            width: '3px', flex: 1, minHeight: '16px', margin: '3px 0',
+                            background: 'linear-gradient(90deg, #6f757b, #cdd2d7 45%, #6f757b)',
+                          }} />
+                        : <GroundBase />}
                     </div>
-                    <div style={{ paddingBottom: isLast ? 0 : '14px', minWidth: 0, flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '3px' }}>
-                        <span style={{ fontFamily: MONO, fontSize: '0.56rem', color: 'var(--t4)', letterSpacing: '0.08em' }}>
-                          {hash}
-                        </span>
-                        {isHead && (
-                          <span style={{ fontFamily: MONO, fontSize: '0.5rem', color: 'var(--t3)', letterSpacing: '0.16em', fontWeight: 700 }}>
-                            HEAD
+                    <div style={{ paddingBottom: isLast ? 0 : '16px', minWidth: 0, flex: 1 }}>
+                      {isHead && (
+                        <div style={{ marginBottom: '5px' }}>
+                          <span style={{
+                            fontFamily: MONO, fontSize: '0.46rem', color: '#FBD000',
+                            letterSpacing: '0.14em', fontWeight: 800,
+                            padding: '1px 6px', borderRadius: '2px',
+                            border: '1px solid rgba(251,208,0,0.4)',
+                          }}>
+                            ★ HEAD
                           </span>
-                        )}
-                      </div>
+                        </div>
+                      )}
                       <div style={{
                         fontFamily: BODY, fontSize: '0.72rem', fontWeight: 500,
                         color: isHead ? 'var(--t1)' : 'var(--t2)', lineHeight: 1.5,
@@ -1532,6 +1175,10 @@ git push`}
         @keyframes scale-in {
           0% { transform: translateY(-4px); opacity: 0; }
           100% { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes mario-bob {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-2px); }
         }
       `}</style>
     </div>

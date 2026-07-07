@@ -14,6 +14,7 @@ import useEditorStore from '../../store/useEditorStore';
 import ConnectVercelModal from './ConnectVercelModal';
 import EnvConfirmModal from './EnvConfirmModal';
 import LinkProjectModal from './LinkProjectModal';
+import WebRootConfirmModal from './WebRootConfirmModal';
 
 /* ── Utility: Strip ANSI color codes ── */
 const stripAnsi = (str) => {
@@ -25,6 +26,7 @@ const stripAnsi = (str) => {
 const STATUS_CONFIG = {
   idle:        { label: 'READY',       color: '#6E6E6E', pulse: false },
   connecting:  { label: 'CONNECTING',  color: '#FFB224', pulse: true },
+  'root-confirm':{ label: 'SELECT FOLDER', color: '#FFB224', pulse: false },
   'env-confirm':{ label: 'CONFIRMING', color: '#FFB224', pulse: false },
   'pushing-env':{ label: 'PUSHING ENV',color: '#FFB224', pulse: true },
   deploying:   { label: 'DEPLOYING',   color: '#38BDF8', pulse: true },
@@ -113,6 +115,8 @@ const DeployPanel = () => {
 
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showEnvModal, setShowEnvModal] = useState(false);
+  const [showWebRootModal, setShowWebRootModal] = useState(false);
+  const [webRootCandidates, setWebRootCandidates] = useState([]);
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [linkedProject, setLinkedProject] = useState(null); // name of linked Vercel project
   const [detectedEnvVars, setDetectedEnvVars] = useState([]);
@@ -276,7 +280,10 @@ const DeployPanel = () => {
   ]);
 
   /* ── Deploy Action ── */
-  const handleDeploy = useCallback(async () => {
+  // chosenWebRoot is null on a fresh deploy; when several frontends are
+  // detected the flow pauses on a folder picker and re-enters here with
+  // the user's choice ('.' = project root).
+  const startDeploy = useCallback(async (chosenWebRoot = null) => {
     if (!window.electronAPI?.runDeploy) {
       setDeployError('Electron API not available. This feature requires the desktop app.');
       setDeployStatus('error');
@@ -306,9 +313,18 @@ const DeployPanel = () => {
         const prep = await window.electronAPI.prepareDeployWorkspace({
           sessionId: store.sessionId,
           files: store.files,
+          ...(chosenWebRoot != null ? { webRoot: chosenWebRoot } : {}),
         });
         if (!prep?.success) {
           throw new Error(prep?.error || 'Failed to prepare deploy workspace');
+        }
+        if (prep.needsChoice) {
+          // Several distinct frontends found — ask instead of guessing.
+          setWebRootCandidates(prep.candidates || []);
+          setDeployStatus('root-confirm');
+          setShowWebRootModal(true);
+          addDeployLog(`⚠ ${prep.candidates.length} deployable folders detected — waiting for selection.`);
+          return;
         }
         if (!prep.fileCount) {
           throw new Error('No files to deploy — add or open files in this session first.');
@@ -349,6 +365,21 @@ const DeployPanel = () => {
     setDeployError,
     addDeployLog,
   ]);
+
+  const handleDeploy = useCallback(() => startDeploy(null), [startDeploy]);
+
+  /* ── Confirm Deploy Folder ── */
+  const handleConfirmWebRoot = useCallback((dir) => {
+    setShowWebRootModal(false);
+    addDeployLog(`📁 Deploy folder: ${dir === '.' ? 'project root' : dir + '/'}`);
+    startDeploy(dir);
+  }, [startDeploy, addDeployLog]);
+
+  /* ── Cancel Deploy Folder Step ── */
+  const handleCancelWebRoot = useCallback(() => {
+    setShowWebRootModal(false);
+    resetDeploy();
+  }, [resetDeploy]);
 
   /* ── Confirm Env Variables ── */
   const handleConfirmEnv = useCallback(async (selectedVars) => {
@@ -886,6 +917,15 @@ const DeployPanel = () => {
             setVercelConnected(true, username);
             setShowConnectModal(false);
           }}
+        />
+      )}
+
+      {/* Deploy Folder Selection Modal */}
+      {showWebRootModal && (
+        <WebRootConfirmModal
+          candidates={webRootCandidates}
+          onConfirm={handleConfirmWebRoot}
+          onCancel={handleCancelWebRoot}
         />
       )}
 

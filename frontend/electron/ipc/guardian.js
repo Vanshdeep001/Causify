@@ -74,6 +74,39 @@ function checkHealth() {
   });
 }
 
+// The daemon serves a single repo at a time. Ask the running one which repo it
+// is bound to, so we can detect a mismatch (user switched projects) and relaunch
+// it for the connected repo instead of showing another repository's data.
+function getRunningRepo() {
+  return new Promise((resolve) => {
+    let token = '';
+    try { token = fs.readFileSync(TOKEN_PATH, 'utf-8').trim(); } catch { /* no token yet */ }
+    const req = http.get(
+      { host: '127.0.0.1', port: GUARDIAN_PORT, path: '/api/status', timeout: 2000, headers: { 'X-GitPilot-Token': token } },
+      (res) => {
+        let body = '';
+        res.on('data', (d) => { body += d; });
+        res.on('end', () => { try { resolve(JSON.parse(body).repo || null); } catch { resolve(null); } });
+      }
+    );
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.on('error', () => resolve(null));
+  });
+}
+
+// A daemon that was killed or interrupted by a reboot leaves a stale pid file
+// behind, which can stop `gitpilot start` from relaunching. Remove it, but only
+// when the recorded process is confirmed dead — never touch a live daemon.
+function clearStalePid() {
+  try {
+    const pidPath = path.join(GUARDIAN_HOME, 'gitpilot.pid');
+    if (!fs.existsSync(pidPath)) return;
+    const pid = parseInt(String(fs.readFileSync(pidPath, 'utf-8')).trim(), 10);
+    if (!pid) { fs.unlinkSync(pidPath); return; }
+    try { process.kill(pid, 0); } catch (e) { if (e.code === 'ESRCH') fs.unlinkSync(pidPath); }
+  } catch { /* best effort */ }
+}
+
 async function isInstalled() {
   const res = await runGuardian(['--help']);
   return res.code !== 'ENOENT';
@@ -149,14 +182,51 @@ function registerGuardianHandlers() {
 
   /* ── Daemon lifecycle ── */
   ipcMain.handle('guardian:start', async (_event, repoUrl) => {
-    if (await checkHealth()) return { running: true };
-    const { ownerRepo } = parseRepoUrl(repoUrl);
+    const { ownerRepo, token } = parseRepoUrl(repoUrl);
     if (!ownerRepo) return { error: 'Could not detect owner/repo from the repository URL.' };
 
-    const dir = workspaceDir(ownerRepo);
-    if (!fs.existsSync(path.join(dir, '.gitpilot.yml'))) {
-      return { error: 'Not configured yet — run setup first.', needsSetup: true };
+    // A running daemon serves exactly one repo. If one is already up, reuse it
+    // only when it's serving THIS repo; otherwise stop it and relaunch for the
+    // connected repo so the panel never shows another repository's PRs.
+    if (await checkHealth()) {
+      const activeRepo = await getRunningRepo();
+      if (activeRepo && activeRepo.toLowerCase() === ownerRepo.toLowerCase()) {
+        return { running: true, repo: activeRepo };
+      }
+      await runGuardian(['stop']);
+      await new Promise((r) => setTimeout(r, 800));
     }
+
+    const dir = workspaceDir(ownerRepo);
+
+    // Auto-configure on first run using the token embedded in the repo URL the
+    // user connected in the Git panel — Guardian works on that same repo with
+    // no separate setup step. Falls back to the machine's OpenRouter key so AI
+    // PR summaries are enabled when available.
+    if (!fs.existsSync(path.join(dir, '.gitpilot.yml'))) {
+      if (!token) {
+        return {
+          error: 'Repository Guardian needs a GitHub token. Reconnect the repo in the Git panel using a URL that includes your token (https://TOKEN@github.com/owner/repo.git).',
+          needsToken: true,
+        };
+      }
+      let llmKey = process.env.OPENROUTER_API_KEY || null;
+      if (!llmKey) { try { llmKey = require('./security').retrieveApiKey(); } catch { /* optional */ } }
+
+      const authArgs = ['auth', '--github-token', token];
+      if (llmKey) authArgs.push('--openrouter', llmKey);
+      const authRes = await runGuardian(authArgs);
+      if (authRes.code === 'ENOENT') return { error: 'Repository Guardian is not installed (gitpilot not found on PATH).' };
+      if (authRes.code !== 0) {
+        return { error: `Auto-config failed (auth): ${(authRes.stderr || authRes.stdout).trim().slice(0, 300)}` };
+      }
+      const initRes = await runGuardian(['init', '--repo', ownerRepo, '--yes'], dir);
+      if (initRes.code !== 0) {
+        return { error: `Auto-config failed (init): ${(initRes.stderr || initRes.stdout).trim().slice(0, 300)}` };
+      }
+    }
+
+    clearStalePid();
     const res = await runGuardian(['start'], dir);
     if (res.code === 'ENOENT') return { error: 'Repository Guardian is not installed (gitpilot not found on PATH).' };
     if (res.code !== 0) {
