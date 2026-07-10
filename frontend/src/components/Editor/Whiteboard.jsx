@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import useEditorStore from '../../store/useEditorStore';
-import { getWhiteboard, saveWhiteboard } from '../../services/api';
+import { getWhiteboard } from '../../services/api';
 import { sendWhiteboardUpdate, sendCursorPosition } from '../../services/socket';
 import LinkToCodeModal from '../Modals/LinkToCodeModal';
 
@@ -104,6 +104,10 @@ const Whiteboard = () => {
   const [editingElementId, setEditingElementId] = useState(null);
   const [hoveredElementId, setHoveredElementId] = useState(null);
 
+  // Attribution — who most recently changed each element (transient, fades out).
+  // { [elementId]: { username, color, timestamp } }
+  const [elementAuthors, setElementAuthors] = useState({});
+
   // Context Menu state
   const [contextMenu, setContextMenu] = useState(null); // { x, y, elementId }
   const [linkModalOpen, setLinkModalOpen] = useState(false);
@@ -112,7 +116,6 @@ const Whiteboard = () => {
   // Refs
   const svgRef = useRef(null);
   const startPanRef = useRef({ x: 0, y: 0 });
-  const saveTimeoutRef = useRef(null);
 
   // ── 1. Fetch Board State from Backend ──
   useEffect(() => {
@@ -146,6 +149,29 @@ const Whiteboard = () => {
             return [...prev, element];
           }
         });
+
+        // Tag the element with the user who changed it, and fade it out after a few seconds.
+        const author = useEditorStore.getState().connectedUsers.find((u) => u.id === userId);
+        const now = Date.now();
+        setElementAuthors((prev) => ({
+          ...prev,
+          [element.id]: {
+            username: author?.username || 'Someone',
+            color: author?.color || '#6366f1',
+            timestamp: now,
+          },
+        }));
+        setTimeout(() => {
+          setElementAuthors((prev) => {
+            const cur = prev[element.id];
+            if (cur && cur.timestamp === now) {
+              const next = { ...prev };
+              delete next[element.id];
+              return next;
+            }
+            return prev;
+          });
+        }, 4000);
       } else if (type === 'delete') {
         setWhiteboardElements((prev) => prev.filter((el) => el.id !== elementId));
       } else if (type === 'clear') {
@@ -178,24 +204,14 @@ const Whiteboard = () => {
     };
   }, [currentUser, updateWhiteboardCursor]);
 
-  // ── 4. Save Whiteboard State with Debouncing ──
-  const triggerAutosave = useCallback((elements) => {
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-      if (sessionId) {
-        saveWhiteboard(sessionId, JSON.stringify(elements))
-          .then(() => console.log('[Whiteboard] Auto-saved'))
-          .catch((err) => console.error('[Whiteboard] Save failed:', err));
-      }
-    }, 1500); // 1.5s debounce
-  }, [sessionId]);
-
-  // Update elements locally and sync/autosave
+  // Update elements locally and broadcast the op.
+  // Persistence is handled server-side per-op (the backend merges each op into
+  // the stored board), so there's no whole-board autosave here anymore — that
+  // was a last-write-wins overwrite that could drop concurrent edits.
   const updateElementsAndSync = useCallback((newElements, updateType, element, targetId) => {
     setWhiteboardElements(newElements);
-    triggerAutosave(newElements);
 
-    // Publish WebSocket sync update
+    // Publish WebSocket sync update (also persisted op-based on the server)
     if (sessionId && currentUser) {
       sendWhiteboardUpdate(sessionId, {
         type: updateType,
@@ -204,7 +220,7 @@ const Whiteboard = () => {
         userId: currentUser.id,
       });
     }
-  }, [sessionId, currentUser, setWhiteboardElements, triggerAutosave]);
+  }, [sessionId, currentUser, setWhiteboardElements]);
 
   // ── 5. Coordinate conversion ──
   const getCanvasCoords = (clientX, clientY) => {
@@ -213,6 +229,35 @@ const Whiteboard = () => {
     const x = (clientX - rect.left - pan.x) / zoom;
     const y = (clientY - rect.top - pan.y) / zoom;
     return { x, y };
+  };
+
+  // Axis-aligned bounds of an element in canvas coords (for author highlights).
+  const getElementBounds = (el) => {
+    if (!el) return null;
+    if (el.type === 'pen' && el.points?.length) {
+      const xs = el.points.map((p) => p.x);
+      const ys = el.points.map((p) => p.y);
+      const minX = Math.min(...xs), minY = Math.min(...ys);
+      return { x: minX, y: minY, w: Math.max(...xs) - minX, h: Math.max(...ys) - minY };
+    }
+    if (el.type === 'rect') {
+      const x = el.width < 0 ? el.x + el.width : el.x;
+      const y = el.height < 0 ? el.y + el.height : el.y;
+      return { x, y, w: Math.abs(el.width || 0), h: Math.abs(el.height || 0) };
+    }
+    if (el.type === 'ellipse') {
+      return { x: el.cx - el.rx, y: el.cy - el.ry, w: el.rx * 2, h: el.ry * 2 };
+    }
+    if (el.type === 'arrow') {
+      const minX = Math.min(el.x1, el.x2), minY = Math.min(el.y1, el.y2);
+      return { x: minX, y: minY, w: Math.abs(el.x2 - el.x1), h: Math.abs(el.y2 - el.y1) };
+    }
+    if (el.type === 'text' || el.type === 'sticky') {
+      const w = el.width || (el.type === 'sticky' ? 160 : Math.max(60, (el.text?.length || 4) * (el.fontSize || 16) * 0.55));
+      const h = el.height || (el.type === 'sticky' ? 160 : (el.fontSize || 16) * 1.5);
+      return { x: el.x, y: el.y, w, h };
+    }
+    return null;
   };
 
   // ── 6. Panning / Mouse Wheel Zooming ──
@@ -1290,6 +1335,50 @@ const Whiteboard = () => {
                 )}
               </g>
             )}
+
+            {/* ── ELEMENT ATTRIBUTION LAYER — who just changed what ── */}
+            {whiteboardElements.map((el) => {
+              const author = elementAuthors[el.id];
+              if (!author || Date.now() - author.timestamp > 4000) return null;
+              const b = getElementBounds(el);
+              if (!b) return null;
+              const pad = 6;
+              const labelW = author.username.length * 6.2 + 12;
+              return (
+                <g key={`attr-${el.id}`} style={{ pointerEvents: 'none' }}>
+                  <rect
+                    x={b.x - pad}
+                    y={b.y - pad}
+                    width={b.w + pad * 2}
+                    height={b.h + pad * 2}
+                    fill="none"
+                    stroke={author.color}
+                    strokeWidth="1.5"
+                    strokeDasharray="5 3"
+                    rx="5"
+                    opacity="0.9"
+                  />
+                  <g transform={`translate(${b.x - pad}, ${b.y - pad - 19})`}>
+                    <rect
+                      x="0" y="0" width={labelW} height="16"
+                      fill="rgba(15, 17, 23, 0.92)"
+                      stroke={author.color}
+                      strokeWidth="1"
+                      rx="4"
+                    />
+                    <text
+                      x="6" y="11.5"
+                      fill="#FFFFFF"
+                      fontFamily="'JetBrains Mono', monospace"
+                      fontSize="8.5px"
+                      fontWeight="bold"
+                    >
+                      {author.username}
+                    </text>
+                  </g>
+                </g>
+              );
+            })}
 
             {/* ── PRESENCE CURSORS LAYER ── */}
             {Object.values(whiteboardCursors).map((cur) => {

@@ -169,15 +169,58 @@ export function detectBackend(files) {
         const isFrontend = FRONTEND_DEPS.some((d) => deps[d]);
         const backendDep = NODE_BACKEND_DEPS.find((d) => deps[d]);
         if (!isFrontend && (backendDep || pkg.scripts?.start)) {
-          const hasBuild = Boolean(pkg.scripts?.build);
+          const startScript = pkg.scripts?.start || '';
+
+          // Render installs production deps only (NODE_ENV=production), so a start
+          // script that shells out to a dev-only tool (nodemon, ts-node, tsx,
+          // concurrently…) crashes on Render with "command not found" — the #1
+          // cause of a failed `npm start`. When we spot one — or when there's no
+          // start script at all — run the entry file directly with `node`, which
+          // is the safe production command.
+          const usesDevTool = /\b(nodemon|ts-node(?:-dev)?|tsx|concurrently|nps|onchange)\b/.test(startScript);
+
+          // Resolve the real entry file: the .js referenced by the start script,
+          // then package.json "main", then the first conventional server file
+          // that actually exists in this folder, else index.js.
+          const scriptEntry = (startScript.match(/([\w./-]+\.[cm]?js)\b/) || [])[1];
+          const hasFile = (f) => names.has(f) || items.some((i) => i.rel === (dir ? `${dir}/${f}` : f));
+          const commonEntry = ['server.js', 'app.js', 'index.js', 'src/server.js', 'src/app.js', 'src/index.js', 'main.js'].find(hasFile);
+          const entry = scriptEntry || pkg.main || commonEntry || 'index.js';
+
+          const safeStart = Boolean(pkg.scripts?.start) && !usesDevTool;
+
+          // Only run a build step when there's a real (non-placeholder) build
+          // script — an empty/echo "build" is a no-op that just risks failing.
+          const buildScript = (pkg.scripts?.build || '').trim();
+          const hasRealBuild = Boolean(buildScript) && !/^(echo|exit|true|:)\b/.test(buildScript);
+
+          // Port-binding sanity check. Render assigns a port via process.env.PORT
+          // and routes to 0.0.0.0; a server that hardcodes a port (app.listen(5000))
+          // or binds to localhost fails with the cryptic "No open ports detected".
+          // Scan the backend's JS for a listen() that never references PORT so we
+          // can warn the user before they burn a failed deploy.
+          const backendJs = items.filter((i) => /\.[cm]?js$/.test(i.name) &&
+            (dir ? (i.dir === dir || i.dir.startsWith(`${dir}/`)) : true));
+          const listensSomewhere = backendJs.some((i) => /\.listen\s*\(/.test(i.content));
+          const usesEnvPort = backendJs.some((i) => /process\.env\.PORT/i.test(i.content));
+          const bindsLocalhost = backendJs.some((i) =>
+            /\.listen\s*\([^)]*(['"])(localhost|127\.0\.0\.1)\1/.test(i.content));
+          let portNote = null;
+          if (listensSomewhere && !usesEnvPort) {
+            portNote = 'Heads up: your server looks like it binds to a fixed port. Render assigns one via process.env.PORT, so use `const PORT = process.env.PORT || 5000; app.listen(PORT, "0.0.0.0")` — otherwise the deploy fails with "No open ports detected".';
+          } else if (bindsLocalhost) {
+            portNote = 'Heads up: your server binds to localhost / 127.0.0.1. Render can only reach it on 0.0.0.0 — change the host to "0.0.0.0" (or omit it), otherwise the deploy fails with "No open ports detected".';
+          }
+
           add({
             framework: backendDep === '@nestjs/core' ? 'NestJS'
               : backendDep ? `Node.js (${backendDep})`
               : 'Node.js',
             runtime: 'node',
-            buildCommand: hasBuild ? 'npm install && npm run build' : 'npm install',
-            startCommand: pkg.scripts?.start ? 'npm start' : `node ${pkg.main || 'index.js'}`,
+            buildCommand: hasRealBuild ? 'npm install && npm run build' : 'npm install',
+            startCommand: safeStart ? 'npm start' : `node ${entry}`,
             createSupported: true,
+            note: portNote,
           });
         }
       } catch {

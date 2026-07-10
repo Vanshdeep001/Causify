@@ -16,8 +16,15 @@ const BACKEND_ORIGIN = isElectronProd ? 'http://127.0.0.1:8080' : '';
 const api = axios.create({
   baseURL: `${BACKEND_ORIGIN}/api`,
   headers: { 'Content-Type': 'application/json' },
-  timeout: 30000,
+  timeout: 30000, // default: fine for quick CRUD (save, status, lookups)
 });
+
+// Some operations are inherently slow and must not share the 30s CRUD deadline,
+// or they abort mid-flight with "timeout of 30000ms exceeded":
+//   HEAVY — large uploads and git clone (lots of data / full network fetch)
+//   LONG  — git push/pull/commit and code execution
+//   AI    — LLM round-trips (root-cause, key verification)
+const TIMEOUT = { HEAVY: 300000, LONG: 120000, AI: 120000 };
 
 /* ---- Session APIs ---- */
 
@@ -33,7 +40,7 @@ export const joinSession = async (id, password, username) => {
 
 // Flattened Upload
 export const uploadProject = async (sessionId, files) => {
-  const response = await api.post(`/session/upload?sessionId=${sessionId}`, files);
+  const response = await api.post(`/session/upload?sessionId=${sessionId}`, files, { timeout: TIMEOUT.HEAVY });
   return response.data;
 };
 
@@ -68,7 +75,7 @@ export const executeCode = async (sessionId, code, language = 'javascript') => {
     sessionId,
     code,
     language,
-  });
+  }, { timeout: TIMEOUT.LONG });
   return response.data;
 };
 
@@ -82,7 +89,7 @@ export const getAiStatus = async () => {
 
 // Verify a key with OpenRouter and activate it on the backend (no restart needed)
 export const saveAiKey = async (key) => {
-  const response = await api.post('/ai/key', { key });
+  const response = await api.post('/ai/key', { key }, { timeout: TIMEOUT.AI });
   return response.data;
 };
 
@@ -122,30 +129,30 @@ export const analyzeRootCause = async (sessionId, error, code) => {
     sessionId,
     error,
     code,
-  });
+  }, { timeout: TIMEOUT.AI });
   return response.data;
 };
 
 /* ---- Git Workspace APIs ---- */
 
 export const cloneGitRepo = async (sessionId, repoUrl) => {
-  const response = await api.post('/git/clone', { sessionId, repoUrl });
+  const response = await api.post('/git/clone', { sessionId, repoUrl }, { timeout: TIMEOUT.HEAVY });
   return response.data;
 };
 
 export const executeGitCommit = async (payload) => {
   // payload: { sessionId, message, files: [{ path, content }, ...] }
-  const response = await api.post('/git/commit', payload);
+  const response = await api.post('/git/commit', payload, { timeout: TIMEOUT.LONG });
   return response.data;
 };
 
 export const gitPush = async (sessionId) => {
-  const response = await api.post('/git/push', { sessionId });
+  const response = await api.post('/git/push', { sessionId }, { timeout: TIMEOUT.LONG });
   return response.data;
 };
 
 export const gitPull = async (sessionId) => {
-  const response = await api.post('/git/pull', { sessionId });
+  const response = await api.post('/git/pull', { sessionId }, { timeout: TIMEOUT.LONG });
   return response.data;
 };
 

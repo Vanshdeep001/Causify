@@ -11,7 +11,7 @@ import CodeShotModal from './components/CodeShot/CodeShotModal';
 import { parseCodeShotLink } from './utils/codeShotDeepLink';
 import useEditorStore from './store/useEditorStore';
 import { connectWebSocket, disconnectWebSocket } from './services/socket';
-import { getSessionFiles, saveFile, createSession, uploadProject } from './services/api';
+import { getSessionFiles, saveFile, createSession, uploadProject, getSession } from './services/api';
 import causifyLogo from './assets/causify-logo.png';
 
 // Module-level so React StrictMode's double-mount can't create two sessions
@@ -25,35 +25,59 @@ const App = () => {
   const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
   const followToast = useEditorStore((s) => s.followToast);
   const reconnectedRef = useRef(false);
+  // Gate the WebSocket reconnect until the session-bootstrap below has decided
+  // the final sessionId (verified-existing vs freshly-recreated), so we never
+  // connect to a stale id.
+  const [bootstrapDone, setBootstrapDone] = useState(false);
 
-  // ── Re-attach restored workspaces to a fresh backend session ──
-  // The workspace (files) survives a window close, but the backend session
-  // does not. Without a session every session-bound feature (git connect,
-  // run, dev server, save) silently no-ops — so on launch, quietly create
-  // a new session for the restored files. The reconnect effect below then
-  // picks up the new sessionId/currentUser and wires the WebSocket.
+  // ── Bootstrap the session on launch ──
+  // Session identity now persists to localStorage, so on launch we usually have
+  // a sessionId from a previous run. We verify it still exists on the backend:
+  //   • alive  → keep the SAME id and let the reconnect effect wire the socket,
+  //              so reopening the app drops you back into the same session.
+  //   • gone   → the backend lost it (server restart / expiry); recreate a
+  //              session for the restored files so nothing is orphaned.
+  // With no stored session but restored files, we create one (first migration
+  // from the old sessionStorage model, or a genuinely new workspace).
   useEffect(() => {
-    if (sessionRehydrateAttempted) return;
+    // StrictMode remount (or a prior mount) already ran the bootstrap — just
+    // release the reconnect gate so it isn't left waiting forever.
+    if (sessionRehydrateAttempted) { setBootstrapDone(true); return; }
     sessionRehydrateAttempted = true;
-
-    const store = useEditorStore.getState();
-    if (store.sessionId) return; // same-window refresh — session still alive
-    const fileEntries = Object.entries(store.files || {});
-    if (fileEntries.length === 0) return; // nothing restored — fresh start
 
     (async () => {
       try {
+        const store = useEditorStore.getState();
+        const fileEntries = Object.entries(store.files || {});
+
+        // Verify a persisted session — keep it if the backend still has it.
+        if (store.sessionId && store.currentUser) {
+          try {
+            const data = await getSession(store.sessionId);
+            if (data && (data.id || data.sessionId)) return; // alive — reconnect handles the rest
+            // else: falsy response → treat as gone, fall through to recreate
+          } catch {
+            // 404 / network → session is gone on the backend; recreate below.
+            console.warn('[Causify] Stored session no longer on the backend — recreating.');
+          }
+        }
+
+        if (fileEntries.length === 0) return; // fresh start — nothing to attach
+
         const name = store.sessionName || 'Restored Workspace';
-        const username = localStorage.getItem('causify-last-username') || 'owner';
+        const username = store.currentUser?.username
+          || localStorage.getItem('causify-last-username') || 'owner';
         const session = await createSession(name, username, '0000');
         await uploadProject(session.id, fileEntries.map(([path, content]) => ({ path, content })));
         const s = useEditorStore.getState();
         s.setSession(session.id, session.name || name);
         s.setCurrentUser(session.user);
         s.setUserRole('owner');
-        console.log('[Causify] Restored workspace attached to new session:', session.id);
+        console.log('[Causify] Restored workspace attached to a session:', session.id);
       } catch (err) {
-        console.warn('[Causify] Could not attach restored workspace to a session:', err.message);
+        console.warn('[Causify] Could not bootstrap the session:', err.message);
+      } finally {
+        setBootstrapDone(true);
       }
     })();
   }, []);
@@ -108,13 +132,16 @@ const App = () => {
     return unsubscribe;
   }, []);
 
-  // ── Auto-reconnect WebSocket after page refresh ──
+  // ── Auto-reconnect WebSocket after refresh / reopen ──
+  // Waits for the bootstrap above to settle the final sessionId, so we connect
+  // to the verified (or freshly recreated) session, never a stale id.
   useEffect(() => {
+    if (!bootstrapDone) return;
     if (reconnectedRef.current) return;
     if (!sessionId || !currentUser) return;
 
     reconnectedRef.current = true;
-    console.log('[Causify] Reconnecting to session after refresh:', sessionId);
+    console.log('[Causify] Reconnecting to session:', sessionId);
 
     const store = useEditorStore.getState();
 
@@ -138,6 +165,14 @@ const App = () => {
           }
         }
       },
+      onPresenceUpdate: (d) => {
+        const currentU = useEditorStore.getState().currentUser;
+        if (d.userId !== currentU?.id) useEditorStore.getState().updateFilePresence(d.userId, d);
+      },
+      onFileDelete: (d) => {
+        const currentU = useEditorStore.getState().currentUser;
+        if (d.userId !== currentU?.id) useEditorStore.getState().removeFile(d.path);
+      },
       onWhiteboardChange: (d) => {
         if (window.onWhiteboardSocketMessage) window.onWhiteboardSocketMessage(d);
       },
@@ -154,6 +189,23 @@ const App = () => {
       onVoiceSignal: (d) => {
         // Route to VoiceRoom component via global handler
         if (window._onVoiceSignal) window._onVoiceSignal(d);
+      },
+      onUserKicked: (d) => {
+        const currentU = useEditorStore.getState().currentUser;
+        if (d.userId === currentU?.id) {
+          alert("You have been removed from the session by the owner.");
+          const store = useEditorStore.getState();
+          store.resetGit();
+          useEditorStore.setState({
+            sessionId: null,
+            sessionName: '',
+            currentUser: null,
+            userRole: null,
+            connectedUsers: [],
+          });
+          disconnectWebSocket();
+          window.location.reload();
+        }
       },
       onFollowUpdate: (d) => {
         const store = useEditorStore.getState();
@@ -206,7 +258,7 @@ const App = () => {
         });
       },
     });
-  }, [sessionId, currentUser]);
+  }, [bootstrapDone, sessionId, currentUser]);
 
   // Keyboard Shortcuts
   useEffect(() => {

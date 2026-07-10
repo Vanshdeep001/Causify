@@ -9,7 +9,7 @@
  *   - Single instance lock
  * ------------------------------------------------------- */
 
-const { app, BrowserWindow, dialog, crashReporter, session, desktopCapturer } = require('electron');
+const { app, BrowserWindow, dialog, crashReporter, session, desktopCapturer, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -23,7 +23,7 @@ const { registerPtyHandlers, killAllPtySessions } = require('./ipc/pty');
 const { registerDeployHandlers, killAllDeploySessions } = require('./ipc/deploy');
 const { registerRenderDeployHandlers, killAllRenderDeploySessions } = require('./ipc/renderDeploy');
 const { registerCaptureHandlers } = require('./ipc/capture');
-const { registerGuardianHandlers } = require('./ipc/guardian');
+
 
 /* ── Constants ── */
 const isDev = !app.isPackaged;
@@ -95,6 +95,15 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Open external links (target="_blank") in the system default browser
+  // instead of spawning a new Electron window.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
   });
 }
 
@@ -189,7 +198,7 @@ app.whenReady().then(async () => {
   registerDeployHandlers();
   registerRenderDeployHandlers();
   registerCaptureHandlers();
-  registerGuardianHandlers();
+
 
   // Allow renderer getDisplayMedia() to record the screen without a picker.
   // Electron requires an explicit handler; we auto-grant the primary screen.

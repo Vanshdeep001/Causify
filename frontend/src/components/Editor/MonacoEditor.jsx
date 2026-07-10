@@ -8,7 +8,8 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import useEditorStore from '../../store/useEditorStore';
-import { sendCodeChange, sendCursorPosition, sendFollowState } from '../../services/socket';
+import { sendCursorPosition, sendFollowState, sendFilePresence } from '../../services/socket';
+import { getFileText, createBinding, maybeSeed, schedulePersist, isCollabActive } from '../../services/collabDoc';
 
 const MonacoEditor = () => {
   const editorRef = useRef(null);
@@ -18,6 +19,11 @@ const MonacoEditor = () => {
   const hoverTimeoutRef = useRef(null);
   const wrapperRef = useRef(null);
   const collisionTimerRef = useRef(null);
+
+  // CRDT (Yjs) binding — one active binding for the currently open file
+  const bindingRef = useRef(null);
+  const [editorReady, setEditorReady] = useState(false);
+  const collabReady = useEditorStore((s) => s.collabReady);
 
   // Hover card state
   const [hoverInfo, setHoverInfo] = useState(null); // { x, y, change, line }
@@ -32,6 +38,7 @@ const MonacoEditor = () => {
   const runCode = useEditorStore((s) => s.runCode);
   const remoteCursors = useEditorStore((s) => s.remoteCursors);
   const remoteLineChanges = useEditorStore((s) => s.remoteLineChanges);
+  const userRole = useEditorStore((s) => s.userRole);
 
   // Follow mode
   const followingUserId = useEditorStore((s) => s.followingUserId);
@@ -41,6 +48,10 @@ const MonacoEditor = () => {
   const connectedUsers = useEditorStore((s) => s.connectedUsers);
   const followDecorationsRef = useRef([]);
   const isFollowScrollingRef = useRef(false);
+
+  // Owner-controlled access: viewers get a read-only editor.
+  const canEdit = userRole === 'owner'
+    || connectedUsers.find((u) => u.id === currentUser?.id)?.permission !== 'viewer';
 
   /* ── Format timestamp ── */
   const formatTimeAgo = (ts) => {
@@ -55,6 +66,7 @@ const MonacoEditor = () => {
   const handleEditorMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    setEditorReady(true);
 
     monaco.editor.defineTheme('debugsync-intelligence', {
       base: 'vs-dark',
@@ -350,52 +362,13 @@ const MonacoEditor = () => {
       }
     });
 
-    // Intercept model content changes for concurrency checks & dismiss hover card
-    editor.onDidChangeModelContent((e) => {
+    // Dismiss the hover card on any content change.
+    // NOTE: The old "line collision lock" (which reverted your edit if a remote
+    // cursor was on the same line) has been removed. With the Yjs CRDT, multiple
+    // users can safely edit the same line simultaneously — both edits merge — so
+    // blocking/reverting is no longer needed and would only get in the way.
+    editor.onDidChangeModelContent(() => {
       setHoverInfo(null);
-
-      // Only check collision for local user text typing edits (when editor has focus)
-      if (!editor.hasTextFocus()) return;
-
-      const activePathNow = useEditorStore.getState().activePath;
-      const remoteCursors = useEditorStore.getState().remoteCursors;
-
-      let collision = false;
-      let collidingUser = '';
-      let collidingLine = 0;
-
-      for (const change of e.changes) {
-        for (const [userId, cursor] of Object.entries(remoteCursors)) {
-          if (cursor && cursor.path === activePathNow) {
-            const cursorLine = cursor.line;
-            // Check if remote user is active on the edited line
-            if (cursorLine >= change.range.startLineNumber && cursorLine <= change.range.endLineNumber) {
-              collision = true;
-              collidingUser = cursor.username || 'Another user';
-              collidingLine = cursorLine;
-              break;
-            }
-          }
-        }
-        if (collision) break;
-      }
-
-      if (collision) {
-        // Block and revert the edit
-        setTimeout(() => {
-          editor.trigger('keyboard', 'undo', null);
-        }, 0);
-
-        // Display warning banner
-        const setCollisionWarning = useEditorStore.getState().setCollisionWarning;
-        setCollisionWarning({ line: collidingLine, username: collidingUser });
-
-        // Auto-dismiss warning banner after 3 seconds
-        if (collisionTimerRef.current) clearTimeout(collisionTimerRef.current);
-        collisionTimerRef.current = setTimeout(() => {
-          useEditorStore.getState().setCollisionWarning(null);
-        }, 3000);
-      }
     });
 
     // Dismiss hover card on cursor movement (keyboard nav)
@@ -666,14 +639,80 @@ const MonacoEditor = () => {
     };
   }, []);
 
-  const handleCodeChange = useCallback((value) => {
-    if (!isReplaying) {
-      setCode(value || '');
-      if (sessionId && currentUser) {
-        sendCodeChange(sessionId, currentUser.id, activePath, value || '');
-      }
+  /* ── CRDT binding: bind the active file's Y.Text to the Monaco model ──
+   * Rebinds whenever the open file changes. While bound, Yjs owns text
+   * sync (character-level merges, no clobbering, cursor preserved) and
+   * mirrors content back into the store so run/save/impact keep working.
+   * Disabled during replay (which drives the model directly) and when
+   * there's no live session. */
+  useEffect(() => {
+    // Tear down any previous binding first.
+    if (bindingRef.current) {
+      bindingRef.current.destroy();
+      bindingRef.current = null;
     }
-  }, [isReplaying, setCode, sessionId, currentUser, activePath]);
+
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const active = sessionId && collabReady && !isReplaying && activePath && isCollabActive();
+    if (!active) return;
+
+    const ytext = getFileText(activePath);
+    if (!ytext) return;
+
+    // Seed FIRST — while files[activePath] still holds the imported/persisted
+    // content — so binding never blanks it and the later setCode can't clobber it.
+    maybeSeed(activePath);
+
+    bindingRef.current = createBinding(ytext, model, monaco, {
+      path: activePath,
+      onLocalChange: (p, text) => {
+        useEditorStore.getState().setCode(text);
+        schedulePersist(p, text);
+      },
+      onRemoteChange: (p, text, uid) => {
+        useEditorStore.getState().updateRemoteFile(p, text, uid);
+      },
+    });
+
+    // Mirror the freshly-bound Y.Text into the store so the controlled
+    // <Editor value> matches the model and never fights the binding. maybeSeed
+    // (above) already captured files[activePath], so if this is momentarily
+    // empty for a joiner, the deferred seed / incoming sync will refill it.
+    useEditorStore.getState().setCode(ytext.toString());
+
+    return () => {
+      if (bindingRef.current) {
+        bindingRef.current.destroy();
+        bindingRef.current = null;
+      }
+    };
+  }, [editorReady, collabReady, sessionId, activePath, isReplaying]);
+
+  const handleCodeChange = useCallback((value) => {
+    if (isReplaying) return;
+    // When a CRDT binding is active it owns sync + the store mirror.
+    if (bindingRef.current) return;
+    // Local-only mode (no live session): just update local state.
+    setCode(value || '');
+  }, [isReplaying, setCode]);
+
+  /* ── File presence: announce which file I'm working in ──
+   * Re-announces on file switch and whenever the roster changes, so a newly
+   * joined peer immediately learns where everyone is. */
+  useEffect(() => {
+    if (!sessionId || !currentUser || !activePath) return;
+    sendFilePresence(sessionId, {
+      userId: currentUser.id,
+      username: currentUser.username,
+      color: currentUser.color || '#6366f1',
+      path: activePath,
+    });
+  }, [sessionId, currentUser, activePath, collabReady, connectedUsers.length]);
 
   const handleRun = useCallback(async () => {
     runCode();
@@ -873,6 +912,32 @@ const MonacoEditor = () => {
         </div>
       )}
 
+      {/* View-only access indicator. (Per-file "who's here" presence lives in
+          the File Explorer, so it's not duplicated here.) */}
+      {!isReplaying && sessionId && !canEdit && (
+        <div title="The session owner has set you to view-only" style={{
+          position: 'absolute',
+          top: '8px',
+          right: '14px',
+          zIndex: 30,
+          pointerEvents: 'none',
+          display: 'inline-flex', alignItems: 'center', gap: '5px',
+          padding: '3px 9px',
+          background: 'rgba(255,176,36,0.12)',
+          border: '1px solid rgba(255,176,36,0.4)',
+          borderRadius: '999px',
+          fontFamily: 'var(--font-number)', fontSize: '0.55rem', fontWeight: 700,
+          letterSpacing: '0.1em', color: '#FFB224',
+        }}>
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFB224"
+            strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          VIEW ONLY
+        </div>
+      )}
+
       <Editor
         height="100%"
         language={language}
@@ -889,7 +954,7 @@ const MonacoEditor = () => {
           smoothScrolling: true,
           cursorBlinking: 'smooth',
           renderLineHighlight: 'all',
-          readOnly: isReplaying,
+          readOnly: isReplaying || !canEdit,
           wordWrap: 'on',
           lineNumbers: 'on',
           glyphMargin: false,

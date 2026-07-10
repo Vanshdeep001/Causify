@@ -124,6 +124,8 @@ const RenderDeployPanel = () => {
   const setRenderRuntime = useEditorStore((s) => s.setRenderRuntime);
   const resetDeploy = useEditorStore((s) => s.resetRenderDeploy);
   const addDeploymentRecord = useEditorStore((s) => s.addDeploymentRecord);
+  const setLastRenderDeploySessionId = useEditorStore((s) => s.setLastRenderDeploySessionId);
+  const lastRenderDeploySessionId = useEditorStore((s) => s.lastRenderDeploySessionId);
 
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showEnvModal, setShowEnvModal] = useState(false);
@@ -135,6 +137,14 @@ const RenderDeployPanel = () => {
   const [elapsed, setElapsed] = useState(0);
   const logContainerRef = useRef(null);
   const cleanupRef = useRef({ log: null, complete: null });
+
+  // Delete service state
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // States to chain Env Confirmation -> Create Service -> Deploy
+  const [pendingEnvVars, setPendingEnvVars] = useState(null);
+  const [shouldDeployAfterCreate, setShouldDeployAfterCreate] = useState(false);
 
   // Check API key on mount
   useEffect(() => {
@@ -164,6 +174,46 @@ const RenderDeployPanel = () => {
     };
     loadLink();
   }, [sessionId]);
+
+  // Restore existing deployment state on mount (after app restart).
+  // The success panel is already persisted (renderDeployStatus/renderDeployUrl in
+  // the store), so this pass is purely additive: when the service can be confirmed
+  // on Render we refresh the live URL / name and, if the persisted state was lost,
+  // we re-show the success panel.
+  //
+  // We deliberately do NOT reset a persisted "success" when the check returns
+  // exists:false. That check reports false for transient, non-deletion reasons —
+  // API key not yet unlocked on startup, the session→service link missing, or an
+  // API hiccup — and resetting on those made a live service revert to "Deploy
+  // Backend" after every reopen. The state now persists until the user explicitly
+  // cancels or deletes the service.
+  useEffect(() => {
+    const restoreDeployment = async () => {
+      const targetSessionId = lastRenderDeploySessionId || sessionId;
+      if (!targetSessionId || !window.electronAPI?.checkExistingRenderDeploy) return;
+
+      try {
+        const result = await window.electronAPI.checkExistingRenderDeploy({ sessionId: targetSessionId });
+        if (result?.exists) {
+          // Service confirmed on Render — ensure the panel shows success
+          if (deployStatus === 'idle') {
+            setDeployStatus('success');
+          }
+          if (result.serviceUrl) setDeployUrl(result.serviceUrl);
+          if (result.serviceName) {
+            setLinkedService({ name: result.serviceName, url: result.serviceUrl || null });
+          }
+          // Align lastRenderDeploySessionId if needed
+          if (lastRenderDeploySessionId !== targetSessionId) {
+            setLastRenderDeploySessionId(targetSessionId);
+          }
+        }
+      } catch {
+        // Non-fatal — just keep the current (persisted) state
+      }
+    };
+    restoreDeployment();
+  }, [sessionId, lastRenderDeploySessionId]);
 
   // Detect the backend from the session files so the RUNTIME telemetry
   // and the Create Service form are prefilled.
@@ -204,72 +254,84 @@ const RenderDeployPanel = () => {
     setDeployStartTime(Date.now());
     setElapsed(0);
 
+    // Pre-generate the deployId so we can subscribe to events BEFORE
+    // the IPC fires the deploy — prevents missing early log lines.
+    const deployId = (typeof window !== 'undefined' && window.crypto?.randomUUID)
+      ? window.crypto.randomUUID()
+      : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    setCurrentDeployId(deployId);
+
+    // Subscribe to live status stream BEFORE triggering the deploy
+    const unsubLog = window.electronAPI.onRenderDeployLog(deployId, (data) => {
+      const lines = stripAnsi(data).split('\n').filter(l => l.trim());
+      lines.forEach(line => addDeployLog(line));
+    });
+
+    // Subscribe to completion
+    const unsubComplete = window.electronAPI.onRenderDeployComplete(deployId, async (data) => {
+      if (data.success) {
+        setDeployStatus('success');
+        setDeployUrl(data.url);
+        setLastRenderDeploySessionId(sessionId);
+        setLinkedService((prev) => prev ? { ...prev, url: data.url || prev.url } : prev);
+        addDeployLog('✓ Backend deployed successfully!');
+        if (data.url) addDeployLog(`→ ${data.url}`);
+
+        // Record in deployment history (same store/API as the Vercel flow)
+        const store = useEditorStore.getState();
+        const statusText = store.gitStatus || '';
+        const branchMatch = statusText.match(/On branch (\S+)/) || statusText.match(/^##\s+(\S+)/m);
+        const gitBranch = branchMatch ? branchMatch[1] : 'main';
+        const logText = store.gitLog || '';
+        const commitMatch = logText.match(/^(\w+)/);
+        const gitCommit = commitMatch ? commitMatch[1] : undefined;
+
+        const record = {
+          sessionId: store.sessionId,
+          deploymentUrl: data.url,
+          target: 'production',
+          gitBranch,
+          gitCommit,
+          status: 'success',
+          framework: `Render · ${store.renderRuntime || 'Backend'}`,
+        };
+
+        try {
+          const { createDeployment } = await import('../../services/api');
+          const savedRecord = await createDeployment(record);
+          addDeploymentRecord(savedRecord);
+        } catch (apiErr) {
+          console.error('[RenderDeployPanel] Failed to save deployment record:', apiErr);
+          addDeploymentRecord({
+            id: data.deployId || deployId,
+            url: data.url,
+            timestamp: new Date().toISOString(),
+            status: 'success',
+            framework: record.framework,
+          });
+        }
+      } else {
+        setDeployStatus('error');
+        setDeployError(data.error || 'Deploy failed');
+        addDeployLog(`✗ Deploy failed: ${data.error || 'Unknown error'}`);
+      }
+
+      unsubLog?.();
+      unsubComplete?.();
+    });
+
+    cleanupRef.current = { log: unsubLog, complete: unsubComplete };
+
     try {
       const store = useEditorStore.getState();
-      const result = await window.electronAPI.runRenderDeploy({ sessionId: store.sessionId });
-      const deployId = result.deployId;
-      setCurrentDeployId(deployId);
-
-      // Subscribe to live status stream
-      const unsubLog = window.electronAPI.onRenderDeployLog(deployId, (data) => {
-        const lines = stripAnsi(data).split('\n').filter(l => l.trim());
-        lines.forEach(line => addDeployLog(line));
+      await window.electronAPI.runRenderDeploy({
+        sessionId: store.sessionId,
+        deployId,
       });
-
-      // Subscribe to completion
-      const unsubComplete = window.electronAPI.onRenderDeployComplete(deployId, async (data) => {
-        if (data.success) {
-          setDeployStatus('success');
-          setDeployUrl(data.url);
-          setLinkedService((prev) => prev ? { ...prev, url: data.url || prev.url } : prev);
-          addDeployLog('✓ Backend deployed successfully!');
-          if (data.url) addDeployLog(`→ ${data.url}`);
-
-          // Record in deployment history (same store/API as the Vercel flow)
-          const store = useEditorStore.getState();
-          const statusText = store.gitStatus || '';
-          const branchMatch = statusText.match(/On branch (\S+)/) || statusText.match(/^##\s+(\S+)/m);
-          const gitBranch = branchMatch ? branchMatch[1] : 'main';
-          const logText = store.gitLog || '';
-          const commitMatch = logText.match(/^(\w+)/);
-          const gitCommit = commitMatch ? commitMatch[1] : undefined;
-
-          const record = {
-            sessionId: store.sessionId,
-            deploymentUrl: data.url,
-            target: 'production',
-            gitBranch,
-            gitCommit,
-            status: 'success',
-            framework: `Render · ${store.renderRuntime || 'Backend'}`,
-          };
-
-          try {
-            const { createDeployment } = await import('../../services/api');
-            const savedRecord = await createDeployment(record);
-            addDeploymentRecord(savedRecord);
-          } catch (apiErr) {
-            console.error('[RenderDeployPanel] Failed to save deployment record:', apiErr);
-            addDeploymentRecord({
-              id: data.deployId || deployId,
-              url: data.url,
-              timestamp: new Date().toISOString(),
-              status: 'success',
-              framework: record.framework,
-            });
-          }
-        } else {
-          setDeployStatus('error');
-          setDeployError(data.error || 'Deploy failed');
-          addDeployLog(`✗ Deploy failed: ${data.error || 'Unknown error'}`);
-        }
-
-        unsubLog?.();
-        unsubComplete?.();
-      });
-
-      cleanupRef.current = { log: unsubLog, complete: unsubComplete };
     } catch (err) {
+      // Cleanup subscriptions on failure
+      unsubLog?.();
+      unsubComplete?.();
       setDeployStatus('error');
       setDeployError(err.message || 'Failed to start deploy');
       addDeployLog(`✗ Error: ${err.message}`);
@@ -299,14 +361,6 @@ const RenderDeployPanel = () => {
       return;
     }
 
-    // 2. Service linked? Render builds from Git, so a target service is
-    //    required — either an existing one or one created from the repo.
-    const link = await window.electronAPI.getLinkedRenderService({ sessionId });
-    if (!link?.serviceId) {
-      setShowLinkModal(true);
-      return;
-    }
-
     // Reset state for a new deploy
     resetDeploy();
     clearDeployLogs();
@@ -323,13 +377,30 @@ const RenderDeployPanel = () => {
       setDetection(det);
       if (det) setRenderRuntime(det.framework);
 
+      const link = await window.electronAPI.getLinkedRenderService({ sessionId });
       const envVars = detectBackendEnvVars(store.files, det?.rootDir);
-      if (envVars.length > 0) {
-        setDetectedEnvVars(envVars);
-        setDeployStatus('env-confirm');
-        setShowEnvModal(true);
+
+      if (!link?.serviceId) {
+        // No service linked: we want to create a new service and then deploy.
+        setShouldDeployAfterCreate(true);
+        if (envVars.length > 0) {
+          setDetectedEnvVars(envVars);
+          setDeployStatus('env-confirm');
+          setShowEnvModal(true);
+        } else {
+          setPendingEnvVars([]);
+          setShowCreateModal(true);
+        }
       } else {
-        proceedWithDeployment();
+        // Service is linked: standard direct deploy.
+        setShouldDeployAfterCreate(false);
+        if (envVars.length > 0) {
+          setDetectedEnvVars(envVars);
+          setDeployStatus('env-confirm');
+          setShowEnvModal(true);
+        } else {
+          proceedWithDeployment();
+        }
       }
     } catch (err) {
       setDeployStatus('error');
@@ -345,42 +416,76 @@ const RenderDeployPanel = () => {
     proceedWithDeployment,
     setDeployError,
     addDeployLog,
+    setShouldDeployAfterCreate,
+    setPendingEnvVars,
+    setShowCreateModal,
   ]);
 
   /* ── Confirm Env Variables ── */
   const handleConfirmEnv = useCallback(async (selectedVars) => {
     setShowEnvModal(false);
-    setDeployStatus('pushing-env');
-    addDeployLog('⚙ Uploading environment variables to Render...');
 
-    try {
-      const res = await window.electronAPI.pushRenderEnvVars({ sessionId, vars: selectedVars });
-      if (res.success) {
-        addDeployLog('✓ Environment variables successfully uploaded.');
-        proceedWithDeployment();
-      } else {
-        addDeployLog(`✗ Failed to upload environment variables: ${res.error || 'Unknown error'}`);
-        setDeployError(res.error || 'Failed to upload environment variables');
+    if (shouldDeployAfterCreate) {
+      // Chain to service creation first
+      setPendingEnvVars(selectedVars);
+      setShowCreateModal(true);
+    } else {
+      // Standard flow: upload to existing service and deploy
+      setDeployStatus('pushing-env');
+      addDeployLog('⚙ Uploading environment variables to Render...');
+
+      try {
+        const res = await window.electronAPI.pushRenderEnvVars({ sessionId, vars: selectedVars });
+        if (res.success) {
+          addDeployLog('✓ Environment variables successfully uploaded.');
+          proceedWithDeployment();
+        } else {
+          addDeployLog(`✗ Failed to upload environment variables: ${res.error || 'Unknown error'}`);
+          setDeployError(res.error || 'Failed to upload environment variables');
+          setDeployStatus('error');
+        }
+      } catch (err) {
+        addDeployLog(`✗ Error uploading environment variables: ${err.message}`);
+        setDeployError(err.message || 'Failed to upload environment variables');
         setDeployStatus('error');
       }
-    } catch (err) {
-      addDeployLog(`✗ Error uploading environment variables: ${err.message}`);
-      setDeployError(err.message || 'Failed to upload environment variables');
-      setDeployStatus('error');
     }
-  }, [sessionId, proceedWithDeployment, setDeployStatus, addDeployLog, setDeployError]);
+  }, [
+    sessionId,
+    proceedWithDeployment,
+    setDeployStatus,
+    addDeployLog,
+    setDeployError,
+    shouldDeployAfterCreate,
+    setPendingEnvVars,
+    setShowCreateModal,
+  ]);
 
   /* ── Skip / Cancel Env Step ── */
   const handleSkipEnv = useCallback(() => {
     setShowEnvModal(false);
     addDeployLog('⚠ Skipped environment variable upload.');
-    proceedWithDeployment();
-  }, [proceedWithDeployment, addDeployLog]);
+
+    if (shouldDeployAfterCreate) {
+      setPendingEnvVars([]);
+      setShowCreateModal(true);
+    } else {
+      proceedWithDeployment();
+    }
+  }, [
+    proceedWithDeployment,
+    addDeployLog,
+    shouldDeployAfterCreate,
+    setPendingEnvVars,
+    setShowCreateModal,
+  ]);
 
   const handleCancelEnv = useCallback(() => {
     setShowEnvModal(false);
+    setShouldDeployAfterCreate(false);
+    setPendingEnvVars(null);
     resetDeploy();
-  }, [resetDeploy]);
+  }, [resetDeploy, setShouldDeployAfterCreate, setPendingEnvVars]);
 
   /* ── Cancel Deploy ── */
   const handleCancel = useCallback(async () => {
@@ -401,6 +506,43 @@ const RenderDeployPanel = () => {
     setRenderConnected(false, null);
     resetDeploy();
   }, []);
+
+  /* ── Delete Render Service ── */
+  const handleDeleteService = useCallback(async () => {
+    if (!deleteConfirm) {
+      setDeleteConfirm(true);
+      return;
+    }
+
+    if (!window.electronAPI?.deleteRenderService) {
+      setDeployError('Delete not available — update the desktop app.');
+      setDeleteConfirm(false);
+      return;
+    }
+
+    setDeleting(true);
+    setDeployError(null);
+    addDeployLog('⚠ Deleting Render service...');
+
+    try {
+      const store = useEditorStore.getState();
+      const res = await window.electronAPI.deleteRenderService({ sessionId: store.sessionId });
+      if (res.success) {
+        addDeployLog(`✓ Service${res.serviceName ? ` "${res.serviceName}"` : ''} deleted from Render.`);
+        setLinkedService(null);
+        resetDeploy();
+      } else {
+        setDeployError(res.error || 'Failed to delete service');
+        addDeployLog(`✗ Delete failed: ${res.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      setDeployError(err.message || 'Delete request failed');
+      addDeployLog(`✗ Delete error: ${err.message}`);
+    } finally {
+      setDeleting(false);
+      setDeleteConfirm(false);
+    }
+  }, [deleteConfirm, sessionId, addDeployLog, setDeployError, resetDeploy]);
 
   const isDeploying = deployStatus === 'deploying' || deployStatus === 'pushing-env';
   const isSuccess = deployStatus === 'success';
@@ -700,6 +842,51 @@ const RenderDeployPanel = () => {
               </a>
             )}
 
+            {/* Delete Service */}
+            {linkedService && !isDeploying && (
+              <button
+                onClick={handleDeleteService}
+                disabled={deleting}
+                style={{
+                  background: 'transparent',
+                  color: deleteConfirm ? '#FFFFFF' : 'var(--t4)',
+                  border: `1px solid ${deleteConfirm ? 'var(--crimson)' : 'var(--line)'}`,
+                  borderRadius: '3px',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontWeight: 600,
+                  fontSize: '0.56rem',
+                  letterSpacing: '0.06em',
+                  padding: '6px 12px',
+                  cursor: deleting ? 'default' : 'pointer',
+                  opacity: deleting ? 0.5 : 1,
+                  transition: 'all 0.2s ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  ...(deleteConfirm ? { background: 'rgba(229, 72, 77, 0.12)', borderColor: 'var(--crimson)', color: 'var(--crimson)' } : {}),
+                }}
+                onMouseEnter={e => {
+                  if (!deleting && !deleteConfirm) {
+                    e.currentTarget.style.color = 'var(--crimson)';
+                    e.currentTarget.style.borderColor = 'var(--crimson)';
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (!deleteConfirm) {
+                    e.currentTarget.style.color = 'var(--t4)';
+                    e.currentTarget.style.borderColor = 'var(--line)';
+                  }
+                  if (deleteConfirm) setDeleteConfirm(false);
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+                {deleting ? 'DELETING...' : deleteConfirm ? 'CLICK AGAIN TO CONFIRM' : 'DELETE SERVICE'}
+              </button>
+            )}
+
             {/* Error display */}
             {isError && deployError && (
               <div style={{
@@ -959,9 +1146,36 @@ const RenderDeployPanel = () => {
           defaultName={(sessionName || 'causify-backend')
             .toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'causify-backend'}
           onClose={() => setShowCreateModal(false)}
-          onCreated={(name, url) => {
+          onCreated={async (name, url) => {
             setLinkedService({ name, url: url || null });
             setShowCreateModal(false);
+
+            if (shouldDeployAfterCreate) {
+              setShouldDeployAfterCreate(false);
+              
+              if (pendingEnvVars && pendingEnvVars.length > 0) {
+                setDeployStatus('pushing-env');
+                addDeployLog('⚙ Uploading environment variables to the new Render service...');
+                try {
+                  const res = await window.electronAPI.pushRenderEnvVars({ sessionId, vars: pendingEnvVars });
+                  if (res.success) {
+                    addDeployLog('✓ Environment variables successfully uploaded.');
+                    proceedWithDeployment();
+                  } else {
+                    addDeployLog(`✗ Failed to upload environment variables: ${res.error || 'Unknown error'}`);
+                    setDeployError(res.error || 'Failed to upload environment variables');
+                    setDeployStatus('error');
+                  }
+                } catch (err) {
+                  addDeployLog(`✗ Error uploading environment variables: ${err.message}`);
+                  setDeployError(err.message || 'Failed to upload environment variables');
+                  setDeployStatus('error');
+                }
+              } else {
+                proceedWithDeployment();
+              }
+              setPendingEnvVars(null);
+            }
           }}
         />
       )}

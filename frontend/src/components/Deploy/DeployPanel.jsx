@@ -112,6 +112,8 @@ const DeployPanel = () => {
   const addDeploymentRecord = useEditorStore((s) => s.addDeploymentRecord);
   const pendingRedeploy = useEditorStore((s) => s.pendingRedeploy);
   const setPendingRedeploy = useEditorStore((s) => s.setPendingRedeploy);
+  const setLastDeploySessionId = useEditorStore((s) => s.setLastDeploySessionId);
+  const lastDeploySessionId = useEditorStore((s) => s.lastDeploySessionId);
 
   const [showConnectModal, setShowConnectModal] = useState(false);
   const [showEnvModal, setShowEnvModal] = useState(false);
@@ -123,6 +125,29 @@ const DeployPanel = () => {
   const [elapsed, setElapsed] = useState(0);
   const logContainerRef = useRef(null);
   const cleanupRef = useRef({ log: null, complete: null });
+
+  // Delete deployment state
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Deploy scope (personal account vs team) — avoids the SAML/scope 403.
+  const [scopes, setScopes] = useState([]);
+  const [scope, setScope] = useState(null); // { teamId, slug, name, type }
+  const [copiedTokenUrl, setCopiedTokenUrl] = useState(false);
+  const [copiedWorkspace, setCopiedWorkspace] = useState(false);
+
+  // Monorepo deploy indicator (from prepareWorkspace)
+  const [isMonorepo, setIsMonorepo] = useState(false);
+  const [monorepoApp, setMonorepoApp] = useState(null); // app subfolder being built
+
+  // Env vars deferred until after the first deploy creates the project link.
+  const pendingEnvVarsRef = useRef(null);
+
+  // User-chosen project name → clean "<name>.vercel.app" URL (new projects only).
+  const [projectName, setProjectName] = useState('');
+  const projectNameRef = useRef('');
+  const sanitizeName = (s) => String(s || '').toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 100);
 
   // Check token on mount
   useEffect(() => {
@@ -138,6 +163,83 @@ const DeployPanel = () => {
     };
     checkToken();
   }, []);
+
+  // Restore existing deployment state on mount (after app restart).
+  // The success panel is already persisted (deployStatus/deployUrl in the store),
+  // so this pass is purely additive: when the deployment can be confirmed on
+  // Vercel we refresh the live URL / project name and, if the persisted state
+  // was lost (e.g. localStorage cleared), we re-show the success panel.
+  //
+  // We deliberately do NOT reset a persisted "success" when the check returns
+  // exists:false. That check reports false for many transient, non-deletion
+  // reasons — token not yet unlocked on startup, the .vercel link missing from a
+  // regenerated deploy workspace, an API rate-limit, or the latest deploy simply
+  // not being in the READY state — and resetting on those made a live deployment
+  // revert to "Deploy to Production" after every reopen. The state now persists
+  // until the user explicitly cancels or deletes the deployment.
+  useEffect(() => {
+    const restoreDeployment = async () => {
+      const targetSessionId = lastDeploySessionId || sessionId;
+      if (!targetSessionId || !window.electronAPI?.checkExistingVercelDeploy) return;
+
+      try {
+        const result = await window.electronAPI.checkExistingVercelDeploy({ sessionId: targetSessionId });
+        if (result?.exists) {
+          // Deployment confirmed on Vercel — ensure the panel shows success
+          if (deployStatus === 'idle') {
+            setDeployStatus('success');
+          }
+          if (result.deployUrl) setDeployUrl(result.deployUrl);
+          if (result.projectName) setLinkedProject(result.projectName);
+          // If we restored using targetSessionId, make sure we align lastDeploySessionId to it
+          if (lastDeploySessionId !== targetSessionId) {
+            setLastDeploySessionId(targetSessionId);
+          }
+        }
+      } catch {
+        // Non-fatal — just keep the current (persisted) state
+      }
+    };
+    restoreDeployment();
+  }, [sessionId, lastDeploySessionId]);
+
+  // Load deployable scopes (personal account + teams) once connected, and
+  // restore / default the selected scope.
+  useEffect(() => {
+    const loadScopes = async () => {
+      if (!vercelConnected || !window.electronAPI?.listVercelScopes) return;
+      try {
+        const res = await window.electronAPI.listVercelScopes();
+        if (!res?.success || !(res.scopes || []).length) return;
+        setScopes(res.scopes);
+        const current = await window.electronAPI.getVercelScope?.();
+        const match = current && res.scopes.find((s) => (s.teamId || null) === (current.teamId || null));
+        if (match) {
+          setScope(match);
+        } else {
+          // Default to the first scope (personal) and persist it.
+          setScope(res.scopes[0]);
+          await window.electronAPI.setVercelScope?.(res.scopes[0]);
+        }
+      } catch {
+        // non-fatal — scope selector just won't show
+      }
+    };
+    loadScopes();
+  }, [vercelConnected]);
+
+  const handleScopeChange = async (key) => {
+    const next = scopes.find((s) => (s.teamId || 'personal') === key);
+    if (!next) return;
+    setScope(next);
+    try {
+      await window.electronAPI.setVercelScope?.(next);
+      // Project links are per-scope; clear the displayed link so it's re-detected.
+      setLinkedProject(null);
+    } catch {
+      // ignore
+    }
+  };
 
   // Load any existing project link for this session (so redeploys show the target)
   useEffect(() => {
@@ -179,90 +281,122 @@ const DeployPanel = () => {
     return `${m}:${s}`;
   };
 
-  /* ── Proceed with PTY deployment ── */
+  /* ── Proceed With Deployment ── */
   const proceedWithDeployment = useCallback(async () => {
     setDeployStatus('deploying');
     setDeployStartTime(Date.now());
     setElapsed(0);
 
-    try {
-      const store = useEditorStore.getState();
-      const deployOptions = { sessionId: store.sessionId };
+    // Pre-generate the deployId so we can subscribe to events BEFORE
+    // the IPC fires the deploy — prevents missing early log lines.
+    const deployId = (typeof window !== 'undefined' && window.crypto?.randomUUID)
+      ? window.crypto.randomUUID()
+      : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    setCurrentDeployId(deployId);
 
-      const result = await window.electronAPI.runDeploy(deployOptions);
-      const deployId = result.deployId;
-      setCurrentDeployId(deployId);
-      setDeployFramework(result.framework);
+    // Subscribe to live logs BEFORE triggering the deploy
+    const unsubLog = window.electronAPI.onDeployLog(deployId, (data) => {
+      const lines = stripAnsi(data).split('\n').filter(l => l.trim());
+      lines.forEach(line => addDeployLog(line));
+    });
 
-      // Subscribe to live logs
-      const unsubLog = window.electronAPI.onDeployLog(deployId, (data) => {
-        const lines = stripAnsi(data).split('\n').filter(l => l.trim());
-        lines.forEach(line => addDeployLog(line));
-      });
+    // Subscribe to completion
+    const unsubComplete = window.electronAPI.onDeployComplete(deployId, async (data) => {
+      if (data.success) {
+        setDeployStatus('success');
+        setDeployUrl(data.url);
+        setLastDeploySessionId(sessionId);
+        addDeployLog(`✓ Deployment successful!`);
+        addDeployLog(`→ ${data.url}`);
 
-      // Subscribe to completion
-      const unsubComplete = window.electronAPI.onDeployComplete(deployId, async (data) => {
-        if (data.success) {
-          setDeployStatus('success');
-          setDeployUrl(data.url);
-          addDeployLog(`✓ Deployment successful!`);
-          addDeployLog(`→ ${data.url}`);
-
-          // Fetch Git and Snapshot details
-          const store = useEditorStore.getState();
-          const statusText = store.gitStatus || '';
-          const branchMatch = statusText.match(/On branch (\S+)/) || statusText.match(/^##\s+(\S+)/m);
-          const gitBranch = branchMatch ? branchMatch[1] : 'main';
-          
-          const logText = store.gitLog || '';
-          const commitMatch = logText.match(/^(\w+)/);
-          const gitCommit = commitMatch ? commitMatch[1] : undefined;
-          
-          const latestSnapshot = store.snapshots[store.snapshots.length - 1];
-          const snapshotId = latestSnapshot?.id || null;
-
-          const deploymentData = {
-            sessionId: store.sessionId,
-            deploymentUrl: data.url,
-            vercelDeploymentId: deployId,
-            target: 'production',
-            gitBranch,
-            gitCommit,
-            snapshotId,
-            status: 'success',
-            framework: result.framework,
-          };
-
+        // Env vars deferred from the first deploy: the project now exists, so
+        // push them and prompt a redeploy to apply them at build time.
+        if (pendingEnvVarsRef.current && pendingEnvVarsRef.current.length) {
+          const vars = pendingEnvVarsRef.current;
+          pendingEnvVarsRef.current = null;
           try {
-            const { createDeployment } = await import('../../services/api');
-            const savedRecord = await createDeployment(deploymentData);
-            
-            // Record in history
-            addDeploymentRecord(savedRecord);
-          } catch (apiErr) {
-            console.error('[DeployPanel] Failed to save deployment record:', apiErr);
-            // Fallback: local only
-            addDeploymentRecord({
-              id: deployId,
-              url: data.url,
-              timestamp: new Date().toISOString(),
-              status: 'success',
-              framework: result.framework,
-            });
+            const store2 = useEditorStore.getState();
+            const envRes = await window.electronAPI.pushEnvVars({ sessionId: store2.sessionId, vars });
+            if (envRes.success) {
+              addDeployLog(`✓ Added ${vars.length} environment variable(s) to the project.`);
+              addDeployLog('↻ Redeploy to apply them at build time.');
+            } else {
+              addDeployLog(`⚠ Could not add environment variables: ${envRes.error || 'Unknown error'}`);
+            }
+          } catch (envErr) {
+            addDeployLog(`⚠ Could not add environment variables: ${envErr.message}`);
           }
-        } else {
-          setDeployStatus('error');
-          setDeployError(data.error || 'Deployment failed');
-          addDeployLog(`✗ Deployment failed: ${data.error || 'Unknown error'}`);
         }
 
-        // Cleanup subscriptions
-        unsubLog?.();
-        unsubComplete?.();
-      });
+        // Fetch Git and Snapshot details
+        const store = useEditorStore.getState();
+        const statusText = store.gitStatus || '';
+        const branchMatch = statusText.match(/On branch (\S+)/) || statusText.match(/^##\s+(\S+)/m);
+        const gitBranch = branchMatch ? branchMatch[1] : 'main';
+        
+        const logText = store.gitLog || '';
+        const commitMatch = logText.match(/^(\w+)/);
+        const gitCommit = commitMatch ? commitMatch[1] : undefined;
+        
+        const latestSnapshot = store.snapshots[store.snapshots.length - 1];
+        const snapshotId = latestSnapshot?.id || null;
 
-      cleanupRef.current = { log: unsubLog, complete: unsubComplete };
+        const deploymentData = {
+          sessionId: store.sessionId,
+          deploymentUrl: data.url,
+          vercelDeploymentId: deployId,
+          target: 'production',
+          gitBranch,
+          gitCommit,
+          snapshotId,
+          status: 'success',
+          framework: store.deployFramework,
+        };
+
+        try {
+          const { createDeployment } = await import('../../services/api');
+          const savedRecord = await createDeployment(deploymentData);
+          
+          // Record in history
+          addDeploymentRecord(savedRecord);
+        } catch (apiErr) {
+          console.error('[DeployPanel] Failed to save deployment record:', apiErr);
+          // Fallback: local only
+          addDeploymentRecord({
+            id: deployId,
+            url: data.url,
+            timestamp: new Date().toISOString(),
+            status: 'success',
+            framework: store.deployFramework,
+          });
+        }
+      } else {
+        setDeployStatus('error');
+        setDeployError(data.error || 'Deployment failed');
+        addDeployLog(`✗ Deployment failed: ${data.error || 'Unknown error'}`);
+      }
+
+      // Cleanup subscriptions
+      unsubLog?.();
+      unsubComplete?.();
+    });
+
+    cleanupRef.current = { log: unsubLog, complete: unsubComplete };
+
+    try {
+      const store = useEditorStore.getState();
+      const deployOptions = {
+        sessionId: store.sessionId,
+        deployId,
+        ...(projectNameRef.current ? { projectName: projectNameRef.current } : {}),
+      };
+
+      const result = await window.electronAPI.runDeploy(deployOptions);
+      setDeployFramework(result.framework);
     } catch (err) {
+      // Cleanup subscriptions on failure
+      unsubLog?.();
+      unsubComplete?.();
       setDeployStatus('error');
       setDeployError(err.message || 'Failed to start deployment');
       addDeployLog(`✗ Error: ${err.message}`);
@@ -301,6 +435,8 @@ const DeployPanel = () => {
     resetDeploy();
     clearDeployLogs();
     setDeployStatus('connecting');
+    setIsMonorepo(false);
+    setMonorepoApp(null);
 
     try {
       const store = useEditorStore.getState();
@@ -328,6 +464,11 @@ const DeployPanel = () => {
         }
         if (!prep.fileCount) {
           throw new Error('No files to deploy — add or open files in this session first.');
+        }
+        setIsMonorepo(!!prep.monorepo);
+        setMonorepoApp(prep.rootDirectory || null);
+        if (prep.monorepo) {
+          addDeployLog(`🧩 Monorepo — deploying the workspace, building "${prep.rootDirectory || '.'}/".`);
         }
         addDeployLog(`📦 Prepared ${prep.fileCount} file(s) for deployment.`);
       }
@@ -395,6 +536,12 @@ const DeployPanel = () => {
       if (res.success) {
         addDeployLog('✓ Environment variables successfully uploaded.');
         proceedWithDeployment();
+      } else if (/no vercel project linked/i.test(res.error || '')) {
+        // First deploy: the project doesn't exist yet, so env vars can't be
+        // attached now. Deploy to create it, then push them afterward.
+        pendingEnvVarsRef.current = selectedVars;
+        addDeployLog('ℹ New project — deploying first to create it, then env vars will be added.');
+        proceedWithDeployment();
       } else {
         addDeployLog(`✗ Failed to upload environment variables: ${res.error || 'Unknown error'}`);
         setDeployError(res.error || 'Failed to upload environment variables');
@@ -450,11 +597,94 @@ const DeployPanel = () => {
     resetDeploy();
   }, []);
 
+  /* ── Delete Deployment (Vercel Project) ── */
+  const handleDeleteDeployment = useCallback(async () => {
+    if (!deleteConfirm) {
+      setDeleteConfirm(true);
+      return;
+    }
+
+    if (!window.electronAPI?.deleteVercelProject) {
+      setDeployError('Delete not available — update the desktop app.');
+      setDeleteConfirm(false);
+      return;
+    }
+
+    setDeleting(true);
+    setDeployError(null);
+    addDeployLog('⚠ Deleting Vercel project...');
+
+    try {
+      const store = useEditorStore.getState();
+      // Target the session that actually deployed. The project link lives in a
+      // temp dir keyed by session id, and the deploy was recorded under
+      // lastDeploySessionId — using the current sessionId here would miss the
+      // link whenever the app reopened into a new session. Pass the known
+      // project name too so the main process can fall back to resolving the
+      // project by name if the local .vercel link file is gone.
+      const res = await window.electronAPI.deleteVercelProject({
+        sessionId: store.lastDeploySessionId || store.sessionId,
+        projectName: linkedProject || undefined,
+      });
+      if (res.success) {
+        addDeployLog(`✓ Project${res.projectName ? ` "${res.projectName}"` : ''} deleted from Vercel.`);
+        setLinkedProject(null);
+        resetDeploy();
+      } else {
+        setDeployError(res.error || 'Failed to delete project');
+        addDeployLog(`✗ Delete failed: ${res.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      setDeployError(err.message || 'Delete request failed');
+      addDeployLog(`✗ Delete error: ${err.message}`);
+    } finally {
+      setDeleting(false);
+      setDeleteConfirm(false);
+    }
+  }, [deleteConfirm, addDeployLog, setDeployError, resetDeploy]);
+
   const isDeploying = deployStatus === 'deploying';
   const isSuccess = deployStatus === 'success';
   const isError = deployStatus === 'error';
   const statusColor = STATUS_CONFIG[deployStatus]?.color || '#6E6E6E';
   const logs = deployLogs.map(stripAnsi);
+
+  // Detect the "token can't access this scope" / SAML 403 class of failure so we
+  // can show an actionable recovery guide instead of just the raw error.
+  const isScopeAuthError = isError && !!deployError &&
+    /(\b403\b|forbidden|re-authenticate to this scope|Not authorized: Trying to access resource under scope|"?saml"?\s*:\s*true)/i.test(deployError);
+  const blockedScope = (deployError && (deployError.match(/scope[\\"':\s]+([a-z0-9._-]+)/i)?.[1])) || null;
+
+  const copyTokenUrl = async () => {
+    try {
+      await navigator.clipboard?.writeText('https://vercel.com/account/tokens');
+      setCopiedTokenUrl(true);
+      setTimeout(() => setCopiedTokenUrl(false), 1800);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  // Detect a missing package / workspace-dependency failure — e.g. a monorepo
+  // repo deployed as a single folder, so a sibling package can't resolve.
+  const missingModule = isError
+    ? (`${deployError || ''}\n${logs.join('\n')}`
+        .match(/Cannot find module ['"]([^'"]+)['"]|Module not found[^'"]*['"]([^'"]+)['"]/i) || [])
+        .slice(1).find(Boolean) || null
+    : null;
+  const isMissingModuleError = isError && !!missingModule;
+  const looksLikeWorkspacePkg = !!missingModule && missingModule.startsWith('@') && !missingModule.startsWith('@types/');
+
+  const workspaceSnippet = `{
+  "name": "workspace",
+  "private": true,
+  "workspaces": ["client", "shared"]
+}`;
+  const copyWorkspaceSnippet = async () => {
+    try {
+      await navigator.clipboard?.writeText(workspaceSnippet);
+      setCopiedWorkspace(true);
+      setTimeout(() => setCopiedWorkspace(false), 1800);
+    } catch { /* clipboard unavailable */ }
+  };
 
   return (
     <div style={{ padding: '16px', height: '100%', overflowY: 'auto', background: 'var(--s0)' }}>
@@ -568,7 +798,32 @@ const DeployPanel = () => {
             <TelemetryLine label="STATUS" value={<StatusLabel status={deployStatus} />} />
             <TelemetryLine
               label="FRAMEWORK"
-              value={deployFramework || 'DETECTING...'}
+              value={
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px' }}>
+                  {deployFramework || 'DETECTING...'}
+                  {isMonorepo && (
+                    <span
+                      title={monorepoApp ? `Monorepo — building "${monorepoApp}/" from the workspace` : 'Monorepo workspace deploy'}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                        padding: '1px 6px', borderRadius: '3px',
+                        background: 'rgba(56, 189, 248, 0.12)',
+                        border: '1px solid rgba(56, 189, 248, 0.4)',
+                        color: '#7DD3FC',
+                        fontFamily: 'var(--font-number)', fontSize: '0.46rem', fontWeight: 700,
+                        letterSpacing: '0.08em',
+                      }}
+                    >
+                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+                        <rect x="14" y="14" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" />
+                      </svg>
+                      MONOREPO{monorepoApp ? ` · ${monorepoApp}` : ''}
+                    </span>
+                  )}
+                </span>
+              }
               color={deployFramework ? 'var(--t1)' : 'var(--t4)'}
             />
             <TelemetryLine
@@ -587,6 +842,82 @@ const DeployPanel = () => {
               color={isDeploying ? '#38BDF8' : isSuccess ? '#4ADE80' : 'var(--t4)'}
             />
           </div>
+
+          {/* Project name — becomes the Vercel project & URL. Only for new
+              projects; once linked, redeploys keep the existing project. */}
+          {vercelConnected && !linkedProject && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{
+                fontFamily: 'var(--font-number)', fontSize: '0.5rem',
+                letterSpacing: '0.1em', color: 'var(--t3)', textTransform: 'uppercase',
+              }}>
+                Project Name
+              </label>
+              <input
+                type="text"
+                value={projectName}
+                placeholder="my-app"
+                disabled={isDeploying}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setProjectName(v);
+                  projectNameRef.current = sanitizeName(v);
+                }}
+                style={{
+                  background: 'var(--s0)', color: 'var(--t1)',
+                  border: '1px solid var(--line-strong)', borderRadius: '4px',
+                  padding: '7px 9px', fontFamily: 'var(--font-body)',
+                  fontSize: '0.72rem', outline: 'none',
+                }}
+              />
+              <span style={{
+                fontFamily: 'var(--font-number)', fontSize: '0.5rem',
+                color: 'var(--t4)', letterSpacing: '0.02em',
+              }}>
+                URL:{' '}
+                <span style={{ color: '#38BDF8' }}>
+                  {(sanitizeName(projectName) || 'your-project')}.vercel.app
+                </span>
+              </span>
+            </div>
+          )}
+
+          {/* Deploy scope selector — pick the personal account or a team so the
+              upload runs under a scope the token can actually access. */}
+          {vercelConnected && scopes.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{
+                fontFamily: 'var(--font-number)', fontSize: '0.5rem',
+                letterSpacing: '0.1em', color: 'var(--t3)', textTransform: 'uppercase',
+              }}>
+                Deploy Scope
+              </label>
+              <select
+                value={scope ? (scope.teamId || 'personal') : ''}
+                onChange={(e) => handleScopeChange(e.target.value)}
+                disabled={isDeploying}
+                style={{
+                  background: 'var(--s0)', color: 'var(--t1)',
+                  border: '1px solid var(--line-strong)', borderRadius: '4px',
+                  padding: '7px 9px', fontFamily: 'var(--font-body)',
+                  fontSize: '0.7rem', outline: 'none',
+                  cursor: isDeploying ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {scopes.map((s) => (
+                  <option key={s.teamId || 'personal'} value={s.teamId || 'personal'}>
+                    {s.name}{s.type === 'team' ? '  ·  team' : ''}
+                  </option>
+                ))}
+              </select>
+              <span style={{
+                fontFamily: 'var(--font-number)', fontSize: '0.46rem',
+                color: 'var(--t4)', letterSpacing: '0.02em', lineHeight: 1.4,
+              }}>
+                Where this deploys. If a team blocks with an SSO/403 error, pick your personal account.
+              </span>
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -684,34 +1015,81 @@ const DeployPanel = () => {
 
             {/* Deployment URL */}
             {deployUrl && (
-              <a
-                href={deployUrl}
-                target="_blank"
-                rel="noreferrer"
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                <a
+                  href={deployUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    color: '#4ADE80',
+                    textDecoration: 'none',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontWeight: 600,
+                    fontSize: '0.68rem',
+                    letterSpacing: '0.04em',
+                    borderBottom: '1px solid rgba(74, 222, 128, 0.4)',
+                    paddingBottom: '2px',
+                    transition: 'all 0.2s ease',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#FFFFFF'; e.currentTarget.style.borderBottomColor = '#FFFFFF'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = '#4ADE80'; e.currentTarget.style.borderBottomColor = 'rgba(74, 222, 128, 0.4)'; }}
+                >
+                  OPEN DEPLOYMENT
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </a>
+              </div>
+            )}
+
+            {/* Delete Deployment */}
+            {(isSuccess || deployUrl) && !isDeploying && (
+              <button
+                onClick={handleDeleteDeployment}
+                disabled={deleting}
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  color: '#4ADE80',
-                  textDecoration: 'none',
+                  background: 'transparent',
+                  color: deleteConfirm ? '#FFFFFF' : 'var(--t4)',
+                  border: `1px solid ${deleteConfirm ? 'var(--crimson)' : 'var(--line)'}`,
+                  borderRadius: '3px',
                   fontFamily: "'Space Grotesk', sans-serif",
                   fontWeight: 600,
-                  fontSize: '0.68rem',
-                  letterSpacing: '0.04em',
-                  borderBottom: '1px solid rgba(74, 222, 128, 0.4)',
-                  paddingBottom: '2px',
-                  alignSelf: 'flex-start',
+                  fontSize: '0.56rem',
+                  letterSpacing: '0.06em',
+                  padding: '6px 12px',
+                  cursor: deleting ? 'default' : 'pointer',
+                  opacity: deleting ? 0.5 : 1,
                   transition: 'all 0.2s ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  ...(deleteConfirm ? { background: 'rgba(229, 72, 77, 0.12)', borderColor: 'var(--crimson)', color: 'var(--crimson)' } : {}),
                 }}
-                onMouseEnter={e => { e.currentTarget.style.color = '#FFFFFF'; e.currentTarget.style.borderBottomColor = '#FFFFFF'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = '#4ADE80'; e.currentTarget.style.borderBottomColor = 'rgba(74, 222, 128, 0.4)'; }}
+                onMouseEnter={e => {
+                  if (!deleting && !deleteConfirm) {
+                    e.currentTarget.style.color = 'var(--crimson)';
+                    e.currentTarget.style.borderColor = 'var(--crimson)';
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (!deleteConfirm) {
+                    e.currentTarget.style.color = 'var(--t4)';
+                    e.currentTarget.style.borderColor = 'var(--line)';
+                  }
+                  // Reset confirm state if user mouses away
+                  if (deleteConfirm) setDeleteConfirm(false);
+                }}
               >
-                OPEN DEPLOYMENT
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  <polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" />
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                 </svg>
-              </a>
+                {deleting ? 'DELETING...' : deleteConfirm ? 'CLICK AGAIN TO CONFIRM DELETE' : 'DELETE DEPLOYMENT'}
+              </button>
             )}
 
             {/* Error display */}
@@ -729,6 +1107,190 @@ const DeployPanel = () => {
                 wordBreak: 'break-word',
               }}>
                 {deployError}
+              </div>
+            )}
+
+            {/* Actionable recovery guide for scope / SAML-403 failures */}
+            {isScopeAuthError && (
+              <div style={{
+                marginTop: '10px',
+                padding: '12px 14px',
+                background: 'rgba(56, 189, 248, 0.05)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
+                borderRadius: '5px',
+              }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '4px',
+                }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#38BDF8"
+                    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+                  </svg>
+                  <span style={{
+                    fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700,
+                    fontSize: '0.72rem', color: 'var(--t1)', letterSpacing: '0.02em',
+                  }}>
+                    How to fix this
+                  </span>
+                </div>
+
+                <p style={{
+                  fontFamily: 'var(--font-body)', fontSize: '0.68rem', lineHeight: 1.5,
+                  color: 'var(--t3)', margin: '0 0 10px',
+                }}>
+                  Your Vercel token can only access{' '}
+                  <strong style={{ color: 'var(--t2)' }}>{blockedScope || 'a team'}</strong>, which
+                  is protected by SSO. Deploy with a token scoped to your <strong style={{ color: 'var(--t2)' }}>personal account</strong> instead:
+                </p>
+
+                <ol style={{
+                  margin: 0, paddingLeft: '18px',
+                  fontFamily: 'var(--font-body)', fontSize: '0.68rem', lineHeight: 1.7,
+                  color: 'var(--t2)',
+                }}>
+                  <li>
+                    Open{' '}
+                    <span style={{ color: '#38BDF8', fontFamily: 'var(--font-number)', fontSize: '0.64rem' }}>
+                      vercel.com/account/tokens
+                    </span>{' '}
+                    <button
+                      onClick={copyTokenUrl}
+                      style={{
+                        marginLeft: '4px', verticalAlign: 'middle',
+                        background: 'transparent', border: '1px solid var(--line-strong)',
+                        borderRadius: '3px', color: copiedTokenUrl ? '#4ADE80' : 'var(--t3)',
+                        fontFamily: 'var(--font-number)', fontSize: '0.5rem', fontWeight: 600,
+                        letterSpacing: '0.04em', padding: '2px 6px', cursor: 'pointer',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      {copiedTokenUrl ? 'Copied' : 'Copy link'}
+                    </button>
+                  </li>
+                  <li><strong>Create Token</strong> → set <strong>Scope</strong> to your personal account (not the team).</li>
+                  <li>Come back and click <strong>Reconnect</strong> below, then paste the new token.</li>
+                  <li>In <strong>Deploy Scope</strong>, choose your personal account.</li>
+                  <li>Hit <strong>Deploy to Production</strong> again.</li>
+                </ol>
+
+                <button
+                  onClick={async () => { await handleDisconnect(); setShowConnectModal(true); }}
+                  style={{
+                    marginTop: '11px', width: '100%', height: '30px',
+                    background: 'rgba(56, 189, 248, 0.12)',
+                    border: '1px solid rgba(56, 189, 248, 0.45)',
+                    borderRadius: '4px', color: '#7DD3FC',
+                    fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700,
+                    fontSize: '0.62rem', letterSpacing: '0.06em', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(56, 189, 248, 0.2)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(56, 189, 248, 0.12)'; }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                  </svg>
+                  Disconnect &amp; Reconnect
+                </button>
+              </div>
+            )}
+
+            {/* Recovery guide for a missing package / workspace dependency */}
+            {isMissingModuleError && (
+              <div style={{
+                marginTop: '10px',
+                padding: '12px 14px',
+                background: 'rgba(255, 176, 36, 0.05)',
+                border: '1px solid rgba(255, 176, 36, 0.28)',
+                borderRadius: '5px',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '4px' }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FFB224"
+                    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" />
+                  </svg>
+                  <span style={{
+                    fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700,
+                    fontSize: '0.72rem', color: 'var(--t1)', letterSpacing: '0.02em',
+                  }}>
+                    Missing package
+                  </span>
+                </div>
+
+                <p style={{
+                  fontFamily: 'var(--font-body)', fontSize: '0.68rem', lineHeight: 1.5,
+                  color: 'var(--t3)', margin: '0 0 10px',
+                }}>
+                  The build can't find{' '}
+                  <strong style={{ color: 'var(--t2)' }}>{missingModule}</strong>.{' '}
+                  {looksLikeWorkspacePkg
+                    ? 'That looks like a package from another folder in your repo (a workspace package). You deployed one folder, so its sibling was left behind — deploy the whole workspace instead:'
+                    : "Add it to your app's dependencies (or inline it) so the build can resolve it:"}
+                </p>
+
+                {looksLikeWorkspacePkg ? (
+                  <>
+                    <ol style={{
+                      margin: 0, paddingLeft: '18px',
+                      fontFamily: 'var(--font-body)', fontSize: '0.68rem', lineHeight: 1.7,
+                      color: 'var(--t2)',
+                    }}>
+                      <li style={{ marginBottom: '2px' }}>
+                        Add a <strong>root <code style={{ fontFamily: 'var(--font-number)' }}>package.json</code></strong> next to your folders (adjust names):
+                      </li>
+                    </ol>
+                    <div style={{ position: 'relative', margin: '6px 0 8px' }}>
+                      <pre style={{
+                        margin: 0, padding: '8px 10px',
+                        background: 'var(--s0)', border: '1px solid var(--line-strong)',
+                        borderRadius: '4px', color: 'var(--t2)',
+                        fontFamily: 'var(--font-number)', fontSize: '0.6rem', lineHeight: 1.5,
+                        overflowX: 'auto', whiteSpace: 'pre',
+                      }}>{workspaceSnippet}</pre>
+                      <button
+                        onClick={copyWorkspaceSnippet}
+                        style={{
+                          position: 'absolute', top: '6px', right: '6px',
+                          background: 'var(--s2)', border: '1px solid var(--line-strong)',
+                          borderRadius: '3px', color: copiedWorkspace ? '#4ADE80' : 'var(--t3)',
+                          fontFamily: 'var(--font-number)', fontSize: '0.5rem', fontWeight: 600,
+                          letterSpacing: '0.04em', padding: '2px 6px', cursor: 'pointer',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {copiedWorkspace ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                    <ol start={2} style={{
+                      margin: 0, paddingLeft: '18px',
+                      fontFamily: 'var(--font-body)', fontSize: '0.68rem', lineHeight: 1.7,
+                      color: 'var(--t2)',
+                    }}>
+                      <li>Make sure your app's <code style={{ fontFamily: 'var(--font-number)' }}>package.json</code> lists <code style={{ fontFamily: 'var(--font-number)', color: 'var(--t1)' }}>"{missingModule}": "*"</code>.</li>
+                      <li><strong>Fully restart the app</strong>, then Deploy again — you'll skip the folder picker and see a <strong>MONOREPO</strong> badge.</li>
+                    </ol>
+                    <p style={{
+                      fontFamily: 'var(--font-body)', fontSize: '0.62rem', lineHeight: 1.5,
+                      color: 'var(--t4)', margin: '8px 0 0',
+                    }}>
+                      Type-only import? You can instead inline those types in the app and drop the dependency — then just deploy that folder.
+                    </p>
+                  </>
+                ) : (
+                  <ol style={{
+                    margin: 0, paddingLeft: '18px',
+                    fontFamily: 'var(--font-body)', fontSize: '0.68rem', lineHeight: 1.7,
+                    color: 'var(--t2)',
+                  }}>
+                    <li>If it's an npm package: add <code style={{ fontFamily: 'var(--font-number)', color: 'var(--t1)' }}>"{missingModule}"</code> to your <code style={{ fontFamily: 'var(--font-number)' }}>package.json</code> dependencies.</li>
+                    <li>If it's your own code in another folder: import it with a relative path, or set up a workspace.</li>
+                    <li>Deploy again.</li>
+                  </ol>
+                )}
               </div>
             )}
           </div>

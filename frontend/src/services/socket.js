@@ -12,6 +12,7 @@
 
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client/dist/sockjs';
+import { initCollab, destroyCollab, handleYjsMessage } from './collabDoc';
 
 // In production Electron the app is loaded via file:// protocol,
 // so relative URLs don't work — point directly at the local backend.
@@ -95,6 +96,24 @@ export const connectWebSocket = (sessionId, userInfo, callbacks = {}) => {
         }
       );
 
+      // Subscribe to file presence ("who is working in which file")
+      subscriptions.presence = stompClient.subscribe(
+        `/topic/session/${sessionId}/presence`,
+        (message) => {
+          const data = JSON.parse(message.body);
+          if (callbacks.onPresenceUpdate) callbacks.onPresenceUpdate(data);
+        }
+      );
+
+      // Subscribe to file/folder deletions
+      subscriptions.fileDelete = stompClient.subscribe(
+        `/topic/session/${sessionId}/file-delete`,
+        (message) => {
+          const data = JSON.parse(message.body);
+          if (callbacks.onFileDelete) callbacks.onFileDelete(data);
+        }
+      );
+
       // Subscribe to whiteboard updates
       subscriptions.whiteboard = stompClient.subscribe(
         `/topic/session/${sessionId}/whiteboard`,
@@ -130,6 +149,33 @@ export const connectWebSocket = (sessionId, userInfo, callbacks = {}) => {
           if (callbacks.onFollowUpdate) callbacks.onFollowUpdate(data);
         }
       );
+
+      // Subscribe to user kick events
+      subscriptions.kick = stompClient.subscribe(
+        `/topic/session/${sessionId}/kick`,
+        (message) => {
+          const data = JSON.parse(message.body);
+          if (callbacks.onUserKicked) callbacks.onUserKicked(data);
+        }
+      );
+
+      // Subscribe to CRDT (Yjs) document updates, then start the
+      // shared document + sync handshake. Text sync now flows through
+      // this channel as small binary deltas instead of whole files.
+      subscriptions.yjs = stompClient.subscribe(
+        `/topic/session/${sessionId}/yjs`,
+        (message) => {
+          try { handleYjsMessage(JSON.parse(message.body)); } catch (e) { /* ignore */ }
+        }
+      );
+      initCollab(sessionId, userInfo.id, (msg) => {
+        if (stompClient && stompClient.connected) {
+          stompClient.publish({
+            destination: `/app/session/${sessionId}/yjs`,
+            body: JSON.stringify(msg),
+          });
+        }
+      });
 
       // Announce our presence with full user info
       stompClient.publish({
@@ -185,6 +231,36 @@ export const sendCursorPosition = (sessionId, userId, position) => {
     stompClient.publish({
       destination: `/app/session/${sessionId}/cursor`,
       body: JSON.stringify({ userId, ...position }),
+    });
+  }
+};
+
+// Notify everyone that a file/folder was deleted
+export const sendFileDelete = (sessionId, userId, path) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/file-delete`,
+      body: JSON.stringify({ userId, path }),
+    });
+  }
+};
+
+// Announce which file this user is currently working in
+export const sendFilePresence = (sessionId, presence) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/presence`,
+      body: JSON.stringify(presence),
+    });
+  }
+};
+
+// Owner action: set another user's edit permission ('editor' | 'viewer')
+export const sendSetPermission = (sessionId, userId, permission) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/permission`,
+      body: JSON.stringify({ userId, permission }),
     });
   }
 };
@@ -264,8 +340,19 @@ export const sendFollowState = (sessionId, editorState) => {
   }
 };
 
+// Kick a user from the session (only owners should call this)
+export const sendKickUser = (sessionId, userId) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/kick`,
+      body: JSON.stringify({ userId }),
+    });
+  }
+};
+
 // Disconnect from WebSocket
 export const disconnectWebSocket = () => {
+  destroyCollab();
   if (stompClient) {
     Object.values(subscriptions).forEach((sub) => {
       try { sub.unsubscribe(); } catch (e) { /* ignore */ }

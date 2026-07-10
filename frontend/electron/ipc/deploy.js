@@ -78,7 +78,79 @@ function prepareWorkspace(sessionId, files, chosenWebRoot = null) {
     // Normalize separators and strip any leading slashes
     const safeRel = rel.replace(/\\/g, '/').replace(/^\/+/, '');
     if (!safeRel) continue;
+
+    // Never ship real .env secret files — those hold secrets and env vars are
+    // injected by Vercel at build time. Keep templates (.env.example/.sample).
+    const baseName = safeRel.split('/').pop();
+    if (/^\.env(\.|$)/.test(baseName) && !/\.(example|sample|template)$/i.test(baseName)) continue;
+
     items.push({ rel: safeRel, content });
+  }
+
+  // ── Monorepo? Deploy the WHOLE workspace and build the chosen app folder. ──
+  // A workspace package (e.g. "@scope/shared") only resolves if the sibling
+  // packages ship alongside the app and npm installs from the workspace root,
+  // so we upload the full tree and point Vercel's rootDirectory at the app.
+  const { items: rootItems } = stripCommonWrapper(items);
+  const mono = detectMonorepo(rootItems);
+  if (mono) {
+    let appCandidates = listWebRootCandidates(rootItems).filter((c) => c.dir !== '');
+    // Prefer real framework apps — a shared lib may have a build script but
+    // isn't a deploy target.
+    const frameworkApps = appCandidates.filter((c) => c.framework);
+    if (frameworkApps.length > 0) appCandidates = frameworkApps;
+    let appDir;
+    if (chosenWebRoot != null) {
+      appDir = chosenWebRoot === '.' ? '' : String(chosenWebRoot).replace(/\/+$/, '');
+    } else if (appCandidates.length > 1) {
+      // Several apps in the workspace — ask which one to build (rootDirectory).
+      return {
+        needsChoice: true,
+        monorepo: true,
+        candidates: appCandidates.map((c) => ({
+          dir: c.dir,
+          framework: c.framework,
+          label: c.label,
+          fileCount: rootItems.filter((i) => i.rel.startsWith(c.dir + '/')).length,
+        })),
+      };
+    } else {
+      appDir = appCandidates.length === 1 ? appCandidates[0].dir : '';
+    }
+
+    // Keep the app + its workspace deps; drop unrelated packages (e.g. a backend).
+    const { items: treeItems, keptDirs, excludeDirs } = pruneMonorepoTree(rootItems, appDir);
+
+    // Write the (pruned) workspace tree.
+    let fileCount = 0;
+    for (const { rel, content } of treeItems) {
+      if (!rel) continue;
+      const target = path.join(dir, rel);
+      if (!target.startsWith(dir)) continue; // path-traversal guard
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, content == null ? '' : String(content), 'utf-8');
+      fileCount++;
+    }
+
+    // Marker read by deployViaApi → sets Vercel's rootDirectory (build subfolder).
+    try {
+      fs.writeFileSync(
+        path.join(dir, '.causify-deploy.json'),
+        JSON.stringify({
+          monorepo: true,
+          rootDirectory: appDir || null,
+          tool: mono.tool,
+          packages: keptDirs || null,
+          excluded: excludeDirs || [],
+        }),
+        'utf-8'
+      );
+    } catch { /* non-fatal */ }
+
+    return {
+      cwd: dir, fileCount, webRoot: appDir || '.', rootDirectory: appDir || null,
+      monorepo: true, packages: keptDirs || null, excluded: excludeDirs || [],
+    };
   }
 
   // The user shouldn't have to lay the project out for Vercel. Vercel serves the
@@ -272,6 +344,128 @@ function commonRootDir(paths) {
   return segments.every((s) => s[0] === first) ? first : null;
 }
 
+/**
+ * Strip any single wrapper directories (e.g. everything under "my-repo/") so the
+ * returned items are relative to the true project root. Returns { items, wrapper }.
+ */
+function stripCommonWrapper(items) {
+  let kept = items;
+  const parts = [];
+  let prefix = commonRootDir(kept.map((i) => i.rel));
+  while (prefix) {
+    parts.push(prefix);
+    kept = kept.map((i) => ({ rel: i.rel.slice(prefix.length + 1), content: i.content }));
+    prefix = commonRootDir(kept.map((i) => i.rel));
+  }
+  return { items: kept, wrapper: parts.join('/') };
+}
+
+/**
+ * Detect a JS monorepo at the (already root-normalized) project root: a root
+ * package.json declaring `workspaces`, or a pnpm-workspace.yaml. Returns
+ * { tool } or null.
+ */
+function detectMonorepo(items) {
+  const contentOf = (rel) => {
+    const it = items.find((i) => i.rel === rel);
+    return it ? it.content : null;
+  };
+  if (items.some((i) => i.rel === 'pnpm-workspace.yaml')) return { tool: 'pnpm' };
+  const pkgRaw = contentOf('package.json');
+  if (pkgRaw) {
+    try {
+      const ws = JSON.parse(pkgRaw).workspaces;
+      const has = Array.isArray(ws)
+        ? ws.length > 0
+        : (ws && Array.isArray(ws.packages) && ws.packages.length > 0);
+      if (has) return { tool: 'npm' };
+    } catch { /* unparseable root package.json — treat as non-monorepo */ }
+  }
+  return null;
+}
+
+/**
+ * For an npm/yarn workspace, keep only the app being built plus the workspace
+ * packages it depends on (transitively) — dropping unrelated packages like a
+ * backend. The root package.json's `workspaces` is rewritten to the kept set so
+ * `npm install` doesn't error on the removed ones. Falls back to the full tree
+ * when it can't safely prune (e.g. pnpm, glob-only layouts it can't resolve).
+ * Returns { items, keptDirs, excludeDirs }.
+ */
+function pruneMonorepoTree(rootItems, appDir) {
+  const full = { items: rootItems, keptDirs: null, excludeDirs: [] };
+  if (!appDir) return full;
+
+  const contentOf = (rel) => {
+    const it = rootItems.find((i) => i.rel === rel);
+    return it ? it.content : null;
+  };
+  let rootPkg;
+  try { rootPkg = JSON.parse(contentOf('package.json') || '{}'); } catch { return full; }
+  const ws = rootPkg.workspaces;
+  const globs = Array.isArray(ws) ? ws : (ws && Array.isArray(ws.packages) ? ws.packages : null);
+  if (!globs) return full; // can't determine packages safely (e.g. pnpm) → keep all
+
+  // Every directory that holds a package.json → its parsed manifest.
+  const pkgByDir = new Map();
+  for (const it of rootItems) {
+    if (it.rel === 'package.json') continue;
+    if (it.rel.endsWith('/package.json')) {
+      const d = it.rel.slice(0, -'/package.json'.length);
+      try { pkgByDir.set(d, JSON.parse(it.content || '{}')); } catch { pkgByDir.set(d, {}); }
+    }
+  }
+  if (!pkgByDir.has(appDir)) return full; // app has no package.json — don't risk it
+
+  const matchGlob = (glob, dir) => {
+    if (glob.endsWith('/*')) {
+      const p = glob.slice(0, -2);
+      return dir.startsWith(p + '/') && !dir.slice(p.length + 1).includes('/');
+    }
+    return dir === glob;
+  };
+  // Treat top-level package folders as workspace candidates even if they aren't
+  // in the globs yet — so a sibling the app depends on (e.g. shared/) is picked
+  // up and added to the rewritten workspaces, auto-correcting a missing entry.
+  const isTopLevel = (d) => d.indexOf('/') === -1;
+  const wsDirs = [...pkgByDir.keys()].filter((d) => isTopLevel(d) || globs.some((g) => matchGlob(g, d)));
+  if (!wsDirs.includes(appDir)) wsDirs.push(appDir);
+
+  const nameToDir = new Map();
+  for (const d of wsDirs) {
+    const nm = pkgByDir.get(d) && pkgByDir.get(d).name;
+    if (nm) nameToDir.set(nm, d);
+  }
+
+  // BFS from the app over workspace dependencies.
+  const needed = new Set([appDir]);
+  const queue = [appDir];
+  while (queue.length) {
+    const d = queue.shift();
+    const pkg = pkgByDir.get(d) || {};
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies };
+    for (const dep of Object.keys(deps)) {
+      const dd = nameToDir.get(dep);
+      if (dd && !needed.has(dd)) { needed.add(dd); queue.push(dd); }
+    }
+  }
+
+  const excludeDirs = wsDirs.filter((d) => !needed.has(d));
+  if (excludeDirs.length === 0) return { items: rootItems, keptDirs: [...needed], excludeDirs: [] };
+
+  let items = rootItems.filter(
+    (it) => !excludeDirs.some((d) => it.rel === d || it.rel.startsWith(d + '/'))
+  );
+
+  // Rewrite the root workspaces to only the kept packages.
+  const keptDirs = [...needed];
+  const newWs = Array.isArray(ws) ? keptDirs : { ...ws, packages: keptDirs };
+  const newRootPkg = JSON.stringify({ ...rootPkg, workspaces: newWs }, null, 2);
+  items = items.map((it) => (it.rel === 'package.json' ? { rel: it.rel, content: newRootPkg } : it));
+
+  return { items, keptDirs, excludeDirs };
+}
+
 let pty;
 try {
   pty = require('node-pty');
@@ -321,6 +515,93 @@ function retrieveToken() {
   } catch (err) {
     console.error('[Causify Deploy] Failed to decrypt token:', err.message);
     return null;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+ *  SCOPE MANAGEMENT (personal account vs team)
+ *
+ *  Vercel API calls run under a "scope". With no teamId, the API uses the
+ *  token's default scope — which, for tokens whose default is a SAML-SSO team,
+ *  fails with 403. We let the user explicitly pick a scope and pass its teamId
+ *  on every call (teamId = null means the personal account).
+ * ══════════════════════════════════════════════════════════ */
+
+const SCOPE_FILE = path.join(CONFIG_DIR, 'vercel-scope.json');
+
+function storeScope(scope) {
+  try {
+    if (!scope) { clearScope(); return; }
+    fs.writeFileSync(SCOPE_FILE, JSON.stringify({
+      teamId: scope.teamId || null,
+      slug: scope.slug || null,
+      name: scope.name || null,
+    }), 'utf-8');
+  } catch (err) {
+    console.error('[Causify Deploy] Failed to store scope:', err.message);
+  }
+}
+
+function retrieveScope() {
+  try {
+    if (!fs.existsSync(SCOPE_FILE)) return null;
+    return JSON.parse(fs.readFileSync(SCOPE_FILE, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function clearScope() {
+  try { if (fs.existsSync(SCOPE_FILE)) fs.unlinkSync(SCOPE_FILE); } catch { /* ignore */ }
+}
+
+/** teamId of the currently-selected scope (null = personal account). */
+function getTeamId() {
+  const s = retrieveScope();
+  return s?.teamId || null;
+}
+
+/** Append ?teamId= / &teamId= to a Vercel API URL when a team scope is active. */
+function withTeam(url, teamId) {
+  if (!teamId) return url;
+  return url + (url.includes('?') ? '&' : '?') + 'teamId=' + encodeURIComponent(teamId);
+}
+
+/**
+ * List the scopes this token can deploy to: the personal account + any teams.
+ * Returns { success, scopes: [{ teamId, slug, name, type }], error }.
+ */
+async function listScopes(token) {
+  try {
+    const scopes = [];
+    const userRes = await fetch('https://api.vercel.com/v2/user', {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (userRes.ok) {
+      const u = await userRes.json();
+      const user = u.user || u;
+      scopes.push({
+        teamId: null,
+        slug: user.username || user.email || 'personal',
+        name: `${user.name || user.username || 'Personal'} (personal)`,
+        type: 'personal',
+      });
+    }
+    const teamsRes = await fetch('https://api.vercel.com/v2/teams?limit=100', {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (teamsRes.ok) {
+      const t = await teamsRes.json();
+      (t.teams || []).forEach((tm) => {
+        scopes.push({ teamId: tm.id, slug: tm.slug, name: tm.name || tm.slug, type: 'team' });
+      });
+    }
+    if (scopes.length === 0) return { success: false, error: 'Could not read any scopes for this token' };
+    return { success: true, scopes };
+  } catch (err) {
+    return { success: false, error: err.message || 'Request failed' };
   }
 }
 
@@ -445,9 +726,9 @@ function linkProject(cwd, projectId, orgId, projectName) {
  * List the Vercel projects available to the token (newest first).
  * Returns { success, projects: [{ id, name, accountId, framework }], error }.
  */
-async function listProjects(token) {
+async function listProjects(token, teamId) {
   try {
-    const response = await fetch('https://api.vercel.com/v9/projects?limit=100', {
+    const response = await fetch(withTeam('https://api.vercel.com/v9/projects?limit=100', teamId), {
       headers: { Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(10000),
     });
@@ -496,7 +777,7 @@ function sanitizeProjectName(name) {
 /** Collect every file under a directory as { rel, abs }, skipping junk. */
 function collectFiles(baseDir) {
   const out = [];
-  const skip = new Set(['.vercel', 'node_modules', '.git']);
+  const skip = new Set(['.vercel', 'node_modules', '.git', '.causify-deploy.json']);
   const walk = (absDir, relDir) => {
     let entries;
     try {
@@ -514,6 +795,69 @@ function collectFiles(baseDir) {
   };
   walk(baseDir, '');
   return out;
+}
+
+/** Parse a Vercel /events response (NDJSON or JSON array) into printable log lines. */
+function parseEventLines(text) {
+  const out = [];
+  const pushEvent = (ev) => {
+    if (!ev) return;
+    const t = ev.type;
+    const payloadText = (ev.payload && ev.payload.text) != null ? ev.payload.text : (ev.text || '');
+    if ((t === 'stdout' || t === 'stderr' || t === 'command' || !t) && payloadText) {
+      String(payloadText).split(/\r?\n/).forEach((line) => { if (line.trim()) out.push(line); });
+    }
+  };
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return out;
+  if (trimmed.startsWith('[')) {
+    try { JSON.parse(trimmed).forEach(pushEvent); return out; } catch { /* fall through to NDJSON */ }
+  }
+  trimmed.split(/\r?\n/).forEach((line) => {
+    const s = line.trim();
+    if (!s) return;
+    try { pushEvent(JSON.parse(s)); } catch { /* ignore non-JSON line */ }
+  });
+  return out;
+}
+
+/**
+ * When a deployment ends in ERROR, pull the real reason: the deployment's
+ * errorMessage plus the tail of the build log, and stream it to the panel.
+ * Returns a concise one-line message for the failure banner.
+ */
+async function fetchDeployErrorDetail(deploymentId, teamId, token, log) {
+  let concise = '';
+  try {
+    const res = await fetch(withTeam(`https://api.vercel.com/v13/deployments/${deploymentId}`, teamId), {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (res.ok) {
+      const d = await res.json();
+      concise = d.errorMessage || (d.error && d.error.message) || '';
+    }
+  } catch { /* best effort */ }
+
+  try {
+    const res = await fetch(
+      withTeam(`https://api.vercel.com/v3/deployments/${deploymentId}/events?builds=1&limit=1000`, teamId),
+      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000) }
+    );
+    if (res.ok) {
+      const tail = parseEventLines(await res.text()).slice(-30);
+      if (tail.length) {
+        log('── Build log (tail) ──');
+        tail.forEach((l) => log(`  ${l}`));
+        if (!concise) {
+          const errLine = [...tail].reverse().find((l) => /error|failed|exited|not found|cannot|✗/i.test(l));
+          if (errLine) concise = errLine.trim();
+        }
+      }
+    }
+  } catch { /* best effort */ }
+
+  return concise;
 }
 
 /**
@@ -539,6 +883,27 @@ async function deployViaApi(token, cwd, opts, deployId, event, getSession) {
     return !s || s.cancelled;
   };
 
+  const optsTeamId = opts.teamId || null;
+
+  // Monorepo marker (written by prepareWorkspace): tells Vercel which subfolder
+  // to build while still installing from the workspace root.
+  let rootDirectory = null;
+  try {
+    const markerPath = path.join(cwd, '.causify-deploy.json');
+    if (fs.existsSync(markerPath)) {
+      const meta = JSON.parse(fs.readFileSync(markerPath, 'utf-8'));
+      rootDirectory = meta.rootDirectory || null;
+      if (meta.monorepo) {
+        const pkgs = Array.isArray(meta.packages) && meta.packages.length
+          ? ` (workspace: ${meta.packages.join(', ')})` : '';
+        log(`Monorepo — building "${rootDirectory || '.'}/"${pkgs}.`);
+        if (Array.isArray(meta.excluded) && meta.excluded.length) {
+          log(`  Skipped unrelated package(s): ${meta.excluded.join(', ')}.`);
+        }
+      }
+    }
+  } catch { /* no marker → normal single-app deploy */ }
+
   try {
     const files = collectFiles(cwd);
     if (files.length === 0) throw new Error('No files to deploy.');
@@ -551,7 +916,7 @@ async function deployViaApi(token, cwd, opts, deployId, event, getSession) {
       const buf = fs.readFileSync(f.abs);
       const sha = crypto.createHash('sha1').update(buf).digest('hex');
 
-      const res = await fetch('https://api.vercel.com/v2/files', {
+      const res = await fetch(withTeam('https://api.vercel.com/v2/files', optsTeamId), {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -581,16 +946,27 @@ async function deployViaApi(token, cwd, opts, deployId, event, getSession) {
       // Pure static projects have no build step; let Vercel build framework apps.
       ...(hasPackageJson ? {} : { projectSettings: { framework: null } }),
     };
+    // Monorepo: build the app subfolder but install from the workspace root, so
+    // sibling workspace packages (e.g. "@scope/shared") resolve.
+    if (rootDirectory) {
+      body.projectSettings = { ...(body.projectSettings || {}), rootDirectory };
+    }
 
-    const createRes = await fetch('https://api.vercel.com/v13/deployments?forceNew=1', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60000),
-    });
+    // skipAutoDetectionConfirmation=1 lets Vercel auto-detect the framework for
+    // new projects without requiring a full projectSettings object (otherwise
+    // the first deploy of a framework app is rejected).
+    const createRes = await fetch(
+      withTeam('https://api.vercel.com/v13/deployments?forceNew=1&skipAutoDetectionConfirmation=1', optsTeamId),
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(60000),
+      }
+    );
     const dep = await createRes.json().catch(() => ({}));
     if (!createRes.ok) {
       throw new Error(dep?.error?.message || `Deployment request failed (${createRes.status}).`);
@@ -598,7 +974,8 @@ async function deployViaApi(token, cwd, opts, deployId, event, getSession) {
 
     const deploymentId = dep.id || dep.uid;
     const ownerId = dep.ownerId || dep.creator?.uid || null;
-    const teamId = ownerId && String(ownerId).startsWith('team_') ? ownerId : null;
+    // Prefer the explicitly-selected team scope; fall back to the deployment's owner.
+    const teamId = optsTeamId || (ownerId && String(ownerId).startsWith('team_') ? ownerId : null);
     const projectId = dep.projectId || dep.project?.id || null;
     let url = dep.url ? `https://${dep.url}` : null;
 
@@ -650,7 +1027,17 @@ async function deployViaApi(token, cwd, opts, deployId, event, getSession) {
       log(`✓ Deployment ready: ${url}`);
       finish({ success: true, url, exitCode: 0, error: null });
     } else {
-      finish({ success: false, url, exitCode: 1, error: `Deployment ${state.toLowerCase()}.` });
+      // Surface the actual build failure (Vercel error message + build-log tail)
+      // instead of a generic "Deployment error."
+      let detail = '';
+      try {
+        detail = await fetchDeployErrorDetail(deploymentId, teamId, token, log);
+      } catch { /* best effort */ }
+      const msg = detail
+        ? `Build ${state.toLowerCase()}: ${detail}`
+        : `Deployment ${state.toLowerCase()} — open the deployment on vercel.com to see full build logs.`;
+      log(`✗ ${msg}`);
+      finish({ success: false, url, exitCode: 1, error: msg });
     }
   } catch (err) {
     finish({ success: false, url: null, exitCode: 1, error: err.message || 'Deployment failed.' });
@@ -663,10 +1050,19 @@ async function deployViaApi(token, cwd, opts, deployId, event, getSession) {
 function detectFramework(cwd) {
   try {
     if (!cwd || !fs.existsSync(cwd)) return 'unknown';
-    const pkgPath = path.join(cwd, 'package.json');
+    // For a monorepo, detect the framework of the app subfolder being built.
+    let base = cwd;
+    try {
+      const markerPath = path.join(cwd, '.causify-deploy.json');
+      if (fs.existsSync(markerPath)) {
+        const meta = JSON.parse(fs.readFileSync(markerPath, 'utf-8'));
+        if (meta.rootDirectory) base = path.join(cwd, meta.rootDirectory);
+      }
+    } catch { /* fall back to cwd */ }
+    const pkgPath = path.join(base, 'package.json');
     if (!fs.existsSync(pkgPath)) {
       // No package.json — treat a project with an index.html as a static site.
-      if (fs.existsSync(path.join(cwd, 'index.html'))) return 'Static HTML';
+      if (fs.existsSync(path.join(base, 'index.html'))) return 'Static HTML';
       return 'unknown';
     }
 
@@ -744,13 +1140,13 @@ function detectEnvFiles(cwd) {
  * Push environment variables to a Vercel project.
  * Handles 409 conflicts by removing and re-adding.
  */
-async function pushEnvVars(token, projectId, vars) {
+async function pushEnvVars(token, projectId, vars, teamId) {
   const results = [];
 
   for (const { key, value } of vars) {
     try {
       const response = await fetch(
-        `https://api.vercel.com/v10/projects/${projectId}/env`,
+        withTeam(`https://api.vercel.com/v10/projects/${projectId}/env`, teamId),
         {
           method: 'POST',
           headers: {
@@ -770,7 +1166,7 @@ async function pushEnvVars(token, projectId, vars) {
       if (response.status === 409) {
         // Variable already exists — find and update it
         const existingRes = await fetch(
-          `https://api.vercel.com/v9/projects/${projectId}/env`,
+          withTeam(`https://api.vercel.com/v9/projects/${projectId}/env`, teamId),
           {
             headers: { Authorization: `Bearer ${token}` },
             signal: AbortSignal.timeout(10000),
@@ -786,7 +1182,7 @@ async function pushEnvVars(token, projectId, vars) {
           if (existing) {
             // Delete the existing variable
             await fetch(
-              `https://api.vercel.com/v9/projects/${projectId}/env/${existing.id}`,
+              withTeam(`https://api.vercel.com/v9/projects/${projectId}/env/${existing.id}`, teamId),
               {
                 method: 'DELETE',
                 headers: { Authorization: `Bearer ${token}` },
@@ -796,7 +1192,7 @@ async function pushEnvVars(token, projectId, vars) {
 
             // Re-create it with the new value
             const retryRes = await fetch(
-              `https://api.vercel.com/v10/projects/${projectId}/env`,
+              withTeam(`https://api.vercel.com/v10/projects/${projectId}/env`, teamId),
               {
                 method: 'POST',
                 headers: {
@@ -867,6 +1263,8 @@ function registerDeployHandlers() {
   ipcMain.handle('deploy:set-token', async (_event, token) => {
     try {
       storeToken(token);
+      // A new token may see different scopes — reset the selection so the user re-picks.
+      clearScope();
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
@@ -880,6 +1278,7 @@ function registerDeployHandlers() {
   ipcMain.handle('deploy:clear-token', () => {
     try {
       if (fs.existsSync(TOKEN_FILE)) fs.unlinkSync(TOKEN_FILE);
+      clearScope();
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
@@ -888,6 +1287,27 @@ function registerDeployHandlers() {
 
   ipcMain.handle('deploy:validate-token', async (_event, token) => {
     return await validateToken(token);
+  });
+
+  /* ── Scope (personal account vs team) ── */
+
+  ipcMain.handle('deploy:list-scopes', async (_event, tokenArg) => {
+    const token = tokenArg || retrieveToken();
+    if (!token) return { success: false, error: 'No Vercel token stored' };
+    return await listScopes(token);
+  });
+
+  ipcMain.handle('deploy:set-scope', (_event, scope) => {
+    try {
+      storeScope(scope);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('deploy:get-scope', () => {
+    return retrieveScope();
   });
 
   /* ── Workspace Preparation ── */
@@ -928,7 +1348,7 @@ function registerDeployHandlers() {
     if (!token) {
       return { success: false, error: 'No Vercel token stored' };
     }
-    return await listProjects(token);
+    return await listProjects(token, getTeamId());
   });
 
   ipcMain.handle('deploy:get-linked', async (_event, options) => {
@@ -974,7 +1394,7 @@ function registerDeployHandlers() {
       };
     }
 
-    const results = await pushEnvVars(token, projectId, vars);
+    const results = await pushEnvVars(token, projectId, vars, getTeamId());
     const allSuccess = results.every((r) => r.success);
     return { success: allSuccess, results };
   });
@@ -987,7 +1407,9 @@ function registerDeployHandlers() {
       throw new Error('No Vercel token configured. Please connect your Vercel account first.');
     }
 
-    const deployId = crypto.randomUUID();
+    // Accept a pre-generated deployId from the renderer so it can subscribe
+    // to events BEFORE the deploy fires (avoids missing early log lines).
+    const deployId = options.deployId || crypto.randomUUID();
     const cwd = resolveWorkspaceCwd(options);
 
     try {
@@ -1011,17 +1433,18 @@ function registerDeployHandlers() {
     const framework = detectFramework(cwd);
 
     // Target project name: reuse the linked project (so updates are pushed to
-    // the same deployment) or derive a stable name from the session.
+    // the same deployment), else the user-chosen name, else a session fallback.
     const linked = getLinkedProjectInfo(cwd);
     const projectName =
-      linked?.projectName || sanitizeProjectName(options.sessionId || 'causify-app');
+      linked?.projectName
+      || sanitizeProjectName(options.projectName || options.sessionId || 'causify-app');
 
     const session = { api: true, cancelled: false, token };
     deploySessions.set(deployId, session);
     console.log(`[Causify Deploy] Started API deploy ${deployId.substring(0, 8)} (${projectName}) in ${cwd}`);
 
     // Fire the deployment asynchronously; progress streams over IPC channels.
-    deployViaApi(token, cwd, { projectName }, deployId, event, () => deploySessions.get(deployId))
+    deployViaApi(token, cwd, { projectName, teamId: getTeamId() }, deployId, event, () => deploySessions.get(deployId))
       .catch((err) => {
         console.error('[Causify Deploy] API deploy crashed:', err.message);
       });
@@ -1050,6 +1473,102 @@ function registerDeployHandlers() {
       return { success: true };
     }
     return { success: false, error: 'No active deploy with that ID' };
+  });
+
+  /* ── Delete Vercel Project ── */
+
+  ipcMain.handle('deploy:delete-project', async (_event, options = {}) => {
+    const token = retrieveToken();
+    if (!token) {
+      return { success: false, error: 'No Vercel token stored' };
+    }
+
+    const cwd = resolveWorkspaceCwd(options);
+    let info = getLinkedProjectInfo(cwd);
+
+    // Fallback: the local `.vercel/project.json` link is gone — the OS cleared the
+    // temp workspace, or this is a different session than the one that deployed —
+    // but the panel still knows the project name. Resolve the project id by name
+    // under the active scope so the user can still delete it from here.
+    if ((!info || !info.projectId) && options.projectName) {
+      const teamId = getTeamId();
+      const wanted = sanitizeProjectName(options.projectName);
+      const listed = await listProjects(token, teamId);
+      const match = listed.success && (listed.projects || []).find(
+        (p) => p.name === options.projectName || sanitizeProjectName(p.name) === wanted
+      );
+      if (match) {
+        info = { projectId: match.id, orgId: teamId, projectName: match.name };
+      }
+    }
+
+    if (!info || !info.projectId) {
+      return { success: false, error: 'No Vercel project linked to this session' };
+    }
+
+    try {
+      let url = `https://api.vercel.com/v9/projects/${encodeURIComponent(info.projectId)}`;
+      if (info.orgId) url += `?teamId=${encodeURIComponent(info.orgId)}`;
+
+      const res = await fetch(url, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(15000),
+      });
+
+      if (!res.ok && res.status !== 404) {
+        const data = await res.json().catch(() => ({}));
+        return { success: false, error: data.error?.message || `Delete failed (HTTP ${res.status})` };
+      }
+
+      // Clear the local .vercel/ link so the next deploy creates a fresh project
+      const vercelDir = path.join(cwd, '.vercel');
+      if (fs.existsSync(vercelDir)) {
+        fs.rmSync(vercelDir, { recursive: true, force: true });
+      }
+
+      console.log(`[Causify Deploy] Deleted Vercel project ${info.projectName || info.projectId}`);
+      return { success: true, projectName: info.projectName || null };
+    } catch (err) {
+      return { success: false, error: err.message || 'Request failed' };
+    }
+  });
+
+  /* ── Check for Existing Deployment (restore after app restart) ── */
+
+  ipcMain.handle('deploy:check-existing', async (_event, options = {}) => {
+    const token = retrieveToken();
+    if (!token) return { exists: false };
+
+    const cwd = resolveWorkspaceCwd(options);
+    const info = getLinkedProjectInfo(cwd);
+    if (!info || !info.projectId) return { exists: false };
+
+    try {
+      let url = `https://api.vercel.com/v6/deployments?projectId=${encodeURIComponent(info.projectId)}&limit=1&state=READY`;
+      if (info.orgId) url += `&teamId=${encodeURIComponent(info.orgId)}`;
+
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!res.ok) return { exists: false };
+
+      const data = await res.json();
+      const latest = data.deployments?.[0];
+      if (!latest) return { exists: false };
+
+      return {
+        exists: true,
+        projectName: info.projectName || null,
+        projectId: info.projectId,
+        deployUrl: latest.url ? `https://${latest.url}` : null,
+        deploymentId: latest.uid || null,
+      };
+    } catch {
+      return { exists: false };
+    }
   });
 }
 

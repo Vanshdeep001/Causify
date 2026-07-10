@@ -557,18 +557,6 @@ const EditorPage = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {/* File breadcrumb */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {directoryPath && (
-                    <span style={{
-                      fontFamily: 'var(--font-number)',
-                      fontWeight: 500,
-                      color: 'var(--t3)',
-                      fontSize: '0.68rem',
-                      letterSpacing: '0.04em',
-                    }}>
-                      {directoryPath}
-                      <span style={{ color: 'var(--t4)', margin: '0 4px' }}>/</span>
-                    </span>
-                  )}
                   <LanguageIcon filename={fileName} size={15} />
                   <span style={{
                     fontFamily: 'var(--font-header)',
@@ -912,46 +900,8 @@ const EditorPage = () => {
               </div>
             ) : activePath ? (
               <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                {collisionWarning && (
-                  <div style={{
-                    background: 'rgba(229, 72, 77, 0.08)',
-                    border: '1px dotted var(--crimson)',
-                    borderRadius: '2px',
-                    padding: '8px 12px',
-                    margin: '12px 12px 0 12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    animation: 'fadeIn 0.2s ease-in-out',
-                  }}>
-                    <span style={{
-                      fontFamily: "'Space Grotesk', sans-serif",
-                      fontSize: '0.72rem',
-                      fontWeight: 700,
-                      color: 'var(--crimson)',
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                    }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                        <line x1="12" y1="9" x2="12" y2="13" />
-                        <line x1="12" y1="17" x2="12.01" y2="17" />
-                      </svg>
-                      COLLISION DETECTED // LINE {collisionWarning.line} IS LOCKED BY {collisionWarning.username.toUpperCase()}
-                    </span>
-                    <span style={{
-                      fontFamily: 'var(--font-number)',
-                      fontSize: '0.55rem',
-                      color: 'var(--t3)',
-                      letterSpacing: '0.02em',
-                    }}>
-                      TYPING BLOCKED ON LOCK LINE
-                    </span>
-                  </div>
-                )}
+                {/* Line-collision lock removed — the CRDT merges concurrent edits,
+                    so same-line editing is safe and no longer blocked. */}
                 <ImpactWarningBanner />
                 <div id="causify-code-region" style={{ flex: 1, position: 'relative', minHeight: 0 }}>
                   <MonacoEditor />

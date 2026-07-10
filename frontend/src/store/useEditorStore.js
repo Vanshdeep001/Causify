@@ -185,11 +185,14 @@ const parseExecutionGraph = (code, language) => {
   return { nodes, edges };
 };
 
-// State keys that must NOT survive a window close: they are kept in
-// sessionStorage (per-window), so a refresh reconnects the session but
-// closing the app disconnects it. Everything else that is persisted goes
-// to localStorage and is restored on the next launch.
-const SESSION_ONLY_KEYS = ['sessionId', 'currentUser', 'userRole'];
+// Keys that must live only in sessionStorage (per-window, dropped on close).
+// Session identity used to live here so closing the app disconnected the
+// session — but that meant the session id vanished on reopen, breaking
+// deploy/link (which key off it) and forcing a new session every launch.
+// Session identity now persists to localStorage and App.jsx verifies it
+// against the backend on launch (reconnect if alive, recreate if gone), so
+// nothing needs to be session-only anymore.
+const SESSION_ONLY_KEYS = [];
 
 const useEditorStore = create(persist((set, get) => ({
 
@@ -200,7 +203,8 @@ const useEditorStore = create(persist((set, get) => ({
   userRole: null,           // 'owner' or 'collaborator'
   connectedUsers: [],       // List of users currently connected
   lastChange: null,         // Most recent remote change: { userId, path, timestamp }
-  fileActivity: {},         // { [path]: { userId, timestamp, username, color } }
+  fileActivity: {},         // { [path]: { userId, timestamp, username, color } } — recent EDIT ("LIVE")
+  filePresence: {},         // { [userId]: { path, username, color, timestamp } } — who's OPEN in which file
   remoteCursors: {},        // { [userId]: { line, column, path, username, color } }
   changeNotifications: [],  // [ { id, username, path, linesChanged, timestamp, color } ]
   remoteLineChanges: {},    // { [path]: { [lineNumber]: { userId, username, color, timestamp, oldLine, newLine } } }
@@ -212,6 +216,7 @@ const useEditorStore = create(persist((set, get) => ({
   code: '',                 // Code content
   language: 'javascript',  // Editor language mode
   collisionWarning: null,   // { line: number, username: string } - active concurrency block
+  collabReady: false,       // true once the CRDT (Yjs) session is initialized
 
   // ---- Save State ----
   fileHandles: {},          // { [path]: FileSystemFileHandle } — for silent re-saves
@@ -303,6 +308,7 @@ const useEditorStore = create(persist((set, get) => ({
   deployFramework: null,          // Detected framework for current deploy
   pendingRedeploy: false,         // Flag to trigger deployment from another tab
   deployTarget: 'frontend',       // 'frontend' (Vercel) | 'backend' (Render) — active Deploy HQ tab
+  lastDeploySessionId: null,      // sessionId used for the last Vercel deploy (survives app restart)
 
   // ---- Render (backend) Deployment State ----
   renderDeployStatus: 'idle',     // 'idle' | 'connecting' | 'env-confirm' | 'pushing-env' | 'deploying' | 'success' | 'error'
@@ -314,6 +320,7 @@ const useEditorStore = create(persist((set, get) => ({
   renderConnected: false,         // Whether a Render API key is stored
   renderOwnerName: null,          // Render account display name
   renderRuntime: null,            // Detected backend runtime label
+  lastRenderDeploySessionId: null, // sessionId used for the last Render deploy (survives app restart)
 
   // ---- UI Layout State ----
   activeView: 'code',               // 'code' | 'whiteboard'
@@ -353,7 +360,38 @@ const useEditorStore = create(persist((set, get) => ({
   setCurrentUser: (user) => set({ currentUser: user }),
   setUserRole: (role) => set({ userRole: role }),
   isOwner: () => get().userRole === 'owner',
-  setConnectedUsers: (users) => set({ connectedUsers: users }),
+  setConnectedUsers: (users) => set((s) => {
+    // Drop presence entries for users who are no longer connected.
+    const ids = new Set((users || []).map(u => u.id));
+    const filePresence = {};
+    Object.entries(s.filePresence).forEach(([uid, p]) => {
+      if (ids.has(uid)) filePresence[uid] = p;
+    });
+    return { connectedUsers: users, filePresence };
+  }),
+
+  // Record which file a remote user currently has open (persistent presence,
+  // distinct from the transient "LIVE" edit flash in fileActivity).
+  updateFilePresence: (userId, data) => set((s) => ({
+    filePresence: {
+      ...s.filePresence,
+      [userId]: {
+        path: data.path,
+        username: data.username,
+        color: data.color || '#6366f1',
+        timestamp: Date.now(),
+      },
+    },
+  })),
+
+  // Can the current user edit? Owner always can; collaborators can unless the
+  // owner set them to "viewer". Absent permission defaults to editable.
+  canCurrentUserEdit: () => {
+    const { userRole, currentUser, connectedUsers } = get();
+    if (userRole === 'owner') return true;
+    const me = connectedUsers.find(u => u.id === currentUser?.id);
+    return !me || me.permission !== 'viewer';
+  },
   addUser: (user) => set((s) => ({
     connectedUsers: [...s.connectedUsers.filter(u => u.id !== user.id), user]
   })),
@@ -1192,6 +1230,7 @@ const useEditorStore = create(persist((set, get) => ({
     deployFramework: null,
   }),
   setDeployTarget: (target) => set({ deployTarget: target }),
+  setLastDeploySessionId: (id) => set({ lastDeploySessionId: id }),
 
   // ---- Actions: Render (backend) Deployment ----
   setRenderDeployStatus: (status) => set({ renderDeployStatus: status }),
@@ -1208,6 +1247,7 @@ const useEditorStore = create(persist((set, get) => ({
     renderDeployError: null, currentRenderDeployId: null, renderDeployStartTime: null,
     renderRuntime: null,
   }),
+  setLastRenderDeploySessionId: (id) => set({ lastRenderDeploySessionId: id }),
 
   // ---- Actions: Impact Detection ----
   addImpactWarning: (warning) => {
@@ -1266,6 +1306,7 @@ const useEditorStore = create(persist((set, get) => ({
       remoteCursors: {},
       changeNotifications: [],
       remoteLineChanges: {},
+      filePresence: {},
       impactWarnings: [],
       revertNotification: null,
       files: {},
@@ -1281,6 +1322,7 @@ const useEditorStore = create(persist((set, get) => ({
       rootCause: null,
       causalityGraph: null,
       collisionWarning: null,
+      collabReady: false,
       // Save state
       fileHandles: {},
       savedContents: {},
@@ -1323,6 +1365,7 @@ const useEditorStore = create(persist((set, get) => ({
       deployFramework: null,
       pendingRedeploy: false,
       deployTarget: 'frontend',
+      lastDeploySessionId: null,
       // Render (backend) deployment
       renderDeployStatus: 'idle',
       renderDeployLogs: [],
@@ -1332,18 +1375,17 @@ const useEditorStore = create(persist((set, get) => ({
       currentRenderDeployId: null,
       renderConnected: false,
       renderOwnerName: null,
-      renderRuntime: null,
+      lastRenderDeploySessionId: null,
     });
   },
 }), {
   name: 'causify-session',
-  // Split persistence:
-  //  - Session identity lives in sessionStorage: it survives a page refresh
-  //    (so the WebSocket auto-reconnects) but dies with the window, so
-  //    closing the app always disconnects the session.
-  //  - Everything else (workspace files, layout, whiteboard) lives in
-  //    localStorage so the user picks up exactly where they left off
-  //    after closing and reopening the app.
+  // Persistence: the workspace (files, layout, whiteboard) AND the session
+  // identity (id, user, role) both live in localStorage, so reopening the app
+  // drops you back into the same session — App.jsx verifies it against the
+  // backend on launch and reconnects the WebSocket (or recreates the session
+  // if the backend no longer has it). The sessionStorage split is retained for
+  // any future per-window-only keys (SESSION_ONLY_KEYS), currently none.
   storage: {
     getItem: (name) => {
       const localStr = localStorage.getItem(name);
@@ -1406,6 +1448,27 @@ const useEditorStore = create(persist((set, get) => ({
     terminalHeight: state.terminalHeight,
     terminalLayoutMode: state.terminalLayoutMode,
     isFileExplorerOpen: state.isFileExplorerOpen,
+    // Git repo connection — persisted so a connected repo stays connected across
+    // reopen (the panel shows it immediately instead of flashing the connect
+    // form) until the user manually disconnects. App/panel reconciles with the
+    // backend on launch and only drops it if the repo truly can't be restored.
+    gitRepoConnected: state.gitRepoConnected,
+    gitRepoUrl: state.gitRepoUrl,
+    // Deployment state (Vercel) — restored so reopening shows the success panel
+    deployStatus: state.deployStatus,
+    deployUrl: state.deployUrl,
+    vercelConnected: state.vercelConnected,
+    vercelUsername: state.vercelUsername,
+    deployFramework: state.deployFramework,
+    deployTarget: state.deployTarget,
+    lastDeploySessionId: state.lastDeploySessionId,
+    // Deployment state (Render)
+    renderDeployStatus: state.renderDeployStatus,
+    renderDeployUrl: state.renderDeployUrl,
+    renderConnected: state.renderConnected,
+    renderOwnerName: state.renderOwnerName,
+    renderRuntime: state.renderRuntime,
+    lastRenderDeploySessionId: state.lastRenderDeploySessionId,
   }),
 }));
 

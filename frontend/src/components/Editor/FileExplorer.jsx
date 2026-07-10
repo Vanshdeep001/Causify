@@ -5,7 +5,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import useEditorStore from '../../store/useEditorStore';
 import { createSession, joinSession, uploadProject, saveFile, deleteFile } from '../../services/api';
-import { connectWebSocket, sendCodeChange } from '../../services/socket';
+import { connectWebSocket, sendCodeChange, sendFileDelete } from '../../services/socket';
 import { detectProject } from '../../services/devserver';
 import MarioLoader from '../common/MarioLoader';
 
@@ -43,6 +43,11 @@ const FileExplorer = ({ onToggle }) => {
   const sessionName = useEditorStore((s) => s.sessionName);
   const currentUser = useEditorStore((s) => s.currentUser);
   const userRole = useEditorStore((s) => s.userRole);
+  const connectedUsers = useEditorStore((s) => s.connectedUsers);
+
+  // Owner and editor collaborators may create/upload/delete; viewers may not.
+  const canEdit = userRole === 'owner'
+    || connectedUsers.find((u) => u.id === currentUser?.id)?.permission !== 'viewer';
 
   const setSession = useEditorStore((s) => s.setSession);
   const setCurrentUser = useEditorStore((s) => s.setCurrentUser);
@@ -53,6 +58,7 @@ const FileExplorer = ({ onToggle }) => {
   const handleExecutionResult = useEditorStore((s) => s.handleExecutionResult);
   const updateRemoteFile = useEditorStore((s) => s.updateRemoteFile);
   const fileActivity = useEditorStore((s) => s.fileActivity);
+  const filePresence = useEditorStore((s) => s.filePresence);
   const resetSession = useEditorStore((s) => s.resetSession);
   const addFile = useEditorStore((s) => s.addFile);
   const removeFile = useEditorStore((s) => s.removeFile);
@@ -215,6 +221,14 @@ const FileExplorer = ({ onToggle }) => {
           }
         }
       },
+      onPresenceUpdate: (d) => {
+        const currentU = useEditorStore.getState().currentUser;
+        if (d.userId !== currentU?.id) useEditorStore.getState().updateFilePresence(d.userId, d);
+      },
+      onFileDelete: (d) => {
+        const currentU = useEditorStore.getState().currentUser;
+        if (d.userId !== currentU?.id) useEditorStore.getState().removeFile(d.path);
+      },
       onWhiteboardChange: (d) => {
         if (window.onWhiteboardSocketMessage) window.onWhiteboardSocketMessage(d);
       },
@@ -291,7 +305,21 @@ const FileExplorer = ({ onToggle }) => {
     'lock' // package-lock.json / yarn.lock are huge and not needed
   ]);
 
-  const SKIP_DIRS = ['node_modules', '.git', 'dist', 'build', '.next', '.cache', 'coverage', '__pycache__', 'target', 'venv'];
+  // Dependency, build-output and tooling directories that hold thousands of
+  // files no one edits. Importing them bloats the session and slows the app.
+  // 'site-packages' is the key one for Python: it catches every virtualenv's
+  // packages no matter what the env folder is named (venv, .venv, env, …).
+  const SKIP_DIRS = [
+    // JS / Node
+    'node_modules', 'bower_components', '.next', '.nuxt', '.svelte-kit', '.turbo', '.parcel-cache',
+    // Python virtual envs & caches
+    'venv', '.venv', 'site-packages', '__pycache__',
+    '.pytest_cache', '.mypy_cache', '.ruff_cache', '.tox', '.eggs',
+    // Version control / IDE / editor metadata
+    '.git', '.hg', '.svn', '.idea', '.vscode',
+    // Build output & caches
+    'dist', 'build', 'target', '.gradle', 'coverage', '.cache',
+  ];
 
   const shouldUploadFile = (file) => {
     const path = file.webkitRelativePath || file.name;
@@ -436,6 +464,8 @@ const FileExplorer = ({ onToggle }) => {
     try {
       await deleteFile(sessionId, path);
       removeFile(path);
+      // Tell the other collaborators to drop it from their tree too.
+      if (sessionId && currentUser) sendFileDelete(sessionId, currentUser.id, path);
     } catch (err) {
       setErrorMsg('Failed to delete item');
     }
@@ -594,7 +624,9 @@ const FileExplorer = ({ onToggle }) => {
 
   const buildTree = (filesObj) => {
     const tree = {};
-    const hiddenEntries = new Set(['.git', 'node_modules', '.DS_Store']);
+    // Hide the same heavy dependency/build dirs we skip on import, plus OS cruft.
+    // Guards older sessions whose files were uploaded before the skip list grew.
+    const hiddenEntries = new Set([...SKIP_DIRS, '.DS_Store']);
     const allPaths = Object.keys(filesObj);
 
     allPaths.forEach((path) => {
@@ -617,11 +649,17 @@ const FileExplorer = ({ onToggle }) => {
     const isAffected = affectedPaths.has(path);
     const [isHovered, setIsHovered] = useState(false);
 
+    // Users (other than me) currently working in this file.
+    const presentUsers = isFolder ? [] : Object.entries(filePresence)
+      .filter(([uid, p]) => p.path === path && uid !== currentUser?.id)
+      .map(([uid, p]) => ({ uid, ...p }));
+
     const extension = name.includes('.') ? name.split('.').pop().toUpperCase() : '';
     const nameOnly = name.includes('.') ? name.substring(0, name.lastIndexOf('.')) : name;
 
     return (
       <div
+        className="fx-file-item"
         onClick={(e) => {
           e.stopPropagation();
           if (isFolder) toggleFolder(path);
@@ -718,6 +756,33 @@ const FileExplorer = ({ onToggle }) => {
           <div title="Affected by recent change" style={{ width: '5px', height: '5px', background: 'var(--amber)', borderRadius: '50%', animation: 'hud-pulse 1.4s infinite' }} />
         )}
 
+        {/* Presence: who is currently working in this file */}
+        {presentUsers.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}
+            title={`${presentUsers.map((u) => u.username).join(', ')} working here`}>
+            {presentUsers.slice(0, 3).map((u, i) => (
+              <div key={u.uid} style={{
+                width: '14px', height: '14px', borderRadius: '3px',
+                background: u.color || '#6366f1',
+                border: '1px solid var(--s1)',
+                marginLeft: i === 0 ? 0 : '-4px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '0.42rem', fontWeight: 800, color: '#0A0A0A',
+                fontFamily: 'var(--font-number)',
+                boxShadow: `0 0 5px ${u.color || '#6366f1'}66`,
+              }}>
+                {(u.username || '?').charAt(0).toUpperCase()}
+              </div>
+            ))}
+            {presentUsers.length > 3 && (
+              <span style={{
+                marginLeft: '3px', fontSize: '0.42rem', color: 'var(--t3)',
+                fontFamily: 'var(--font-number)', fontWeight: 700,
+              }}>+{presentUsers.length - 3}</span>
+            )}
+          </div>
+        )}
+
         {activeEditor && !isFolder && (
           <div style={{
             padding: '1px 3px', fontSize: '0.4rem', fontFamily: 'var(--font-number)',
@@ -727,6 +792,32 @@ const FileExplorer = ({ onToggle }) => {
           }}>
             LIVE
           </div>
+        )}
+
+        {/* Delete — owner & editor collaborators only. Visibility is CSS-driven
+            (revealed on row :hover) so it survives parent re-renders. */}
+        {canEdit && (
+          <button
+            className="fx-file-del"
+            onClick={(e) => { e.stopPropagation(); handleDelete(path, isFolder); }}
+            title={`Delete ${isFolder ? 'folder' : 'file'}`}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '18px', height: '18px', flexShrink: 0,
+              background: 'transparent', border: 'none', borderRadius: '3px',
+              color: 'var(--t3)', cursor: 'pointer', padding: 0,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--crimson)'; e.currentTarget.style.background = 'rgba(232,17,35,0.12)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--t3)'; e.currentTarget.style.background = 'transparent'; }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              <line x1="10" y1="11" x2="10" y2="17" />
+              <line x1="14" y1="11" x2="14" y2="17" />
+            </svg>
+          </button>
         )}
       </div>
     );
@@ -1177,10 +1268,15 @@ const FileExplorer = ({ onToggle }) => {
 
         {(sessionId || Object.keys(files).length > 0 || newItem) && (
           <div style={{ padding: '8px 0' }}>
+            <style>{`
+              .fx-file-del { opacity: 0; pointer-events: none; transition: opacity 0.12s ease; }
+              .fx-file-item:hover .fx-file-del { opacity: 1; pointer-events: auto; }
+            `}</style>
             <div style={{ padding: '8px 14px', ...sectionLabelSty, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>Project Files</span>
-              {/* Solo (restored) workspaces have no role — treat as owner */}
-              {(!sessionId || userRole === 'owner') && (
+              {/* Solo workspaces (no role) and any editor — owner or collaborator —
+                  may create/upload. Viewers cannot. */}
+              {(!sessionId || canEdit) && (
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',

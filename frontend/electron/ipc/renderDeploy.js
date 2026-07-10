@@ -374,6 +374,21 @@ const TERMINAL_STATUSES = new Set([
 ]);
 
 /**
+ * Return the most recent deploy for a service, or null. Used as a fallback when
+ * a manual trigger returns nothing usable — e.g. a brand-new service whose first
+ * build Render already auto-started.
+ */
+async function findLatestDeploy(key, serviceId) {
+  const result = await renderFetch(
+    key,
+    `/services/${encodeURIComponent(serviceId)}/deploys?limit=1`
+  ).catch(() => null);
+  if (!result || !result.res.ok || !Array.isArray(result.data)) return null;
+  const first = result.data[0];
+  return first?.deploy || first || null;
+}
+
+/**
  * Trigger a deploy for the linked service and poll it to completion,
  * streaming progress over `render-deploy:log-<id>` / `render-deploy:complete-<id>`
  * — the same contract the Vercel deploy uses, so the panel logic mirrors it.
@@ -406,16 +421,28 @@ async function deployService(key, serviceId, opts, deployId, event) {
         timeoutMs: 30000,
       }
     );
-    if (!res.ok) {
-      throw new Error(data?.message || `Deploy request failed (${res.status}).`);
+    // A brand-new service is created with autoDeploy:'yes', so Render already
+    // kicked off its first build. An immediate second trigger can therefore be
+    // rejected, or return a body we can't parse (data === null) — which used to
+    // crash on `data.id`. Fall back to the deploy Render already started so a
+    // freshly-created service still streams to completion instead of failing.
+    let deploy = res.ok ? data : null;
+    if (!deploy || !deploy.id) {
+      deploy = await findLatestDeploy(key, serviceId);
+    }
+    if (!deploy || !deploy.id) {
+      throw new Error(
+        data?.message ||
+        'Render accepted the request but returned no deploy to track. The service’s first build may already be running — open it on the Render dashboard, or wait a moment and hit Redeploy.'
+      );
     }
 
-    const renderDeployId = data.id;
+    const renderDeployId = deploy.id;
     const s = session();
     if (s) s.renderDeployId = renderDeployId;
 
-    if (data.commit?.message) {
-      log(`Commit: ${String(data.commit.message).split('\n')[0]}`);
+    if (deploy.commit?.message) {
+      log(`Commit: ${String(deploy.commit.message).split('\n')[0]}`);
     }
 
     // Set up the live log tail: ownerId is required by the logs API.
@@ -432,7 +459,7 @@ async function deployService(key, serviceId, opts, deployId, event) {
 
     // 2. Poll the deploy status and tail the real Render logs. Backend
     //    builds are slower than static frontends — allow up to 20 minutes.
-    let status = data.status || 'created';
+    let status = deploy.status || 'created';
     let lastStatus = null;
     const startedAt = Date.now();
 
@@ -613,7 +640,9 @@ function registerRenderDeployHandlers() {
       throw new Error('No Render service linked. Link an existing service or create one from your GitHub repository first.');
     }
 
-    const deployId = crypto.randomUUID();
+    // Accept a pre-generated deployId from the renderer so it can subscribe
+    // to events BEFORE the deploy fires (avoids missing early log lines).
+    const deployId = options.deployId || crypto.randomUUID();
     renderDeploySessions.set(deployId, { cancelled: false, serviceId: link.serviceId, renderDeployId: null });
     console.log(`[Causify Render] Started deploy ${deployId.substring(0, 8)} for service ${link.serviceName || link.serviceId}`);
 
@@ -642,6 +671,66 @@ function registerRenderDeployHandlers() {
       return { success: true };
     }
     return { success: false, error: 'No active deploy with that ID' };
+  });
+
+  /* ── Delete Render Service ── */
+
+  ipcMain.handle('render-deploy:delete-service', async (_event, options = {}) => {
+    const key = retrieveApiKey();
+    if (!key) {
+      return { success: false, error: 'No Render API key configured' };
+    }
+
+    const link = getLink(options.sessionId);
+    if (!link?.serviceId) {
+      return { success: false, error: 'No Render service linked to this session' };
+    }
+
+    try {
+      const { res } = await renderFetch(key, `/services/${link.serviceId}`, {
+        method: 'DELETE',
+        timeoutMs: 15000,
+      });
+
+      if (!res.ok && res.status !== 404) {
+        return { success: false, error: `Delete failed (HTTP ${res.status})` };
+      }
+
+      // Clear the local session → service link
+      clearLink(options.sessionId);
+
+      console.log(`[Causify Render] Deleted service ${link.serviceName || link.serviceId}`);
+      return { success: true, serviceName: link.serviceName || null };
+    } catch (err) {
+      return { success: false, error: err.message || 'Request failed' };
+    }
+  });
+
+  /* ── Check for Existing Deployment (restore after app restart) ── */
+
+  ipcMain.handle('render-deploy:check-existing', async (_event, options = {}) => {
+    const key = retrieveApiKey();
+    if (!key) return { exists: false };
+
+    const link = getLink(options.sessionId);
+    if (!link?.serviceId) return { exists: false };
+
+    try {
+      const { res, data } = await renderFetch(key, `/services/${encodeURIComponent(link.serviceId)}`, {
+        timeoutMs: 10000,
+      });
+
+      if (!res.ok) return { exists: false };
+
+      return {
+        exists: true,
+        serviceName: link.serviceName || data?.name || null,
+        serviceUrl: data?.serviceDetails?.url || link.serviceUrl || null,
+        serviceId: link.serviceId,
+      };
+    } catch {
+      return { exists: false };
+    }
   });
 }
 
