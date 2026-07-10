@@ -608,7 +608,15 @@ public class GitWorkspaceService {
             Files.walk(directory)
                 .sorted(Comparator.reverseOrder())
                 .map(Path::toFile)
-                .forEach(File::delete);
+                .forEach(file -> {
+                    if (!file.delete()) {
+                        // On Windows, git files inside .git/objects/ are read-only; make writable and retry
+                        file.setWritable(true);
+                        if (!file.delete()) {
+                            log.warn("[GitWorkspace] Failed to delete file/directory: {}", file.getAbsolutePath());
+                        }
+                    }
+                });
         }
     }
 }

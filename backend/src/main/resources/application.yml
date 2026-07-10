@@ -21,7 +21,7 @@ spring:
 
   # H2 in-memory database (swap to PostgreSQL for production)
   datasource:
-    url: jdbc:h2:file:./data/debugsync;DB_CLOSE_ON_EXIT=FALSE;AUTO_RECONNECT=TRUE
+    url: jdbc:h2:file:./data/debugsync;AUTO_SERVER=TRUE
     driver-class-name: org.h2.Driver
     username: sa
     password:
