@@ -1,6 +1,6 @@
 {
   "name": "causify",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Causify — Real-time collaborative debugging platform",
   "main": "electron/main.js",
   "scripts": {
@@ -81,7 +81,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "publish": {
       "provider": "github",

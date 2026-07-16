@@ -7,6 +7,7 @@ import useEditorStore from '../../store/useEditorStore';
 import { createSession, joinSession, uploadProject, saveFile, deleteFile } from '../../services/api';
 import { connectWebSocket, sendCodeChange, sendFileDelete } from '../../services/socket';
 import { detectProject } from '../../services/devserver';
+import { isBinaryAssetPath, isSkippedAssetPath } from '../../utils/binaryAssets';
 import MarioLoader from '../common/MarioLoader';
 
 const ActionButton = ({ onClick, title, children }) => {
@@ -294,16 +295,10 @@ const FileExplorer = ({ onToggle }) => {
     }
   };
 
-  // Binary/non-text file extensions to skip during upload
-  const BINARY_EXTENSIONS = new Set([
-    'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'svg', 'webp', 'avif',
-    'mp4', 'mp3', 'wav', 'ogg', 'webm', 'avi', 'mov',
-    'woff', 'woff2', 'ttf', 'otf', 'eot',
-    'zip', 'rar', '7z', 'tar', 'gz', 'bz2',
-    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-    'exe', 'dll', 'so', 'dylib', 'class', 'jar',
-    'lock' // package-lock.json / yarn.lock are huge and not needed
-  ]);
+  // Per-file size caps. Images can be larger than source files but must still be
+  // bounded so a session doesn't balloon the DB / websocket sync.
+  const MAX_TEXT_SIZE = 1024 * 1024;        // 1 MB for source/text files
+  const MAX_ASSET_SIZE = 5 * 1024 * 1024;   // 5 MB for images/fonts
 
   // Dependency, build-output and tooling directories that hold thousands of
   // files no one edits. Importing them bloats the session and slows the app.
@@ -323,17 +318,19 @@ const FileExplorer = ({ onToggle }) => {
 
   const shouldUploadFile = (file) => {
     const path = file.webkitRelativePath || file.name;
-    const ext = path.split('.').pop().toLowerCase();
-    
-    // Skip binary files
-    if (BINARY_EXTENSIONS.has(ext)) return false;
-    
+
+    // Skip heavy/irrelevant binaries (media, archives, executables, lockfiles).
+    // Images and fonts are NOT skipped — they're carried in as base64 so the dev
+    // server can resolve `import logo from './logo.png'` style asset imports.
+    if (isSkippedAssetPath(path)) return false;
+
     // Skip files in excluded directories
     if (SKIP_DIRS.some(dir => path.includes(`/${dir}/`) || path.includes(`\\${dir}\\`))) return false;
-    
-    // Skip files larger than 1MB (likely binary or generated)
-    if (file.size > 1024 * 1024) return false;
-    
+
+    // Size cap: larger allowance for binary assets, tighter for text/source.
+    const maxSize = isBinaryAssetPath(path) ? MAX_ASSET_SIZE : MAX_TEXT_SIZE;
+    if (file.size > maxSize) return false;
+
     return true;
   };
 
@@ -344,9 +341,10 @@ const FileExplorer = ({ onToggle }) => {
     
     setIsUploading(true);
     allFiles.forEach((file) => {
+      const path = file.webkitRelativePath || file.name;
       const reader = new FileReader();
       reader.onload = (event) => {
-        projectFiles.push({ path: file.webkitRelativePath || file.name, content: event.target.result });
+        projectFiles.push({ path, content: event.target.result });
         processed++;
         if (processed === allFiles.length) {
           const afterUpload = (sid) => {
@@ -378,7 +376,10 @@ const FileExplorer = ({ onToggle }) => {
           }
         }
       };
-      reader.readAsText(file);
+      // Images/fonts → base64 data URL (decoded to real bytes on the server);
+      // everything else → text.
+      if (isBinaryAssetPath(path)) reader.readAsDataURL(file);
+      else reader.readAsText(file);
     });
   };
 

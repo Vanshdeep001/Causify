@@ -541,7 +541,7 @@ const useEditorStore = create(persist((set, get) => ({
   },
 
   detectLanguage: (path) => {
-    if (!path) return 'javascript';
+    if (!path) return 'plaintext';
     const lower = path.toLowerCase();
     if (lower.endsWith('.java')) return 'java';
     if (lower.endsWith('.py') || lower.endsWith('.pyw')) return 'python';
@@ -551,8 +551,12 @@ const useEditorStore = create(persist((set, get) => ({
     if (lower.endsWith('.css')) return 'css';
     if (lower.endsWith('.json')) return 'json';
     if (lower.endsWith('.ts') || lower.endsWith('.tsx')) return 'typescript';
-    if (lower.endsWith('.jsx')) return 'javascript';
-    return 'javascript';
+    if (lower.endsWith('.js') || lower.endsWith('.jsx') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) return 'javascript';
+    if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'markdown';
+    // Unrecognized / malformed extensions (e.g. ".cp", or a stray typo) fall back
+    // to plain text — never JavaScript. This keeps unknown files neutral instead
+    // of mislabeling them as JS.
+    return 'plaintext';
   },
 
   setCode: (code, remote = false) => {

@@ -27,7 +27,11 @@ const { registerCaptureHandlers } = require('./ipc/capture');
 
 /* ── Constants ── */
 const isDev = !app.isPackaged;
-const VITE_DEV_URL = 'http://localhost:5173';
+// Use the exact dev-server URL the launcher chose (electron-dev.js passes it via
+// VITE_DEV_SERVER_URL). Falls back to 5173 for a standalone `npm run dev` setup.
+// Without this, Electron could load a stale port when Vite moved off 5173 because
+// the port was busy — which shows up as a blank window.
+const VITE_DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
 const MIN_WIDTH = 1000;
 const MIN_HEIGHT = 700;
 
@@ -133,7 +137,7 @@ async function loadDevURL(retries = 60) {
   // Vite never started
   dialog.showErrorBox(
     'Development Server Not Found',
-    'Could not connect to Vite dev server at http://localhost:5173.\n\nMake sure to run "npm run dev" first, or use "npm run electron:dev" to start both.'
+    `Could not connect to Vite dev server at ${VITE_DEV_URL}.\n\nMake sure to run "npm run dev" first, or use "npm run electron:dev" to start both.`
   );
   app.quit();
 }

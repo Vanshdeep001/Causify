@@ -11,7 +11,9 @@ import { sendCodeChange } from '../services/socket';
 import { saveFileAs, saveFileToHandle } from '../services/fileSave';
 
 import FileExplorer from '../components/Editor/FileExplorer';
+import BinaryFilePreview from '../components/Editor/BinaryFilePreview';
 import EmptyEditorState from '../components/Editor/EmptyEditorState';
+import { isBinaryAssetPath } from '../utils/binaryAssets';
 import ImpactWarningBanner from '../components/Editor/ImpactWarningBanner';
 import Whiteboard from '../components/Editor/Whiteboard';
 import ScreenCapture from '../components/Capture/ScreenCapture';
@@ -24,8 +26,9 @@ const LanguageIcon = ({ filename, size = 20 }) => {
   let ext = filename.split('.').pop()?.toLowerCase();
   
   const knownExtensions = new Set([
-    'java', 'py', 'pyw', 'c', 'h', 'cpp', 'cc', 'cxx', 'hpp', 
-    'html', 'htm', 'css', 'js', 'jsx', 'ts', 'tsx', 'json', 'md', 'mdx'
+    'java', 'py', 'pyw', 'c', 'h', 'cpp', 'cc', 'cxx', 'hpp',
+    'html', 'htm', 'css', 'js', 'jsx', 'ts', 'tsx', 'json', 'md', 'mdx',
+    'txt', 'text'
   ]);
   
   if (!knownExtensions.has(ext)) {
@@ -144,6 +147,14 @@ const LanguageIcon = ({ filename, size = 20 }) => {
       return (
         <div style={{ ...baseStyle, color: 'var(--t2)' }}>
           MD
+        </div>
+      );
+    case 'txt':
+    case 'text':
+    case 'plaintext':
+      return (
+        <div style={{ ...baseStyle, color: 'var(--t3)' }}>
+          TXT
         </div>
       );
     default:
@@ -898,6 +909,8 @@ const EditorPage = () => {
               <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <Whiteboard />
               </div>
+            ) : activePath && isBinaryAssetPath(activePath) ? (
+              <BinaryFilePreview />
             ) : activePath ? (
               <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 {/* Line-collision lock removed — the CRDT merges concurrent edits,
