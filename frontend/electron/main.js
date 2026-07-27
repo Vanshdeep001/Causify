@@ -9,13 +9,13 @@
  *   - Single instance lock
  * ------------------------------------------------------- */
 
-const { app, BrowserWindow, dialog, crashReporter, session, desktopCapturer } = require('electron');
+const { app, BrowserWindow, dialog, crashReporter, session, desktopCapturer, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 // IPC handler modules
 const { registerFileSystemHandlers } = require('./ipc/fileSystem');
-const { registerBackendHandlers, spawnBackend, killBackend } = require('./ipc/backend');
+const { registerBackendHandlers, spawnBackend, shutdownBackend, killBackend } = require('./ipc/backend');
 const { registerUpdaterHandlers } = require('./ipc/updater');
 const { registerSecurityHandlers } = require('./ipc/security');
 const { registerClipboardHandlers } = require('./ipc/clipboard');
@@ -23,11 +23,16 @@ const { registerPtyHandlers, killAllPtySessions } = require('./ipc/pty');
 const { registerDeployHandlers, killAllDeploySessions } = require('./ipc/deploy');
 const { registerRenderDeployHandlers, killAllRenderDeploySessions } = require('./ipc/renderDeploy');
 const { registerCaptureHandlers } = require('./ipc/capture');
-const { registerGuardianHandlers } = require('./ipc/guardian');
+const { registerWorkspaceHandlers } = require('./ipc/workspace');
+
 
 /* ── Constants ── */
 const isDev = !app.isPackaged;
-const VITE_DEV_URL = 'http://localhost:5173';
+// Use the exact dev-server URL the launcher chose (electron-dev.js passes it via
+// VITE_DEV_SERVER_URL). Falls back to 5173 for a standalone `npm run dev` setup.
+// Without this, Electron could load a stale port when Vite moved off 5173 because
+// the port was busy — which shows up as a blank window.
+const VITE_DEV_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
 const MIN_WIDTH = 1000;
 const MIN_HEIGHT = 700;
 
@@ -96,6 +101,15 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+
+  // Open external links (target="_blank") in the system default browser
+  // instead of spawning a new Electron window.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
 }
 
 /**
@@ -124,7 +138,7 @@ async function loadDevURL(retries = 60) {
   // Vite never started
   dialog.showErrorBox(
     'Development Server Not Found',
-    'Could not connect to Vite dev server at http://localhost:5173.\n\nMake sure to run "npm run dev" first, or use "npm run electron:dev" to start both.'
+    `Could not connect to Vite dev server at ${VITE_DEV_URL}.\n\nMake sure to run "npm run dev" first, or use "npm run electron:dev" to start both.`
   );
   app.quit();
 }
@@ -189,7 +203,8 @@ app.whenReady().then(async () => {
   registerDeployHandlers();
   registerRenderDeployHandlers();
   registerCaptureHandlers();
-  registerGuardianHandlers();
+  registerWorkspaceHandlers();
+
 
   // Allow renderer getDisplayMedia() to record the screen without a picker.
   // Electron requires an explicit handler; we auto-grant the primary screen.
@@ -254,9 +269,15 @@ app.on('window-all-closed', () => {
   killAllPtySessions();
   killAllDeploySessions();
   killAllRenderDeploySessions();
-  killBackend();
+
   if (process.platform !== 'darwin') {
+    // The backend is stopped by the before-quit handler below, which shuts it
+    // down gracefully. Killing it here first would pre-empt that.
     app.quit();
+  } else {
+    // macOS keeps the app alive with no windows; stop the backend as before —
+    // 'activate' respawns it when a window is reopened.
+    killBackend();
   }
 });
 
@@ -267,9 +288,29 @@ app.on('activate', () => {
   }
 });
 
-app.on('before-quit', () => {
+// Quitting is deferred once so the backend can close its context and let H2
+// release its file lock. Every path here is bounded by a timeout and ends in
+// app.exit(), so a slow or unresponsive backend can never block the quit.
+let isQuitting = false;
+
+app.on('before-quit', (event) => {
+  if (isQuitting) return; // second pass — let the quit proceed
+  isQuitting = true;
+  event.preventDefault();
+
+  // Run every child-process cleanup here too: quitting via the menu or Cmd+Q
+  // never fires 'window-all-closed', and app.exit() below skips it as well.
   killAllPtySessions();
-  killBackend();
+  killAllDeploySessions();
+  killAllRenderDeploySessions();
+
+  const forceExit = setTimeout(() => app.exit(0), 8000);
+  Promise.resolve(shutdownBackend())
+    .catch(() => killBackend())
+    .finally(() => {
+      clearTimeout(forceExit);
+      app.exit(0);
+    });
 });
 
 /* ── Export mainWindow getter for IPC handlers ── */

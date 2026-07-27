@@ -16,6 +16,9 @@ import DeployHub from '../Deploy/DeployHub';
 const DEFAULT_HEIGHT = 280;
 const MIN_HEIGHT = 120;
 const NAVBAR_H = 32;
+// How much of the editor stays visible at maximum drag, so there is always
+// something to grab when dragging back down.
+const MIN_EDITOR_VISIBLE = 80;
 
 const TerminalPanel = () => {
   const isTerminalOpen = useEditorStore((s) => s.isTerminalOpen);
@@ -26,6 +29,11 @@ const TerminalPanel = () => {
   const error = useEditorStore((s) => s.error);
   const snapshots = useEditorStore((s) => s.snapshots);
   const userRole = useEditorStore((s) => s.userRole);
+  const workspaceRoot = useEditorStore((s) => s.workspaceRoot);
+  // The timeline is the owner's view of a session's history — and, for a folder
+  // opened from disk, simply your own history. A collaborator still doesn't get
+  // it, but working solo is not the same as being a collaborator.
+  const canSeeTimeline = userRole === 'owner' || Boolean(workspaceRoot);
   const commitSuggestion = useEditorStore((s) => s.commitSuggestion);
   const detectedProjects = useEditorStore((s) => s.detectedProjects);
   const deployStatus = useEditorStore((s) => s.deployStatus);
@@ -40,6 +48,9 @@ const TerminalPanel = () => {
 
   const [isResizing, setIsResizing] = useState(false);
   const prevHeightRef = useRef(DEFAULT_HEIGHT);
+  // Used to measure the space the panel's container actually offers, so the
+  // resize limit tracks the real layout rather than the whole viewport.
+  const panelRef = useRef(null);
 
   // ── Terminal instance management ──
   const [termSessions, setTermSessions] = useState([]); // [{ id, label }]
@@ -120,14 +131,34 @@ const TerminalPanel = () => {
         `${terminalHeight}px`;
 
   // ── Resize drag ───────────────────────────────────────
+
+  /**
+   * Largest height the panel can take: the space its container actually offers,
+   * less a sliver of editor. Measured from the container rather than the window,
+   * because the panel sits below the app header and toolbars — using the full
+   * viewport height overshoots by however tall those are.
+   */
+  const maxHeightFor = useCallback((bounds) => {
+    const available = bounds ? bounds.height : window.innerHeight;
+    return Math.max(MIN_HEIGHT, available - MIN_EDITOR_VISIBLE);
+  }, []);
+
   useEffect(() => {
     const onMove = (e) => {
       if (!isResizing) return;
-      const newH = window.innerHeight - e.clientY;
-      if (newH >= MIN_HEIGHT && newH <= window.innerHeight - 80) {
-        setTerminalHeight(newH);
-        setTerminalLayoutMode('normal');
-      }
+
+      const parent = panelRef.current?.parentElement;
+      const bounds = parent?.getBoundingClientRect();
+      const bottom = bounds ? bounds.bottom : window.innerHeight;
+
+      // Clamp rather than ignore. Previously an out-of-range value was dropped
+      // entirely, so dragging past the limit froze the panel instead of pinning
+      // it to the maximum — which read as "it stops growing".
+      const desired = bottom - e.clientY;
+      const clamped = Math.min(Math.max(desired, MIN_HEIGHT), maxHeightFor(bounds));
+
+      setTerminalHeight(clamped);
+      setTerminalLayoutMode('normal');
     };
     const onUp = () => {
       setIsResizing(false);
@@ -142,7 +173,26 @@ const TerminalPanel = () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [isResizing, setTerminalHeight, setTerminalLayoutMode]);
+  }, [isResizing, maxHeightFor, setTerminalHeight, setTerminalLayoutMode]);
+
+  // Shrinking the window can leave a stored height taller than the space now
+  // available. Because the panel no longer flex-shrinks, that would overflow
+  // instead of adjusting — so bring it back within range.
+  useEffect(() => {
+    const clampToAvailable = () => {
+      const parent = panelRef.current?.parentElement;
+      if (!parent) return; // panel is closed — nothing to measure against
+      const max = maxHeightFor(parent.getBoundingClientRect());
+      if (terminalHeight > max) setTerminalHeight(max);
+    };
+
+    // Also run once on mount: a height stored on a larger monitor would
+    // otherwise overflow until the user happened to resize the window.
+    clampToAvailable();
+
+    window.addEventListener('resize', clampToAvailable);
+    return () => window.removeEventListener('resize', clampToAvailable);
+  }, [terminalHeight, maxHeightFor, setTerminalHeight]);
 
   if (!isTerminalOpen) return null;
 
@@ -249,6 +299,7 @@ const TerminalPanel = () => {
 
   return (
     <div
+      ref={panelRef}
       style={{
         position: isMaximized ? 'absolute' : 'relative',
         top: isMaximized ? 0 : 'auto',
@@ -257,6 +308,11 @@ const TerminalPanel = () => {
         bottom: 0,
         width: '100%',
         height: isMaximized ? '100%' : isSplit ? '400px' : `${terminalHeight}px`,
+        // The panel is the last child of a flex column. Without this, flexbox
+        // shrinks it back as it grows — the height was being set correctly and
+        // then quietly undone by the layout, which is why dragging appeared to
+        // stop working past a certain size.
+        flexShrink: 0,
         background: 'var(--s1)', color: 'var(--t1)',
         borderTop: '1px solid var(--line-strong)',
         display: 'flex', flexDirection: 'column',
@@ -270,9 +326,14 @@ const TerminalPanel = () => {
       <div
         onMouseDown={() => setIsResizing(true)}
         style={{
-          height: '5px', cursor: 'row-resize', flexShrink: 0,
-          background: 'transparent',
+          // A 5px invisible strip was easy to miss. Slightly taller, and it
+          // lights up on hover so the panel reads as resizable.
+          height: '7px', cursor: 'row-resize', flexShrink: 0,
+          background: isResizing ? 'var(--lime)' : 'transparent',
+          transition: 'background 0.15s ease',
         }}
+        onMouseEnter={(e) => { if (!isResizing) e.currentTarget.style.background = 'var(--line-strong)'; }}
+        onMouseLeave={(e) => { if (!isResizing) e.currentTarget.style.background = 'transparent'; }}
         title="Drag to resize"
       />
 
@@ -286,7 +347,7 @@ const TerminalPanel = () => {
         {/* Tabs (Pane 1) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {['output', 'terminal', 'timeline', 'graph', 'git', 'deploy']
-            .filter(t => t !== 'timeline' || userRole === 'owner')
+            .filter(t => t !== 'timeline' || canSeeTimeline)
             .map((t) => (
               <button
                 key={t}
@@ -380,7 +441,7 @@ const TerminalPanel = () => {
           {terminalLayoutMode === 'split' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', borderRight: '1px solid var(--line)', paddingRight: '10px' }}>
                {['output', 'timeline', 'graph', 'git', 'deploy']
-                .filter(t => t !== 'timeline' || userRole === 'owner')
+                .filter(t => t !== 'timeline' || canSeeTimeline)
                 .map((t) => (
                   <button
                     key={'s-'+t}

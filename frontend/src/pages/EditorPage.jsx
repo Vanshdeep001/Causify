@@ -11,7 +11,9 @@ import { sendCodeChange } from '../services/socket';
 import { saveFileAs, saveFileToHandle } from '../services/fileSave';
 
 import FileExplorer from '../components/Editor/FileExplorer';
+import BinaryFilePreview from '../components/Editor/BinaryFilePreview';
 import EmptyEditorState from '../components/Editor/EmptyEditorState';
+import { isBinaryAssetPath } from '../utils/binaryAssets';
 import ImpactWarningBanner from '../components/Editor/ImpactWarningBanner';
 import Whiteboard from '../components/Editor/Whiteboard';
 import ScreenCapture from '../components/Capture/ScreenCapture';
@@ -24,8 +26,9 @@ const LanguageIcon = ({ filename, size = 20 }) => {
   let ext = filename.split('.').pop()?.toLowerCase();
   
   const knownExtensions = new Set([
-    'java', 'py', 'pyw', 'c', 'h', 'cpp', 'cc', 'cxx', 'hpp', 
-    'html', 'htm', 'css', 'js', 'jsx', 'ts', 'tsx', 'json', 'md', 'mdx'
+    'java', 'py', 'pyw', 'c', 'h', 'cpp', 'cc', 'cxx', 'hpp',
+    'html', 'htm', 'css', 'js', 'jsx', 'ts', 'tsx', 'json', 'md', 'mdx',
+    'txt', 'text'
   ]);
   
   if (!knownExtensions.has(ext)) {
@@ -144,6 +147,14 @@ const LanguageIcon = ({ filename, size = 20 }) => {
       return (
         <div style={{ ...baseStyle, color: 'var(--t2)' }}>
           MD
+        </div>
+      );
+    case 'txt':
+    case 'text':
+    case 'plaintext':
+      return (
+        <div style={{ ...baseStyle, color: 'var(--t3)' }}>
+          TXT
         </div>
       );
     default:
@@ -323,6 +334,10 @@ const EditorPage = () => {
   const snapshots = useEditorStore((s) => s.snapshots);
   const currentSnapshotIndex = useEditorStore((s) => s.currentSnapshotIndex);
   const sessionId = useEditorStore((s) => s.sessionId);
+  const workspaceRoot = useEditorStore((s) => s.workspaceRoot);
+  // Anything that needs a project — rather than specifically a session — should
+  // key off this. An opened folder is just as much a workspace as a session is.
+  const hasWorkspace = Boolean(sessionId || workspaceRoot);
   const sessionName = useEditorStore((s) => s.sessionName);
   const isFileExplorerOpen = useEditorStore((s) => s.isFileExplorerOpen);
   const fileActivity = useEditorStore((s) => s.fileActivity);
@@ -409,6 +424,28 @@ const EditorPage = () => {
     setIsSaving(true);
     try {
       const currentCode = useEditorStore.getState().code;
+
+      // Local mode: write straight back to the file on disk. No Save As dialog —
+      // the file already has a home, and this is what makes the change visible
+      // in other editors.
+      if (useEditorStore.getState().workspaceRoot) {
+        await useEditorStore.getState().writeLocalFile(activePath, currentCode);
+        setSaveFlash(true);
+        setTimeout(() => setSaveFlash(false), 1500);
+        return;
+      }
+
+      // An untitled buffer on the desktop: the first save picks a location, and
+      // every save after that writes there directly.
+      if (window.electronAPI?.workspace) {
+        const written = await useEditorStore.getState().saveScratchFile(activePath, currentCode);
+        if (written) {
+          setSaveFlash(true);
+          setTimeout(() => setSaveFlash(false), 1500);
+        }
+        return;
+      }
+
       const existingHandle = useEditorStore.getState().fileHandles[activePath];
 
       if (existingHandle) {
@@ -472,6 +509,34 @@ const EditorPage = () => {
       setIsSaving(false);
     }
   }, [activePath, isSaving, sessionId, markFileSaved, setFileHandle, setFileSavedPath]);
+
+  /* ── Pick up edits made outside Causify ──
+   * In local mode the file on disk is the source of truth, so another editor (or
+   * a git checkout) can change it underneath us. Watch the open file and pull
+   * the new contents in — but never over unsaved edits, which would silently
+   * discard the user's work. A dirty buffer keeps what's on screen.
+   */
+  useEffect(() => {
+    if (!activePath) return;
+    const store = useEditorStore.getState();
+    if (!store.workspaceRoot || !window.electronAPI?.watchFile) return;
+
+    const absolute = store.absolutePathFor(activePath);
+    if (!absolute) return;
+
+    const unsubscribe = window.electronAPI.watchFile(absolute, ({ content }) => {
+      const state = useEditorStore.getState();
+      if (state.activePath !== activePath) return;      // user moved on
+      if (state.isFileDirty(activePath)) return;        // don't clobber unsaved work
+      if (state.code === content) return;               // our own write echoing back
+
+      state.updateRemoteFile(activePath, content, null);
+      state.markFileSaved(activePath, content);
+      console.log('[Causify] Reloaded from disk after an external change:', activePath);
+    });
+
+    return unsubscribe;
+  }, [activePath]);
 
   /* ── Protect against closing with unsaved changes ── */
   useEffect(() => {
@@ -557,18 +622,6 @@ const EditorPage = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {/* File breadcrumb */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {directoryPath && (
-                    <span style={{
-                      fontFamily: 'var(--font-number)',
-                      fontWeight: 500,
-                      color: 'var(--t3)',
-                      fontSize: '0.68rem',
-                      letterSpacing: '0.04em',
-                    }}>
-                      {directoryPath}
-                      <span style={{ color: 'var(--t4)', margin: '0 4px' }}>/</span>
-                    </span>
-                  )}
                   <LanguageIcon filename={fileName} size={15} />
                   <span style={{
                     fontFamily: 'var(--font-header)',
@@ -706,12 +759,15 @@ const EditorPage = () => {
             )}
 
             {/* Separator line between file info and view switcher */}
-            {sessionId && (
+            {hasWorkspace && (
               <div style={{ width: '1px', height: '14px', background: 'var(--line-strong)', margin: '0 4px' }} />
             )}
 
-            {/* View Switcher: Editor / Whiteboard second */}
-            {sessionId && (
+            {/* View Switcher: Editor / Whiteboard second.
+                Available for an opened folder too — the whiteboard is a thinking
+                tool, not a collaboration-only one, and its contents are kept
+                locally when there is no session to sync them to. */}
+            {hasWorkspace && (
               <div style={{
                 display: 'flex',
                 background: 'rgba(255, 255, 255, 0.03)',
@@ -906,52 +962,20 @@ const EditorPage = () => {
           )}
 
           <div style={{ flex: 1, position: 'relative', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            {activeView === 'whiteboard' ? (
+            {/* The switcher is hidden without a project, so showing the board
+                here would strand the user on it with no way back to the editor.
+                activeView is persisted, so this also covers reopening the app
+                after closing it while the whiteboard was up. */}
+            {activeView === 'whiteboard' && hasWorkspace ? (
               <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <Whiteboard />
               </div>
+            ) : activePath && isBinaryAssetPath(activePath) ? (
+              <BinaryFilePreview />
             ) : activePath ? (
               <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                {collisionWarning && (
-                  <div style={{
-                    background: 'rgba(229, 72, 77, 0.08)',
-                    border: '1px dotted var(--crimson)',
-                    borderRadius: '2px',
-                    padding: '8px 12px',
-                    margin: '12px 12px 0 12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    animation: 'fadeIn 0.2s ease-in-out',
-                  }}>
-                    <span style={{
-                      fontFamily: "'Space Grotesk', sans-serif",
-                      fontSize: '0.72rem',
-                      fontWeight: 700,
-                      color: 'var(--crimson)',
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                    }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                        <line x1="12" y1="9" x2="12" y2="13" />
-                        <line x1="12" y1="17" x2="12.01" y2="17" />
-                      </svg>
-                      COLLISION DETECTED // LINE {collisionWarning.line} IS LOCKED BY {collisionWarning.username.toUpperCase()}
-                    </span>
-                    <span style={{
-                      fontFamily: 'var(--font-number)',
-                      fontSize: '0.55rem',
-                      color: 'var(--t3)',
-                      letterSpacing: '0.02em',
-                    }}>
-                      TYPING BLOCKED ON LOCK LINE
-                    </span>
-                  </div>
-                )}
+                {/* Line-collision lock removed — the CRDT merges concurrent edits,
+                    so same-line editing is safe and no longer blocked. */}
                 <ImpactWarningBanner />
                 <div id="causify-code-region" style={{ flex: 1, position: 'relative', minHeight: 0 }}>
                   <MonacoEditor />

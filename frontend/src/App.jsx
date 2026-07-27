@@ -11,10 +11,11 @@ import CodeShotModal from './components/CodeShot/CodeShotModal';
 import { parseCodeShotLink } from './utils/codeShotDeepLink';
 import useEditorStore from './store/useEditorStore';
 import { connectWebSocket, disconnectWebSocket } from './services/socket';
-import { getSessionFiles, saveFile, createSession, uploadProject } from './services/api';
+import { getSessionFiles, saveFile, getSession, touchSession, leaveSession } from './services/api';
+import MigrateWorkspaceModal from './components/Editor/MigrateWorkspaceModal';
 import causifyLogo from './assets/causify-logo.png';
 
-// Module-level so React StrictMode's double-mount can't create two sessions
+// Module-level so React StrictMode's double-mount can't run the bootstrap twice
 let sessionRehydrateAttempted = false;
 
 const App = () => {
@@ -25,35 +26,117 @@ const App = () => {
   const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
   const followToast = useEditorStore((s) => s.followToast);
   const reconnectedRef = useRef(false);
+  // Gate the WebSocket reconnect until the session-bootstrap below has decided
+  // the final sessionId (verified-existing vs freshly-recreated), so we never
+  // connect to a stale id.
+  const [bootstrapDone, setBootstrapDone] = useState(false);
 
-  // ── Re-attach restored workspaces to a fresh backend session ──
-  // The workspace (files) survives a window close, but the backend session
-  // does not. Without a session every session-bound feature (git connect,
-  // run, dev server, save) silently no-ops — so on launch, quietly create
-  // a new session for the restored files. The reconnect effect below then
-  // picks up the new sessionId/currentUser and wires the WebSocket.
-  useEffect(() => {
-    if (sessionRehydrateAttempted) return;
-    sessionRehydrateAttempted = true;
+  // Set when launch finds a workspace whose files live only inside the app —
+  // { fileCount, name } — which prompts the one-time move to a real folder.
+  const [legacyWorkspace, setLegacyWorkspace] = useState(null);
 
+  /**
+   * Move a pre-local-mode workspace onto disk.
+   *
+   * The files are read from the store rather than the backend: that copy is
+   * always present, needs no network, and is the one the user has been looking
+   * at. Once they are safely written, the old session is deleted so the same
+   * project is not left duplicated in the database.
+   *
+   * Returns false if the user backed out of the folder picker.
+   */
+  const migrateLegacyWorkspace = async () => {
     const store = useEditorStore.getState();
-    if (store.sessionId) return; // same-window refresh — session still alive
-    const fileEntries = Object.entries(store.files || {});
-    if (fileEntries.length === 0) return; // nothing restored — fresh start
+    const entries = Object.entries(store.files || {});
+    if (entries.length === 0) { setLegacyWorkspace(null); return true; }
+
+    const placed = await window.electronAPI.workspace.materialize(Object.fromEntries(entries));
+    if (!placed) return false; // cancelled — keep the prompt up
+
+    store.openLocalWorkspace(placed);
+
+    // The files are on disk now, so the session copy is redundant.
+    const oldSessionId = store.sessionId;
+    if (oldSessionId) {
+      try {
+        await leaveSession(oldSessionId, store.currentUser?.id);
+      } catch (err) {
+        console.warn('[Causify] Could not release the old session:', err.message);
+      }
+      useEditorStore.getState().resetSession();
+    }
+
+    console.log(`[Causify] Moved ${placed.written} file(s) to ${placed.root}`);
+    setLegacyWorkspace(null);
+    return true;
+  };
+
+  // ── Bootstrap on launch ──
+  // Three cases, none of which creates a session:
+  //   • a folder opened from disk  → re-read it and carry on
+  //   • a live session             → keep it, and mark it as in use
+  //   • files from before local mode existed → offer to move them onto disk
+  // Causify no longer mints a session on its own; that only happens when the
+  // user starts or joins one.
+  useEffect(() => {
+    // StrictMode remount (or a prior mount) already ran the bootstrap — just
+    // release the reconnect gate so it isn't left waiting forever.
+    if (sessionRehydrateAttempted) { setBootstrapDone(true); return; }
+    sessionRehydrateAttempted = true;
 
     (async () => {
       try {
-        const name = store.sessionName || 'Restored Workspace';
-        const username = localStorage.getItem('causify-last-username') || 'owner';
-        const session = await createSession(name, username, '0000');
-        await uploadProject(session.id, fileEntries.map(([path, content]) => ({ path, content })));
-        const s = useEditorStore.getState();
-        s.setSession(session.id, session.name || name);
-        s.setCurrentUser(session.user);
-        s.setUserRole('owner');
-        console.log('[Causify] Restored workspace attached to new session:', session.id);
+        const store = useEditorStore.getState();
+
+        // A folder opened from disk restores itself: re-read the directory so
+        // files added or removed outside Causify are picked up. It deliberately
+        // returns before the session logic below — a local workspace needs no
+        // session, and uploading it would recreate the duplication that local
+        // mode exists to avoid.
+        if (store.workspaceRoot && window.electronAPI?.workspace) {
+          try {
+            const restored = await window.electronAPI.workspace.reopen(store.workspaceRoot);
+            if (restored) {
+              store.openLocalWorkspace(restored);
+              console.log('[Causify] Reopened local workspace:', restored.root);
+            } else {
+              console.warn('[Causify] Previously opened folder is gone — clearing it.');
+              store.closeLocalWorkspace();
+            }
+          } catch (err) {
+            console.warn('[Causify] Could not reopen the local workspace:', err.message);
+          }
+          return;
+        }
+
+        const fileEntries = Object.entries(store.files || {});
+
+        // Verify a persisted session — keep it if the backend still has it, and
+        // mark it as in use so the retention sweep leaves it alone.
+        if (store.sessionId && store.currentUser) {
+          try {
+            const data = await getSession(store.sessionId);
+            if (data && (data.id || data.sessionId)) {
+              touchSession(store.sessionId).catch(() => { /* best effort */ });
+              return; // alive — reconnect handles the rest
+            }
+          } catch {
+            console.warn('[Causify] Stored session is no longer on the backend.');
+          }
+        }
+
+        if (fileEntries.length === 0) return; // fresh start — nothing to attach
+
+        // A workspace from before local mode: its files exist only inside the
+        // app. Offer to move them onto disk rather than silently recreating a
+        // session to hold them, which is what used to make sessions pile up.
+        if (window.electronAPI?.workspace) {
+          setLegacyWorkspace({ fileCount: fileEntries.length, name: store.sessionName });
+        }
       } catch (err) {
-        console.warn('[Causify] Could not attach restored workspace to a session:', err.message);
+        console.warn('[Causify] Could not bootstrap:', err.message);
+      } finally {
+        setBootstrapDone(true);
       }
     })();
   }, []);
@@ -108,13 +191,16 @@ const App = () => {
     return unsubscribe;
   }, []);
 
-  // ── Auto-reconnect WebSocket after page refresh ──
+  // ── Auto-reconnect WebSocket after refresh / reopen ──
+  // Waits for the bootstrap above to settle the final sessionId, so we connect
+  // to the verified (or freshly recreated) session, never a stale id.
   useEffect(() => {
+    if (!bootstrapDone) return;
     if (reconnectedRef.current) return;
     if (!sessionId || !currentUser) return;
 
     reconnectedRef.current = true;
-    console.log('[Causify] Reconnecting to session after refresh:', sessionId);
+    console.log('[Causify] Reconnecting to session:', sessionId);
 
     const store = useEditorStore.getState();
 
@@ -138,6 +224,27 @@ const App = () => {
           }
         }
       },
+      onPresenceUpdate: (d) => {
+        const currentU = useEditorStore.getState().currentUser;
+        if (d.userId !== currentU?.id) useEditorStore.getState().updateFilePresence(d.userId, d);
+      },
+      onFileDelete: (d) => {
+        const currentU = useEditorStore.getState().currentUser;
+        if (d.userId !== currentU?.id) useEditorStore.getState().removeFile(d.path);
+      },
+      // A peer uploaded a project into the session. The files arrived over REST,
+      // so there are no per-file events to apply — re-read the list instead.
+      onProjectSync: async (d) => {
+        const state = useEditorStore.getState();
+        if (d?.userId === state.currentUser?.id) return; // our own upload
+        if (!state.sessionId) return;
+        try {
+          const files = await getSessionFiles(state.sessionId);
+          useEditorStore.getState().mergeRemoteFiles(files);
+        } catch (err) {
+          console.warn('[Causify] Could not load the shared project:', err.message);
+        }
+      },
       onWhiteboardChange: (d) => {
         if (window.onWhiteboardSocketMessage) window.onWhiteboardSocketMessage(d);
       },
@@ -154,6 +261,23 @@ const App = () => {
       onVoiceSignal: (d) => {
         // Route to VoiceRoom component via global handler
         if (window._onVoiceSignal) window._onVoiceSignal(d);
+      },
+      onUserKicked: (d) => {
+        const currentU = useEditorStore.getState().currentUser;
+        if (d.userId === currentU?.id) {
+          alert("You have been removed from the session by the owner.");
+          const store = useEditorStore.getState();
+          store.resetGit();
+          useEditorStore.setState({
+            sessionId: null,
+            sessionName: '',
+            currentUser: null,
+            userRole: null,
+            connectedUsers: [],
+          });
+          disconnectWebSocket();
+          window.location.reload();
+        }
       },
       onFollowUpdate: (d) => {
         const store = useEditorStore.getState();
@@ -206,7 +330,7 @@ const App = () => {
         });
       },
     });
-  }, [sessionId, currentUser]);
+  }, [bootstrapDone, sessionId, currentUser]);
 
   // Keyboard Shortcuts
   useEffect(() => {
@@ -215,7 +339,15 @@ const App = () => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         const state = useEditorStore.getState();
-        if (state.sessionId && state.activePath) {
+        if (!state.activePath) return;
+
+        // Local mode writes to the real file; otherwise persist to the session
+        // as before.
+        if (state.workspaceRoot) {
+          state.writeLocalFile(state.activePath, state.code)
+            .then(() => console.log('[Causify] Saved to disk:', state.activePath))
+            .catch((err) => console.error('[Causify] Disk save failed:', err));
+        } else if (state.sessionId) {
           saveFile(state.sessionId, state.activePath, state.code)
             .then(() => console.log('[Causify] File saved:', state.activePath))
             .catch((err) => console.error('[Causify] Save failed:', err));
@@ -320,6 +452,16 @@ const App = () => {
 
       <NotificationSystem />
       <CodeShotModal />
+
+      {/* One-time prompt to move a pre-local-mode workspace onto disk. */}
+      {legacyWorkspace && (
+        <MigrateWorkspaceModal
+          fileCount={legacyWorkspace.fileCount}
+          workspaceName={legacyWorkspace.name}
+          onMigrate={migrateLegacyWorkspace}
+          onSkip={() => setLegacyWorkspace(null)}
+        />
+      )}
 
       {/* Follow mode toast */}
       {followToast && (

@@ -31,11 +31,64 @@ public class ProjectDetectorService {
         this.projectFileRepository = projectFileRepository;
     }
 
+    /** Marker files that identify a project root. Only these are read from disk. */
+    private static final List<String> MARKER_FILES = List.of(
+        "package.json", "pom.xml", "requirements.txt", "manage.py", "app.py", "main.py"
+    );
+
+    /** Directories never worth descending into when looking for project markers. */
+    private static final Set<String> SKIP_DIRS = Set.of(
+        "node_modules", "target", "venv", ".venv", "__pycache__", ".git", "dist", "build", ".next"
+    );
+
     /**
      * Detect all project types in a session's uploaded files.
      */
     public DetectionResult detect(String sessionId) {
-        List<ProjectFile> allFiles = projectFileRepository.findBySessionId(sessionId);
+        return detectFrom(projectFileRepository.findBySessionId(sessionId), "session " + sessionId);
+    }
+
+    /**
+     * Detect project types by scanning a real directory on disk.
+     *
+     * Local mode has no session and no database rows — the project simply exists
+     * on the user's filesystem. Only marker files are read (they are small), and
+     * they are wrapped in transient ProjectFile objects so the detection logic
+     * below is shared with the session path rather than duplicated.
+     */
+    public DetectionResult detectFromDisk(java.nio.file.Path root) {
+        List<ProjectFile> markers = new ArrayList<>();
+
+        try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(root, 4)) {
+            walk.filter(java.nio.file.Files::isRegularFile)
+                .filter(p -> MARKER_FILES.contains(p.getFileName().toString()))
+                .filter(p -> {
+                    for (java.nio.file.Path part : root.relativize(p).getParent() == null
+                            ? java.nio.file.Paths.get("") : root.relativize(p).getParent()) {
+                        if (SKIP_DIRS.contains(part.toString())) return false;
+                    }
+                    return true;
+                })
+                .forEach(p -> {
+                    try {
+                        String relative = root.relativize(p).toString().replace('\\', '/');
+                        markers.add(new ProjectFile(null, relative, java.nio.file.Files.readString(p)));
+                    } catch (Exception e) {
+                        log.warn("[ProjectDetector] Could not read marker {}: {}", p, e.getMessage());
+                    }
+                });
+        } catch (Exception e) {
+            log.warn("[ProjectDetector] Could not scan {}: {}", root, e.getMessage());
+        }
+
+        return detectFrom(markers, "folder " + root);
+    }
+
+    /**
+     * Shared detection: works from a list of files regardless of whether they came
+     * from the database or straight off the disk.
+     */
+    private DetectionResult detectFrom(List<ProjectFile> allFiles, String sessionId) {
         DetectionResult result = new DetectionResult();
         List<DetectedProject> projects = new ArrayList<>();
 
@@ -123,7 +176,7 @@ public class ProjectDetectorService {
         result.setProjects(projects);
         result.setFullstack(hasFrontend && hasBackend);
 
-        log.info("[ProjectDetector] Session {} — detected {} projects (fullstack: {})",
+        log.info("[ProjectDetector] {} — detected {} projects (fullstack: {})",
                 sessionId, projects.size(), result.isFullstack());
 
         return result;

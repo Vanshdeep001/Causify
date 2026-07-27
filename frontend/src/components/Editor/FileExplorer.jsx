@@ -4,9 +4,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import useEditorStore from '../../store/useEditorStore';
-import { createSession, joinSession, uploadProject, saveFile, deleteFile } from '../../services/api';
-import { connectWebSocket, sendCodeChange } from '../../services/socket';
+import { createSession, joinSession, leaveSession, uploadProject, saveFile, deleteFile, getSessionFiles } from '../../services/api';
+import { connectWebSocket, sendCodeChange, sendFileDelete, sendProjectSync } from '../../services/socket';
 import { detectProject } from '../../services/devserver';
+import { isBinaryAssetPath, isSkippedAssetPath } from '../../utils/binaryAssets';
 import MarioLoader from '../common/MarioLoader';
 
 const ActionButton = ({ onClick, title, children }) => {
@@ -43,6 +44,11 @@ const FileExplorer = ({ onToggle }) => {
   const sessionName = useEditorStore((s) => s.sessionName);
   const currentUser = useEditorStore((s) => s.currentUser);
   const userRole = useEditorStore((s) => s.userRole);
+  const connectedUsers = useEditorStore((s) => s.connectedUsers);
+
+  // Owner and editor collaborators may create/upload/delete; viewers may not.
+  const canEdit = userRole === 'owner'
+    || connectedUsers.find((u) => u.id === currentUser?.id)?.permission !== 'viewer';
 
   const setSession = useEditorStore((s) => s.setSession);
   const setCurrentUser = useEditorStore((s) => s.setCurrentUser);
@@ -53,6 +59,7 @@ const FileExplorer = ({ onToggle }) => {
   const handleExecutionResult = useEditorStore((s) => s.handleExecutionResult);
   const updateRemoteFile = useEditorStore((s) => s.updateRemoteFile);
   const fileActivity = useEditorStore((s) => s.fileActivity);
+  const filePresence = useEditorStore((s) => s.filePresence);
   const resetSession = useEditorStore((s) => s.resetSession);
   const addFile = useEditorStore((s) => s.addFile);
   const removeFile = useEditorStore((s) => s.removeFile);
@@ -61,6 +68,15 @@ const FileExplorer = ({ onToggle }) => {
   const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
   const setTerminalOpen = useEditorStore((s) => s.setTerminalOpen);
   const setProjectRootPath = useEditorStore((s) => s.setProjectRootPath);
+
+  // Local workspace — set when a folder was opened from disk rather than uploaded.
+  const workspaceRoot = useEditorStore((s) => s.workspaceRoot);
+  const workspaceName = useEditorStore((s) => s.workspaceName);
+  const openLocalWorkspace = useEditorStore((s) => s.openLocalWorkspace);
+  const closeLocalWorkspace = useEditorStore((s) => s.closeLocalWorkspace);
+  const absolutePathFor = useEditorStore((s) => s.absolutePathFor);
+  const canOpenLocalFolder = typeof window !== 'undefined' && Boolean(window.electronAPI?.workspace);
+
   const pendingExplorerAction = useEditorStore((s) => s.pendingExplorerAction);
   const clearPendingExplorerAction = useEditorStore((s) => s.clearPendingExplorerAction);
 
@@ -72,9 +88,9 @@ const FileExplorer = ({ onToggle }) => {
     if (!pendingExplorerAction) return;
     const timer = setTimeout(() => {
       if (pendingExplorerAction === 'import-project') {
-        folderInputRef.current?.click();
+        openProjectFolder();
       } else if (pendingExplorerAction === 'new-file') {
-        setNewItem({ type: 'file', parent: '', name: '' });
+        startNewFile();
       }
       clearPendingExplorerAction();
     }, 0);
@@ -123,10 +139,10 @@ const FileExplorer = ({ onToggle }) => {
           setPanel('join');
         } else if (key === 'i') {
           e.preventDefault();
-          folderInputRef.current?.click();
+          openProjectFolder();
         } else if (key === 'f') {
           e.preventDefault();
-          setNewItem({ type: 'file', parent: '', name: '' });
+          startNewFile();
         }
       }
     };
@@ -215,6 +231,27 @@ const FileExplorer = ({ onToggle }) => {
           }
         }
       },
+      onPresenceUpdate: (d) => {
+        const currentU = useEditorStore.getState().currentUser;
+        if (d.userId !== currentU?.id) useEditorStore.getState().updateFilePresence(d.userId, d);
+      },
+      onFileDelete: (d) => {
+        const currentU = useEditorStore.getState().currentUser;
+        if (d.userId !== currentU?.id) useEditorStore.getState().removeFile(d.path);
+      },
+      // A peer uploaded a project into the session. The files arrived over REST,
+      // so there are no per-file events to apply — re-read the list instead.
+      onProjectSync: async (d) => {
+        const state = useEditorStore.getState();
+        if (d?.userId === state.currentUser?.id) return; // our own upload
+        if (!state.sessionId) return;
+        try {
+          const files = await getSessionFiles(state.sessionId);
+          useEditorStore.getState().mergeRemoteFiles(files);
+        } catch (err) {
+          console.warn('[Causify] Could not load the shared project:', err.message);
+        }
+      },
       onWhiteboardChange: (d) => {
         if (window.onWhiteboardSocketMessage) window.onWhiteboardSocketMessage(d);
       },
@@ -239,17 +276,32 @@ const FileExplorer = ({ onToggle }) => {
     setIsLoading(true);
     setErrorMsg('');
     try {
+      // Starting a session from an open folder means "share what I'm working
+      // on": read the project off disk so peers receive the real contents. The
+      // folder stays the source of truth — the session is only the transport.
+      let filesToShare = uploadedFiles;
+      if (filesToShare.length === 0 && workspaceRoot && window.electronAPI?.workspace?.readAll) {
+        try {
+          const contents = await window.electronAPI.workspace.readAll(workspaceRoot);
+          filesToShare = Object.entries(contents).map(([path, content]) => ({ path, content }));
+        } catch (err) {
+          console.warn('[Causify] Could not read the folder to share it:', err.message);
+        }
+      }
+
       const session = await createSession(projName, username, password || '0000');
       // Remembered so a restored workspace can re-create its session
       // under the same identity after the window is closed and reopened.
       try { localStorage.setItem('causify-last-username', username); } catch { /* best effort */ }
-      if (uploadedFiles.length > 0) {
-        await uploadProject(session.id, uploadedFiles);
+      if (filesToShare.length > 0) {
+        await uploadProject(session.id, filesToShare);
       }
       setSession(session.id, session.name);
       setCurrentUser(session.user);
       setUserRole('owner');
-      setProject(uploadedFiles);
+      // Keep a local workspace as it is: the files are already on disk and the
+      // tree is already correct. Replacing it would drop the disk connection.
+      if (!workspaceRoot) setProject(filesToShare);
       initSocket(session.id, session.user);
       setPanel(null);
       return session.id;
@@ -267,10 +319,31 @@ const FileExplorer = ({ onToggle }) => {
     try {
       const session = await joinSession(joinId, joinPwd, joinUsername);
       try { localStorage.setItem('causify-last-username', joinUsername); } catch { /* best effort */ }
+
+      // On the desktop, put the shared project on the joiner's own disk and work
+      // from there. Both sides then edit real files, and the session is only the
+      // channel between them — which is what lets it be deleted afterwards.
+      let landedOnDisk = false;
+      const incoming = session.files || [];
+      if (canOpenLocalFolder && incoming.length > 0) {
+        try {
+          const asMap = Object.fromEntries(incoming.map((f) => [f.path, f.content]));
+          const placed = await window.electronAPI.workspace.materialize(asMap);
+          if (placed) {
+            openLocalWorkspace(placed);
+            landedOnDisk = true;
+          }
+        } catch (err) {
+          console.warn('[Causify] Could not write the shared project to disk:', err.message);
+        }
+      }
+
       setSession(session.id, session.name);
       setCurrentUser(session.user);
       setUserRole('collaborator');
-      setProject(session.files || []);
+      // If the files went to disk the tree already reflects them; loading the
+      // in-memory copy over the top would sever the disk connection.
+      if (!landedOnDisk) setProject(incoming);
       initSocket(session.id, session.user);
       setPanel(null);
     } catch (err) {
@@ -280,32 +353,42 @@ const FileExplorer = ({ onToggle }) => {
     }
   };
 
-  // Binary/non-text file extensions to skip during upload
-  const BINARY_EXTENSIONS = new Set([
-    'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'svg', 'webp', 'avif',
-    'mp4', 'mp3', 'wav', 'ogg', 'webm', 'avi', 'mov',
-    'woff', 'woff2', 'ttf', 'otf', 'eot',
-    'zip', 'rar', '7z', 'tar', 'gz', 'bz2',
-    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-    'exe', 'dll', 'so', 'dylib', 'class', 'jar',
-    'lock' // package-lock.json / yarn.lock are huge and not needed
-  ]);
+  // Per-file size caps. Images can be larger than source files but must still be
+  // bounded so a session doesn't balloon the DB / websocket sync.
+  const MAX_TEXT_SIZE = 1024 * 1024;        // 1 MB for source/text files
+  const MAX_ASSET_SIZE = 5 * 1024 * 1024;   // 5 MB for images/fonts
 
-  const SKIP_DIRS = ['node_modules', '.git', 'dist', 'build', '.next', '.cache', 'coverage', '__pycache__', 'target', 'venv'];
+  // Dependency, build-output and tooling directories that hold thousands of
+  // files no one edits. Importing them bloats the session and slows the app.
+  // 'site-packages' is the key one for Python: it catches every virtualenv's
+  // packages no matter what the env folder is named (venv, .venv, env, …).
+  const SKIP_DIRS = [
+    // JS / Node
+    'node_modules', 'bower_components', '.next', '.nuxt', '.svelte-kit', '.turbo', '.parcel-cache',
+    // Python virtual envs & caches
+    'venv', '.venv', 'site-packages', '__pycache__',
+    '.pytest_cache', '.mypy_cache', '.ruff_cache', '.tox', '.eggs',
+    // Version control / IDE / editor metadata
+    '.git', '.hg', '.svn', '.idea', '.vscode',
+    // Build output & caches
+    'dist', 'build', 'target', '.gradle', 'coverage', '.cache',
+  ];
 
   const shouldUploadFile = (file) => {
     const path = file.webkitRelativePath || file.name;
-    const ext = path.split('.').pop().toLowerCase();
-    
-    // Skip binary files
-    if (BINARY_EXTENSIONS.has(ext)) return false;
-    
+
+    // Skip heavy/irrelevant binaries (media, archives, executables, lockfiles).
+    // Images and fonts are NOT skipped — they're carried in as base64 so the dev
+    // server can resolve `import logo from './logo.png'` style asset imports.
+    if (isSkippedAssetPath(path)) return false;
+
     // Skip files in excluded directories
     if (SKIP_DIRS.some(dir => path.includes(`/${dir}/`) || path.includes(`\\${dir}\\`))) return false;
-    
-    // Skip files larger than 1MB (likely binary or generated)
-    if (file.size > 1024 * 1024) return false;
-    
+
+    // Size cap: larger allowance for binary assets, tighter for text/source.
+    const maxSize = isBinaryAssetPath(path) ? MAX_ASSET_SIZE : MAX_TEXT_SIZE;
+    if (file.size > maxSize) return false;
+
     return true;
   };
 
@@ -316,9 +399,10 @@ const FileExplorer = ({ onToggle }) => {
     
     setIsUploading(true);
     allFiles.forEach((file) => {
+      const path = file.webkitRelativePath || file.name;
       const reader = new FileReader();
       reader.onload = (event) => {
-        projectFiles.push({ path: file.webkitRelativePath || file.name, content: event.target.result });
+        projectFiles.push({ path, content: event.target.result });
         processed++;
         if (processed === allFiles.length) {
           const afterUpload = (sid) => {
@@ -338,10 +422,22 @@ const FileExplorer = ({ onToggle }) => {
             uploadProject(sessionId, projectFiles)
               .then(() => {
                 setProject(projectFiles);
+                // Tell everyone else the file list changed. Without this the
+                // upload is invisible to them — it goes over REST, so no edit
+                // events are produced and they keep waiting for files that
+                // have already arrived.
+                if (currentUser) sendProjectSync(sessionId, currentUser.id);
                 afterUpload(sessionId);
               })
               .finally(() => setIsUploading(false));
+          } else if (canOpenLocalFolder) {
+            // Desktop: never mint a session behind the user's back. Sessions are
+            // for collaboration and are created only from New Session / Join.
+            setErrorMsg('OPEN A FOLDER FIRST — or start a session to share these files.');
+            setIsUploading(false);
           } else {
+            // Browser has no filesystem access, so a session is the only place
+            // these files can live.
             handleCreate(projectFiles)
               .then((sid) => {
                 if (sid) afterUpload(sid);
@@ -350,7 +446,10 @@ const FileExplorer = ({ onToggle }) => {
           }
         }
       };
-      reader.readAsText(file);
+      // Images/fonts → base64 data URL (decoded to real bytes on the server);
+      // everything else → text.
+      if (isBinaryAssetPath(path)) reader.readAsDataURL(file);
+      else reader.readAsText(file);
     });
   };
 
@@ -382,6 +481,113 @@ const FileExplorer = ({ onToggle }) => {
     if (filesArray.length > 0) readAndProcess(filesArray);
   };
 
+  /**
+   * Open a folder from disk in local mode: files are read from and written back
+   * to their real location, so no session is created and nothing is copied into
+   * the database. Electron only — the browser has no filesystem access.
+   */
+  const handleOpenLocalFolder = async () => {
+    const api = window.electronAPI?.workspace;
+    if (!api) return;
+
+    setIsUploading(true);
+    setErrorMsg('');
+    try {
+      const result = await api.open();
+      if (!result) return; // cancelled
+
+      openLocalWorkspace(result);
+      if (result.truncated) {
+        setErrorMsg(`LARGE PROJECT: showing the first ${result.files.length} files.`);
+      }
+    } catch (err) {
+      setErrorMsg(`COULD NOT OPEN FOLDER: ${err.message}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  /**
+   * Take the shared project out of the session and onto this machine.
+   *
+   * A collaborator can join a project that exists nowhere on their own disk.
+   * On the desktop the files are written into a folder they choose, which also
+   * switches them into local mode so they are editing real files from then on.
+   * In the browser there is no filesystem, so the project comes down as a zip.
+   */
+  const handleSaveProjectLocally = async () => {
+    const store = useEditorStore.getState();
+    const entries = Object.entries(store.files || {});
+    if (entries.length === 0) {
+      setErrorMsg('NOTHING TO SAVE YET — the project has no files.');
+      return;
+    }
+
+    setIsUploading(true);
+    setErrorMsg('');
+    try {
+      if (canOpenLocalFolder) {
+        const placed = await window.electronAPI.workspace.materialize(Object.fromEntries(entries));
+        if (!placed) return; // cancelled the folder picker
+        openLocalWorkspace(placed);
+        setErrorMsg(`SAVED ${placed.written} FILE(S) TO ${placed.root}`);
+        return;
+      }
+
+      const { createZip, downloadBlob } = await import('../../utils/zip');
+      const name = (store.sessionName || 'causify-project')
+        .trim().replace(/[^a-zA-Z0-9-_]+/g, '-').replace(/^-+|-+$/g, '') || 'causify-project';
+      downloadBlob(
+        createZip(entries.map(([path, content]) => ({ path, content }))),
+        `${name}.zip`
+      );
+    } catch (err) {
+      setErrorMsg(`COULD NOT SAVE PROJECT: ${err.message}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  /**
+   * Leave whatever is currently open.
+   *
+   * Telling the backend we left is what allows it to delete the session once the
+   * last person is gone. A local workspace survives this — the files are on disk
+   * and leaving a collaboration is not a reason to close the folder.
+   */
+  const handleDisconnect = async () => {
+    const { sessionId: activeSession, currentUser: user } = useEditorStore.getState();
+
+    if (activeSession) {
+      try {
+        await leaveSession(activeSession, user?.id);
+      } catch (err) {
+        // Best effort — the backend's sweep collects anything left behind.
+        console.warn('[Causify] Could not notify the backend on leave:', err.message);
+      }
+      resetSession();
+      return;
+    }
+
+    closeLocalWorkspace();
+  };
+
+  /**
+   * The single entry point for "open a project folder".
+   *
+   * On the desktop this opens the folder in place: files are read from and
+   * written back to their real location, and no session is created. The browser
+   * has no filesystem access, so it falls back to the upload input, which copies
+   * the project into a session as before.
+   */
+  const openProjectFolder = () => {
+    if (canOpenLocalFolder) handleOpenLocalFolder();
+    else folderInputRef.current?.click();
+  };
+
+  /** "New file", from wherever it is triggered — name it inline, as before. */
+  const startNewFile = () => setNewItem({ type: 'file', parent: '', name: '' });
+
   const handleCreateNew = async (e) => {
     if (e.key === 'Escape') { setNewItem(null); return; }
     if (e.key === 'Enter') {
@@ -393,7 +599,36 @@ const FileExplorer = ({ onToggle }) => {
       const isFolder = newItem.type === 'folder';
       const pathToSave = isFolder ? `${fullPath}/.keep` : fullPath;
 
+      // Local mode: create it on disk. No session, no upload — the file exists
+      // where the user expects it and is visible to every other editor at once.
+      if (workspaceRoot) {
+        try {
+          const target = absolutePathFor(isFolder ? fullPath : pathToSave);
+          await window.electronAPI.workspace.create(target, isFolder);
+          // For a folder this registers its .keep placeholder, which is what
+          // keeps an otherwise empty directory visible in the tree.
+          addFile(pathToSave, '');
+          setNewItem(null);
+          setErrorMsg('');
+        } catch (err) {
+          setErrorMsg(`COULD NOT CREATE: ${err.message}`);
+          setNewItem(null);
+        }
+        return;
+      }
+
       if (!sessionId) {
+        // Desktop with no folder open: make an untitled buffer, exactly as any
+        // editor does. It lives in memory until the first save asks where to put
+        // it — no session invented to hold it, and no dialog before there is
+        // anything to write.
+        if (canOpenLocalFolder) {
+          addFile(pathToSave, '');
+          setNewItem(null);
+          setErrorMsg('');
+          return;
+        }
+        // Browser: no filesystem, so the session is the only available storage.
         handleCreate([{ path: pathToSave, content: '' }]);
         setNewItem(null);
         return;
@@ -423,6 +658,23 @@ const FileExplorer = ({ onToggle }) => {
     // Check if the file has unsaved changes
     const isDirty = !isFolder && useEditorStore.getState().isFileDirty(path);
 
+    // Local mode deletes the user's real file, so the main process runs its own
+    // confirmation and sends it to the recycle bin. Only the unsaved-changes
+    // warning is worth adding on top; a second generic prompt would be noise.
+    if (workspaceRoot) {
+      if (isDirty && !window.confirm(
+        `"${path.split('/').pop()}" has unsaved changes.\n\nClick OK to continue, or Cancel to go back.`
+      )) return;
+
+      try {
+        const result = await window.electronAPI.workspace.remove(absolutePathFor(path));
+        if (result?.deleted) removeFile(path);
+      } catch (err) {
+        setErrorMsg(`COULD NOT DELETE: ${err.message}`);
+      }
+      return;
+    }
+
     if (isDirty) {
       // Three-way dialog: Save / Don't Save / Cancel
       const choice = window.confirm(
@@ -436,6 +688,8 @@ const FileExplorer = ({ onToggle }) => {
     try {
       await deleteFile(sessionId, path);
       removeFile(path);
+      // Tell the other collaborators to drop it from their tree too.
+      if (sessionId && currentUser) sendFileDelete(sessionId, currentUser.id, path);
     } catch (err) {
       setErrorMsg('Failed to delete item');
     }
@@ -594,7 +848,9 @@ const FileExplorer = ({ onToggle }) => {
 
   const buildTree = (filesObj) => {
     const tree = {};
-    const hiddenEntries = new Set(['.git', 'node_modules', '.DS_Store']);
+    // Hide the same heavy dependency/build dirs we skip on import, plus OS cruft.
+    // Guards older sessions whose files were uploaded before the skip list grew.
+    const hiddenEntries = new Set([...SKIP_DIRS, '.DS_Store']);
     const allPaths = Object.keys(filesObj);
 
     allPaths.forEach((path) => {
@@ -617,11 +873,17 @@ const FileExplorer = ({ onToggle }) => {
     const isAffected = affectedPaths.has(path);
     const [isHovered, setIsHovered] = useState(false);
 
+    // Users (other than me) currently working in this file.
+    const presentUsers = isFolder ? [] : Object.entries(filePresence)
+      .filter(([uid, p]) => p.path === path && uid !== currentUser?.id)
+      .map(([uid, p]) => ({ uid, ...p }));
+
     const extension = name.includes('.') ? name.split('.').pop().toUpperCase() : '';
     const nameOnly = name.includes('.') ? name.substring(0, name.lastIndexOf('.')) : name;
 
     return (
       <div
+        className="fx-file-item"
         onClick={(e) => {
           e.stopPropagation();
           if (isFolder) toggleFolder(path);
@@ -718,6 +980,33 @@ const FileExplorer = ({ onToggle }) => {
           <div title="Affected by recent change" style={{ width: '5px', height: '5px', background: 'var(--amber)', borderRadius: '50%', animation: 'hud-pulse 1.4s infinite' }} />
         )}
 
+        {/* Presence: who is currently working in this file */}
+        {presentUsers.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}
+            title={`${presentUsers.map((u) => u.username).join(', ')} working here`}>
+            {presentUsers.slice(0, 3).map((u, i) => (
+              <div key={u.uid} style={{
+                width: '14px', height: '14px', borderRadius: '3px',
+                background: u.color || '#6366f1',
+                border: '1px solid var(--s1)',
+                marginLeft: i === 0 ? 0 : '-4px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '0.42rem', fontWeight: 800, color: '#0A0A0A',
+                fontFamily: 'var(--font-number)',
+                boxShadow: `0 0 5px ${u.color || '#6366f1'}66`,
+              }}>
+                {(u.username || '?').charAt(0).toUpperCase()}
+              </div>
+            ))}
+            {presentUsers.length > 3 && (
+              <span style={{
+                marginLeft: '3px', fontSize: '0.42rem', color: 'var(--t3)',
+                fontFamily: 'var(--font-number)', fontWeight: 700,
+              }}>+{presentUsers.length - 3}</span>
+            )}
+          </div>
+        )}
+
         {activeEditor && !isFolder && (
           <div style={{
             padding: '1px 3px', fontSize: '0.4rem', fontFamily: 'var(--font-number)',
@@ -727,6 +1016,32 @@ const FileExplorer = ({ onToggle }) => {
           }}>
             LIVE
           </div>
+        )}
+
+        {/* Delete — owner & editor collaborators only. Visibility is CSS-driven
+            (revealed on row :hover) so it survives parent re-renders. */}
+        {canEdit && (
+          <button
+            className="fx-file-del"
+            onClick={(e) => { e.stopPropagation(); handleDelete(path, isFolder); }}
+            title={`Delete ${isFolder ? 'folder' : 'file'}`}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '18px', height: '18px', flexShrink: 0,
+              background: 'transparent', border: 'none', borderRadius: '3px',
+              color: 'var(--t3)', cursor: 'pointer', padding: 0,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--crimson)'; e.currentTarget.style.background = 'rgba(232,17,35,0.12)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--t3)'; e.currentTarget.style.background = 'transparent'; }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              <line x1="10" y1="11" x2="10" y2="17" />
+              <line x1="14" y1="11" x2="14" y2="17" />
+            </svg>
+          </button>
         )}
       </div>
     );
@@ -998,7 +1313,7 @@ const FileExplorer = ({ onToggle }) => {
                       title: 'Import Project',
                       desc: 'Load local repository folder',
                       shortcut: 'I',
-                      onClick: () => folderInputRef.current?.click()
+                      onClick: () => openProjectFolder()
                     },
                     {
                       id: 3,
@@ -1006,7 +1321,7 @@ const FileExplorer = ({ onToggle }) => {
                       title: 'New File',
                       desc: 'Create blank text buffer',
                       shortcut: 'F',
-                      onClick: () => setNewItem({ type: 'file', parent: '', name: '' })
+                      onClick: () => startNewFile()
                     }
                   ].map((a) => {
                     const isHovered = hoveredIndex === a.id;
@@ -1177,35 +1492,60 @@ const FileExplorer = ({ onToggle }) => {
 
         {(sessionId || Object.keys(files).length > 0 || newItem) && (
           <div style={{ padding: '8px 0' }}>
+            <style>{`
+              .fx-file-del { opacity: 0; pointer-events: none; transition: opacity 0.12s ease; }
+              .fx-file-item:hover .fx-file-del { opacity: 1; pointer-events: auto; }
+            `}</style>
             <div style={{ padding: '8px 14px', ...sectionLabelSty, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span>Project Files</span>
-              {/* Solo (restored) workspaces have no role — treat as owner */}
-              {(!sessionId || userRole === 'owner') && (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  background: 'var(--s0)',
-                  border: '1px solid var(--line-strong)',
-                  borderRadius: '6px',
-                  overflow: 'hidden'
-                }}>
-                  <ActionButton onClick={() => setNewItem({ type: 'file', parent: '', name: '' })} title="New File">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="13 2 13 9 20 9" /><line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" /></svg>
-                  </ActionButton>
-                  <div style={{ width: '1px', height: '14px', background: 'var(--line)' }} />
-                  <ActionButton onClick={() => setNewItem({ type: 'folder', parent: '', name: '' })} title="New Folder">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /><line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" /></svg>
-                  </ActionButton>
-                  <div style={{ width: '1px', height: '14px', background: 'var(--line)' }} />
-                  <ActionButton onClick={() => folderInputRef.current?.click()} title="Upload Folder">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                  </ActionButton>
-                  <div style={{ width: '1px', height: '14px', background: 'var(--line)' }} />
-                  <ActionButton onClick={() => { setTerminalActiveTab('timeline'); setTerminalOpen(true); }} title="Session Timeline">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
-                  </ActionButton>
-                </div>
-              )}
+              {/* Creating and uploading are edit actions, so viewers do not get
+                  them. Taking a copy of the project and viewing history are
+                  read-only, and a viewer has every reason to want both. */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                background: 'var(--s0)',
+                border: '1px solid var(--line-strong)',
+                borderRadius: '6px',
+                overflow: 'hidden'
+              }}>
+                {(!sessionId || canEdit) && (
+                  <>
+                    <ActionButton onClick={() => startNewFile()} title="New File">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="13 2 13 9 20 9" /><line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" /></svg>
+                    </ActionButton>
+                    <div style={{ width: '1px', height: '14px', background: 'var(--line)' }} />
+                    <ActionButton onClick={() => setNewItem({ type: 'folder', parent: '', name: '' })} title="New Folder">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /><line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" /></svg>
+                    </ActionButton>
+                    <div style={{ width: '1px', height: '14px', background: 'var(--line)' }} />
+                    <ActionButton onClick={() => openProjectFolder()} title="Upload Folder">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                    </ActionButton>
+                    <div style={{ width: '1px', height: '14px', background: 'var(--line)' }} />
+                  </>
+                )}
+
+                {/* Take a copy of the shared project onto this machine — the
+                    project may exist nowhere locally. Mirrors the upload arrow. */}
+                {sessionId && (
+                  <>
+                    <ActionButton
+                      onClick={handleSaveProjectLocally}
+                      title={canOpenLocalFolder
+                        ? 'Save this project to a folder on your computer'
+                        : 'Download this project as a .zip'}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                    </ActionButton>
+                    <div style={{ width: '1px', height: '14px', background: 'var(--line)' }} />
+                  </>
+                )}
+
+                <ActionButton onClick={() => { setTerminalActiveTab('timeline'); setTerminalOpen(true); }} title="Session Timeline">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+                </ActionButton>
+              </div>
             </div>
             {newItem && newItem.parent === '' && (
               <div style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1263,67 +1603,114 @@ const FileExplorer = ({ onToggle }) => {
                         color: 'var(--t4)',
                         lineHeight: 1.4
                       }}>
-                        Upload a directory or select files to initialize the workspace.
+                        {canOpenLocalFolder
+                          ? 'Open a folder to edit it in place. Your files stay on your disk — no session needed.'
+                          : 'Upload a directory or select files to initialize the workspace.'}
                       </div>
                     </div>
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
-                    <button
-                      style={{
-                        background: '#FFFFFF',
-                        border: 'none',
-                        borderRadius: '3px',
-                        color: '#000000',
-                        fontFamily: 'var(--font-header)',
-                        fontSize: '0.62rem',
-                        fontWeight: 900,
-                        padding: '10px 14px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                        letterSpacing: '0.04em',
-                        transition: 'transform 0.1s ease, background 0.15s ease'
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = '#EDEDED'; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = '#FFFFFF'; }}
-                      onClick={() => folderInputRef.current?.click()}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                      </svg>
-                      IMPORT FOLDER
-                    </button>
-                    <button
-                      style={{
-                        background: 'transparent',
-                        border: '1px solid var(--line-strong)',
-                        borderRadius: '3px',
-                        color: 'var(--t2)',
-                        fontFamily: 'var(--font-number)',
-                        fontSize: '0.58rem',
-                        fontWeight: 900,
-                        padding: '9px 14px',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                        letterSpacing: '0.06em',
-                        transition: 'color 0.15s ease, border-color 0.15s ease'
-                      }}
-                      onClick={() => fileInputRef.current?.click()}
-                      onMouseEnter={e => { e.currentTarget.style.color = '#FFFFFF'; e.currentTarget.style.borderColor = '#FFFFFF'; }}
-                      onMouseLeave={e => { e.currentTarget.style.color = 'var(--t2)'; e.currentTarget.style.borderColor = 'var(--line-strong)'; }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
-                        <polyline points="13 2 13 9 20 9" />
-                      </svg>
-                      SELECT FILES
-                    </button>
+                    {/* Opens the folder in place: edits are written straight back to
+                        disk, so they show up in any other editor and nothing is
+                        copied into the database. Desktop app only. */}
+                    {canOpenLocalFolder && (
+                      <button
+                        style={{
+                          background: '#FFFFFF',
+                          border: 'none',
+                          borderRadius: '3px',
+                          color: '#000000',
+                          fontFamily: 'var(--font-header)',
+                          fontSize: '0.62rem',
+                          fontWeight: 900,
+                          padding: '10px 14px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          letterSpacing: '0.04em',
+                          transition: 'transform 0.1s ease, background 0.15s ease'
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#EDEDED'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = '#FFFFFF'; }}
+                        onClick={handleOpenLocalFolder}
+                        title="Edit files directly on your disk — no session, changes visible to other editors"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                          <path d="M12 11v6M9 14h6" />
+                        </svg>
+                        OPEN FOLDER
+                      </button>
+                    )}
+                    {/* Browser fallback only. On the desktop, OPEN FOLDER above
+                        covers this — and copying a project into a session is now
+                        something you opt into via New Session, not a way to open
+                        a folder. */}
+                    {!canOpenLocalFolder && (
+                      <button
+                        style={{
+                          background: '#FFFFFF',
+                          border: 'none',
+                          borderRadius: '3px',
+                          color: '#000000',
+                          fontFamily: 'var(--font-header)',
+                          fontSize: '0.62rem',
+                          fontWeight: 900,
+                          padding: '10px 14px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          letterSpacing: '0.04em',
+                          transition: 'transform 0.1s ease, background 0.15s ease'
+                        }}
+                        onClick={() => openProjectFolder()}
+                        title="Upload the folder into a workspace"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                        </svg>
+                        IMPORT FOLDER
+                      </button>
+                    )}
+                    {/* Loose files have no project root to be saved back into, so
+                        on the desktop they would only be storable in a session —
+                        which is exactly what we no longer create implicitly. Open
+                        a folder instead. */}
+                    {!canOpenLocalFolder && (
+                      <button
+                        style={{
+                          background: 'transparent',
+                          border: '1px solid var(--line-strong)',
+                          borderRadius: '3px',
+                          color: 'var(--t2)',
+                          fontFamily: 'var(--font-number)',
+                          fontSize: '0.58rem',
+                          fontWeight: 900,
+                          padding: '9px 14px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          letterSpacing: '0.06em',
+                          transition: 'color 0.15s ease, border-color 0.15s ease'
+                        }}
+                        onClick={() => fileInputRef.current?.click()}
+                        onMouseEnter={e => { e.currentTarget.style.color = '#FFFFFF'; e.currentTarget.style.borderColor = '#FFFFFF'; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = 'var(--t2)'; e.currentTarget.style.borderColor = 'var(--line-strong)'; }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+                          <polyline points="13 2 13 9 20 9" />
+                        </svg>
+                        SELECT FILES
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -1373,8 +1760,27 @@ const FileExplorer = ({ onToggle }) => {
                 wordBreak: 'break-all',
                 width: '100%'
               }}>
-                {sessionName || 'Local Session'}
+                {workspaceRoot ? (workspaceName || 'Local Folder') : (sessionName || 'Local Session')}
               </div>
+
+              {/* Where the files actually live, so it's never ambiguous whether
+                  edits are hitting the disk or a session. */}
+              {workspaceRoot && (
+                <div
+                  title={workspaceRoot}
+                  style={{
+                    fontFamily: 'var(--font-number)',
+                    fontSize: '0.5rem',
+                    color: 'var(--t4)',
+                    letterSpacing: '0.04em',
+                    wordBreak: 'break-all',
+                    width: '100%',
+                    marginBottom: '2px'
+                  }}
+                >
+                  {workspaceRoot}
+                </div>
+              )}
 
               <div style={{
                 display: 'inline-flex',
@@ -1396,12 +1802,14 @@ const FileExplorer = ({ onToggle }) => {
                   borderRadius: '50%',
                   background: '#000000'
                 }} />
-                {userRole === 'owner' ? 'OWNER' : 'COLLAB'}
+                {workspaceRoot ? 'ON DISK' : userRole === 'owner' ? 'OWNER' : 'COLLAB'}
               </div>
 
               <button
-                onClick={resetSession}
-                title="Disconnect session"
+                onClick={handleDisconnect}
+                title={sessionId
+                  ? 'Leave this session (your files stay on disk)'
+                  : 'Close this folder (your files stay on disk)'}
                 style={{
                   background: 'transparent',
                   border: 'none',
@@ -1426,7 +1834,9 @@ const FileExplorer = ({ onToggle }) => {
                 }}
               >
                 <span>✕</span>
-                <span style={{ textDecoration: 'underline' }}>DISCONNECT</span>
+                <span style={{ textDecoration: 'underline' }}>
+                  {sessionId ? 'LEAVE SESSION' : 'CLOSE FOLDER'}
+                </span>
               </button>
             </div>
           </div>

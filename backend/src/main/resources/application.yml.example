@@ -19,7 +19,9 @@ spring:
 
   # H2 in-memory database (swap to PostgreSQL for production)
   datasource:
-    url: jdbc:h2:file:./data/debugsync;DB_CLOSE_ON_EXIT=FALSE;AUTO_RECONNECT=TRUE
+    # CAUSIFY_DATA_DIR lets the desktop app relocate the database out of the
+    # install directory; defaults to ./data when unset.
+    url: jdbc:h2:file:${CAUSIFY_DATA_DIR:./data}/debugsync;DB_CLOSE_ON_EXIT=FALSE;AUTO_RECONNECT=TRUE
     driver-class-name: org.h2.Driver
     username: sa
     password:

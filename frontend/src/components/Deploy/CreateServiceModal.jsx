@@ -143,7 +143,7 @@ const CreateServiceModal = ({ sessionId, detection, repoUrl, defaultName, onClos
     }}>
       <div style={{
         width: '520px',
-        maxHeight: '86vh',
+        maxHeight: 'min(580px, 82vh)',
         overflowY: 'auto',
         background: 'var(--s1)',
         border: '1px solid var(--line-strong)',
@@ -210,97 +210,107 @@ const CreateServiceModal = ({ sessionId, detection, repoUrl, defaultName, onClos
         </div>
 
         {/* Form */}
-        <Field label="SERVICE NAME">
-          <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)}
-            placeholder="my-backend" autoFocus
-            onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
-            onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
-        </Field>
-
-        <Field label="REPOSITORY URL" hint="The session's connected GitHub repo is prefilled.">
-          <input style={inputStyle()} value={repo} onChange={(e) => setRepo(e.target.value)}
-            placeholder="https://github.com/you/your-backend"
-            onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
-            onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
-        </Field>
-
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <div style={{ flex: 1 }}>
-            <Field label="BRANCH">
-              <input style={inputStyle()} value={branch} onChange={(e) => setBranch(e.target.value)}
-                placeholder="main"
-                onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
-                onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
-            </Field>
-          </div>
-          <div style={{ flex: 1 }}>
-            <Field label="RUNTIME">
-              <select
-                value={runtime}
-                onChange={(e) => setRuntime(e.target.value)}
-                style={{ ...inputStyle(), appearance: 'none', cursor: 'pointer' }}
-              >
-                {RUNTIMES.map((r) => (
-                  <option key={r.value} value={r.value} style={{ background: '#111', color: '#fff' }}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <div style={{ flex: 1 }}>
-            <Field label="ROOT DIRECTORY" hint="Leave empty if the backend sits at the repo root.">
-              <input style={inputStyle()} value={rootDir} onChange={(e) => setRootDir(e.target.value)}
-                placeholder="backend"
-                onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
-                onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
-            </Field>
-          </div>
-          {owners.length > 1 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', gap: '12px' }}>
             <div style={{ flex: 1 }}>
-              <Field label="ACCOUNT">
+              <Field label="SERVICE NAME">
+                <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)}
+                  placeholder="my-backend" autoFocus
+                  onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
+                  onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
+              </Field>
+            </div>
+            <div style={{ flex: 1.5 }}>
+              <Field label="REPOSITORY URL">
+                <input style={inputStyle()} value={repo} onChange={(e) => setRepo(e.target.value)}
+                  placeholder="https://github.com/username/repo"
+                  onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
+                  onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
+              </Field>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ flex: 1 }}>
+              <Field label="BRANCH">
+                <input style={inputStyle()} value={branch} onChange={(e) => setBranch(e.target.value)}
+                  placeholder="main"
+                  onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
+                  onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
+              </Field>
+            </div>
+            <div style={{ flex: 1 }}>
+              <Field label="RUNTIME">
                 <select
-                  value={ownerId}
-                  onChange={(e) => setOwnerId(e.target.value)}
+                  value={runtime}
+                  onChange={(e) => setRuntime(e.target.value)}
                   style={{ ...inputStyle(), appearance: 'none', cursor: 'pointer' }}
                 >
-                  {owners.map((o) => (
-                    <option key={o.id} value={o.id} style={{ background: '#111', color: '#fff' }}>
-                      {o.name}
+                  {RUNTIMES.map((r) => (
+                    <option key={r.value} value={r.value} style={{ background: '#111', color: '#fff' }}>
+                      {r.label}
                     </option>
                   ))}
                 </select>
               </Field>
             </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ flex: 1 }}>
+              <Field label="ROOT DIRECTORY">
+                <input style={inputStyle()} value={rootDir} onChange={(e) => setRootDir(e.target.value)}
+                  placeholder="backend"
+                  onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
+                  onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
+              </Field>
+            </div>
+            {isDocker ? (
+              <div style={{ flex: 1 }}>
+                <Field label="DOCKERFILE PATH">
+                  <input style={inputStyle()} value={dockerfilePath} onChange={(e) => setDockerfilePath(e.target.value)}
+                    placeholder="./Dockerfile"
+                    onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
+                    onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
+                </Field>
+              </div>
+            ) : (
+              <div style={{ flex: 1 }}>
+                <Field label="BUILD COMMAND">
+                  <input style={inputStyle()} value={buildCommand} onChange={(e) => setBuildCommand(e.target.value)}
+                    placeholder="npm install"
+                    onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
+                    onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
+                </Field>
+              </div>
+            )}
+          </div>
+
+          {!isDocker && (
+            <Field label="START COMMAND" hint="Auto-detected for production — runs your entry file directly if the package.json start script uses a dev tool (nodemon, ts-node). Your server must listen on the PORT env variable Render provides.">
+              <input style={inputStyle()} value={startCommand} onChange={(e) => setStartCommand(e.target.value)}
+                placeholder="node server.js"
+                onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
+                onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
+            </Field>
+          )}
+
+          {owners.length > 1 && (
+            <Field label="ACCOUNT">
+              <select
+                value={ownerId}
+                onChange={(e) => setOwnerId(e.target.value)}
+                style={{ ...inputStyle(), appearance: 'none', cursor: 'pointer' }}
+              >
+                {owners.map((o) => (
+                  <option key={o.id} value={o.id} style={{ background: '#111', color: '#fff' }}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
           )}
         </div>
-
-        {isDocker ? (
-          <Field label="DOCKERFILE PATH">
-            <input style={inputStyle()} value={dockerfilePath} onChange={(e) => setDockerfilePath(e.target.value)}
-              placeholder="./Dockerfile"
-              onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
-              onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
-          </Field>
-        ) : (
-          <>
-            <Field label="BUILD COMMAND">
-              <input style={inputStyle()} value={buildCommand} onChange={(e) => setBuildCommand(e.target.value)}
-                placeholder="npm install"
-                onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
-                onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
-            </Field>
-            <Field label="START COMMAND" hint="Your server must listen on the PORT env variable Render provides.">
-              <input style={inputStyle()} value={startCommand} onChange={(e) => setStartCommand(e.target.value)}
-                placeholder="npm start"
-                onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
-                onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'} />
-            </Field>
-          </>
-        )}
 
         {/* Plan note */}
         <div style={{

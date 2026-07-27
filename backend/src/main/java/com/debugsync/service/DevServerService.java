@@ -63,6 +63,77 @@ public class DevServerService {
     }
 
     /**
+     * Detect project types by scanning a folder the user opened from disk.
+     */
+    public DetectionResult detectProjectsAtPath(String projectPath) {
+        return projectDetectorService.detectFromDisk(Paths.get(projectPath));
+    }
+
+    /**
+     * Start a dev server against a folder on disk.
+     *
+     * Local mode runs the project exactly where it lives, which is both simpler
+     * and more correct than the session path: no files are copied, so there is no
+     * temp workspace to keep in sync, no node_modules to preserve across restarts,
+     * and the dev server sees the same tree the user sees in their own editor.
+     *
+     * Servers are keyed by the project path here rather than a session id; the
+     * client passes that same value to stop/status/logs, so the rest of the API
+     * is unchanged.
+     */
+    public ServerStatus startLocalServer(String projectPath, String directory, String type) {
+        String key = serverKey(projectPath, type);
+
+        ManagedServer existing = servers.get(key);
+        if (existing != null && existing.isAlive()) {
+            log.info("[DevServer] Server {} is already running", key);
+            return buildStatus(key, existing);
+        }
+
+        Path root = Paths.get(projectPath);
+        if (!Files.isDirectory(root)) {
+            ServerStatus status = new ServerStatus();
+            status.setServerId(key);
+            status.setType(type);
+            status.setState("ERROR");
+            status.setErrorMessage("Project folder no longer exists: " + projectPath);
+            return status;
+        }
+
+        DetectionResult detection = detectProjectsAtPath(projectPath);
+        DetectedProject project = detection.getProjects().stream()
+            .filter(p -> p.getType().equals(type) && p.getDirectory().equals(directory))
+            .findFirst()
+            .orElse(null);
+
+        if (project == null) {
+            ServerStatus status = new ServerStatus();
+            status.setServerId(key);
+            status.setType(type);
+            status.setState("ERROR");
+            status.setErrorMessage("No " + type + " project detected in directory: " + directory);
+            return status;
+        }
+
+        ManagedServer server = new ManagedServer();
+        server.type = type;
+        server.directory = directory;
+        server.framework = project.getFramework();
+        server.displayName = project.getDisplayName();
+        server.defaultPort = project.getDefaultPort();
+        server.startCommand = project.getStartCommand();
+        server.state = "PREPARING";
+        server.logs = Collections.synchronizedList(new ArrayList<>());
+        // Run in place — this is what makes the copy-to-temp step unnecessary.
+        server.localRoot = directory == null || directory.isEmpty() ? root : root.resolve(directory);
+
+        servers.put(key, server);
+        executor.submit(() -> runServerPipeline(null, key, server));
+
+        return buildStatus(key, server);
+    }
+
+    /**
      * Start a dev server for a detected project.
      */
     public ServerStatus startServer(String sessionId, String directory, String type) {
@@ -115,26 +186,30 @@ public class DevServerService {
      */
     public ServerStatus stopServer(String sessionId, String type) {
         String key = serverKey(sessionId, type);
-        ManagedServer server = servers.get(key);
+        // Remove the entry entirely: this kills the process, clears the accumulated
+        // logs from the panel, and prevents dead servers from piling up in the map.
+        ManagedServer server = servers.remove(key);
 
-        if (server == null) {
-            ServerStatus status = new ServerStatus();
-            status.setServerId(key);
-            status.setType(type);
-            status.setState("IDLE");
-            return status;
+        ServerStatus status = new ServerStatus();
+        status.setServerId(key);
+        status.setType(type);
+        status.setState("IDLE");
+        status.setRecentLogs(new ArrayList<>());
+
+        if (server != null) {
+            if (server.process != null && server.process.isAlive()) {
+                server.process.descendants().forEach(ProcessHandle::destroy);
+                server.process.destroyForcibly();
+            }
+            // Preserve enough metadata for the panel to still render the card.
+            status.setDirectory(server.directory);
+            status.setFramework(server.framework);
+            status.setDisplayName(server.displayName);
+            status.setPort(server.defaultPort);
+            status.setUrl("http://localhost:" + server.defaultPort);
         }
 
-        server.addLog("⏹ Stopping server...");
-        server.state = "STOPPED";
-
-        if (server.process != null && server.process.isAlive()) {
-            server.process.descendants().forEach(ProcessHandle::destroy);
-            server.process.destroyForcibly();
-            server.addLog("✓ Server process terminated.");
-        }
-
-        return buildStatus(key, server);
+        return status;
     }
 
     /**
@@ -176,37 +251,55 @@ public class DevServerService {
             server.addLog("🚀 CAUSIFY DEV SERVER — " + server.displayName.toUpperCase());
             server.addLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
             server.addLog("");
-            server.addLog("📂 Writing project files to workspace...");
-
-            Path workspaceDir = writeFilesToDisk(sessionId, server.directory);
+            Path workspaceDir;
+            if (server.localRoot != null) {
+                // Local mode: the project is already on disk exactly where the user
+                // put it. Nothing to write, nothing to keep in sync.
+                workspaceDir = toCanonicalPath(server.localRoot);
+                server.addLog("📂 Running in your project folder (no copy made)");
+                server.addLog("   " + workspaceDir);
+                server.addLog("");
+            } else {
+                server.addLog("📂 Writing project files to workspace...");
+                workspaceDir = writeFilesToDisk(sessionId, server.directory);
+                server.addLog("✓ Files written to: " + workspaceDir.toString());
+                server.addLog("");
+            }
             server.workspacePath = workspaceDir;
-            server.addLog("✓ Files written to: " + workspaceDir.toString());
-            server.addLog("");
 
             // Step 1b: Validate critical files exist
             validateWorkspace(workspaceDir, server);
 
             // Step 2: Dependencies / Setup
             server.state = "INSTALLING";
-            String setupCmd = getSetupCommand(server.framework);
             server.addLog("📦 PHASE 1 — SETTING UP ENVIRONMENT");
             server.addLog("─────────────────────────────────────");
-            server.addLog("$ " + setupCmd);
-            server.addLog("");
 
-            String[] setupParts = setupCmd.split("\\s+");
-            boolean setupOk = runCommand(workspaceDir, setupParts[0], Arrays.copyOfRange(setupParts, 1, setupParts.length), server, 600);
-            
-            if (!setupOk) {
-                server.state = "ERROR";
+            if (!shouldRunSetup(workspaceDir, server.framework)) {
+                server.addLog("✓ Dependencies already installed (package.json unchanged) — skipping install.");
                 server.addLog("");
-                server.addLog("✗ Setup failed. Check logs above.");
-                return;
-            }
+            } else {
+                String setupCmd = getSetupCommand(server.framework);
+                server.addLog("$ " + setupCmd);
+                server.addLog("");
 
-            server.addLog("");
-            server.addLog("✓ Environment ready!");
-            server.addLog("");
+                String[] setupParts = setupCmd.split("\\s+");
+                boolean setupOk = runCommand(workspaceDir, setupParts[0], Arrays.copyOfRange(setupParts, 1, setupParts.length), server, 600);
+
+                if (!setupOk) {
+                    server.state = "ERROR";
+                    server.addLog("");
+                    server.addLog("✗ Setup failed. Check logs above.");
+                    return;
+                }
+
+                // Remember what we installed so the next start can skip a no-op install.
+                recordSetupHash(workspaceDir);
+
+                server.addLog("");
+                server.addLog("✓ Environment ready!");
+                server.addLog("");
+            }
 
             // Step 3: Run
             server.state = "STARTING";
@@ -214,17 +307,24 @@ public class DevServerService {
             server.addLog("─────────────────────────────────");
 
             String startCmd = server.startCommand;
-            // On Windows, "npm" must be "npm.cmd" for ProcessBuilder
+            // On Windows, launcher scripts need their ".cmd" extension for ProcessBuilder.
             String osName = System.getProperty("os.name", "").toLowerCase();
             if (osName.contains("win")) {
                 startCmd = startCmd.replaceFirst("^npm ", "npm.cmd ")
-                                   .replaceFirst("^npx ", "npx.cmd ");
+                                   .replaceFirst("^npx ", "npx.cmd ")
+                                   .replaceFirst("^mvn ", "mvn.cmd ");
             }
-            server.addLog("$ " + startCmd);
+
+            // Build the argument list, then (for Java/Python backends only) steer the
+            // dev server onto a guaranteed-free port so it never collides with
+            // DebugSync's own backend (8080) or anything else already listening.
+            List<String> startParts = new ArrayList<>(Arrays.asList(startCmd.split("\\s+")));
+            startParts = applyBackendPort(server, startParts);
+
+            server.addLog("$ " + String.join(" ", startParts));
             server.addLog("");
 
-            String[] startParts = startCmd.split("\\s+");
-            startLongRunningProcess(workspaceDir, server, startParts);
+            startLongRunningProcess(workspaceDir, server, startParts.toArray(new String[0]));
 
         } catch (Exception e) {
             log.error("[DevServer] Pipeline failed for {}: {}", key, e.getMessage(), e);
@@ -295,12 +395,143 @@ public class DevServerService {
 
     private String getSetupCommand(String framework) {
         if (framework.startsWith("springboot")) {
-            return "mvn dependency:resolve";
+            return getMvnCommand() + " dependency:resolve";
         }
         if (framework.equals("django") || framework.equals("python")) {
             return "pip install -r requirements.txt";
         }
         return getNpmCommand() + " install";
+    }
+
+    /** The Maven command for the current OS (mvn.cmd on Windows). */
+    private String getMvnCommand() {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        return os.contains("win") ? "mvn.cmd" : "mvn";
+    }
+
+    /**
+     * For Java/Python backends ONLY, pick a free port up-front and pass it to the
+     * dev server through that framework's own standard mechanism, so it never
+     * collides with DebugSync's backend (8080) or another running server. Frontend
+     * and Node projects are intentionally left untouched — they keep their existing
+     * output-parsing behavior. Returns the (possibly extended) command to run.
+     */
+    private List<String> applyBackendPort(ManagedServer server, List<String> command) {
+        String fw = server.framework == null ? "" : server.framework;
+        boolean isSpring = fw.startsWith("springboot");
+        boolean isDjango = fw.equals("django");
+        boolean isPython = fw.equals("python");
+        if (!isSpring && !isDjango && !isPython) {
+            return command; // not a targeted backend — do nothing
+        }
+
+        int startFrom = server.defaultPort > 0 ? server.defaultPort : 8080;
+        int port = findFreePort(startFrom);
+        server.addLog("  → Using free port " + port + " (avoids conflicts with other servers)");
+
+        List<String> result = command;
+        // "Authoritative" means the framework is guaranteed to bind the port we set,
+        // so we can report it without parsing output. A generic `python app.py` may
+        // ignore the hint, so we only steer it and let output parsing confirm.
+        boolean portIsAuthoritative;
+
+        if (isSpring) {
+            // Spring Boot: SERVER_PORT maps to server.port via relaxed binding.
+            server.extraEnv.put("SERVER_PORT", String.valueOf(port));
+            portIsAuthoritative = true;
+        } else if (isDjango) {
+            // Django's runserver takes the port as a positional argument.
+            result = new ArrayList<>(command);
+            result.add(String.valueOf(port));
+            portIsAuthoritative = true;
+        } else { // python
+            boolean isFlask = !command.isEmpty() && command.get(0).toLowerCase().contains("flask");
+            server.extraEnv.put("PORT", String.valueOf(port)); // common convention, best effort
+            if (isFlask) {
+                server.extraEnv.put("FLASK_RUN_PORT", String.valueOf(port));
+                portIsAuthoritative = true;
+            } else {
+                portIsAuthoritative = false;
+            }
+        }
+
+        // Report the chosen port. For authoritative frameworks it's final; for a
+        // generic python script it's a provisional fallback that output parsing may
+        // refine to the port the script actually printed.
+        server.detectedPort = port;
+        server.detectedUrl = "http://localhost:" + port;
+        if (portIsAuthoritative) {
+            server.portConfirmed = true;
+        }
+        return result;
+    }
+
+    /**
+     * Find a free TCP port at or after {@code startPort} by attempting to bind it on
+     * loopback. Falls back to {@code startPort} if none is found in range (the dev
+     * server will then surface its own bind error, as before).
+     */
+    private int findFreePort(int startPort) {
+        for (int port = startPort; port < startPort + 200 && port < 65535; port++) {
+            try (java.net.ServerSocket socket = new java.net.ServerSocket()) {
+                socket.setReuseAddress(true);
+                socket.bind(new java.net.InetSocketAddress("127.0.0.1", port));
+                return port;
+            } catch (IOException e) {
+                // port busy — try the next one
+            }
+        }
+        return startPort;
+    }
+
+    /**
+     * Decide whether the dependency-install step needs to run. For Node projects we
+     * skip it when {@code node_modules} already exists AND {@code package.json} is
+     * unchanged since the last install (tracked via a hash marker inside
+     * node_modules, so it's preserved/cleared together with the deps). Non-Node
+     * frameworks always run their setup (mvn/pip are effectively no-ops when cached).
+     */
+    private boolean shouldRunSetup(Path workspaceDir, String framework) {
+        if (framework.startsWith("springboot") || framework.equals("django") || framework.equals("python")) {
+            return true;
+        }
+        Path nodeModules = workspaceDir.resolve("node_modules");
+        if (!Files.isDirectory(nodeModules)) {
+            return true; // no dependencies installed yet
+        }
+        try {
+            Path pkg = workspaceDir.resolve("package.json");
+            String currentHash = Files.exists(pkg) ? sha256(Files.readAllBytes(pkg)) : "";
+            Path marker = nodeModules.resolve(".causify-deps-hash");
+            String savedHash = Files.exists(marker) ? Files.readString(marker).trim() : "";
+            return !currentHash.equals(savedHash); // reinstall only if package.json changed
+        } catch (IOException e) {
+            return true; // when in doubt, install
+        }
+    }
+
+    /** Record the current package.json hash so the next start can skip a no-op install. */
+    private void recordSetupHash(Path workspaceDir) {
+        try {
+            Path pkg = workspaceDir.resolve("package.json");
+            Path nodeModules = workspaceDir.resolve("node_modules");
+            if (Files.exists(pkg) && Files.isDirectory(nodeModules)) {
+                Files.writeString(nodeModules.resolve(".causify-deps-hash"), sha256(Files.readAllBytes(pkg)));
+            }
+        } catch (Exception ignored) {
+            // Best-effort — a missing marker just means we install again next time.
+        }
+    }
+
+    private String sha256(byte[] data) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(data);
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            return Integer.toHexString(java.util.Arrays.hashCode(data)); // fallback
+        }
     }
 
     /**
@@ -313,10 +544,17 @@ public class DevServerService {
         Path basePath = Paths.get(WORKSPACE_BASE, sessionId);
         Path projectPath = projectDir.isEmpty() ? basePath : basePath.resolve(projectDir);
         
-        // Clean existing workspace
+        // Clean existing workspace, but PRESERVE node_modules so we don't have to
+        // reinstall dependencies on every restart. Deleting non-node_modules files
+        // in reverse (deepest-first) order clears stale source; File::delete is a
+        // no-op on directories that still contain the preserved node_modules.
         if (Files.exists(basePath)) {
             Files.walk(basePath)
                 .sorted(Comparator.reverseOrder())
+                .filter(p -> {
+                    String s = p.toString().replace('\\', '/');
+                    return !s.contains("/node_modules");
+                })
                 .map(Path::toFile)
                 .forEach(File::delete);
         }
@@ -344,12 +582,71 @@ public class DevServerService {
             
             Path targetFile = projectPath.resolve(relativePath);
             Files.createDirectories(targetFile.getParent());
-            Files.writeString(targetFile, pf.getContent() != null ? pf.getContent() : "");
+            String content = pf.getContent() != null ? pf.getContent() : "";
+            byte[] binary = decodeDataUrl(content);
+            if (binary != null) {
+                // Binary asset (image/font) stored as a base64 data URL — write raw bytes
+                // so bundlers like Vite can resolve `import logo from './logo.png'`.
+                Files.write(targetFile, binary);
+            } else {
+                Files.writeString(targetFile, content);
+            }
             written++;
         }
 
-        log.info("[DevServer] Wrote {} files to {}", written, projectPath);
-        return projectPath;
+        // Canonicalize to the real (long-form) path before handing it to the dev
+        // server. See toCanonicalPath() for why this matters on Windows.
+        Path canonicalProjectPath = toCanonicalPath(projectPath);
+        log.info("[DevServer] Wrote {} files to {}", written, canonicalProjectPath);
+        return canonicalProjectPath;
+    }
+
+    /**
+     * Resolve a path to its real (canonical) form.
+     *
+     * On Windows {@code java.io.tmpdir} is frequently an 8.3 "short" path — e.g.
+     * {@code C:\Users\VANSHD~1\AppData\Local\Temp} when the user folder is long or
+     * contains spaces ("Vansh Deep Srivastav"). Dev servers such as Vite compute
+     * their {@code server.fs.allow} list from the process working directory, but
+     * {@code realpath} every file they serve. When the working directory is the
+     * short form while the realpath'd request expands to the long form, Vite treats
+     * every file as "outside the fs.allow list" and returns HTTP 403 ("403
+     * Restricted"). Asset/module requests then receive the 403 HTML page instead of
+     * JavaScript, which the browser fails to parse ("Uncaught SyntaxError:
+     * Unexpected token '<'").
+     *
+     * Canonicalizing the working directory to its long form keeps both sides
+     * consistent and matches what running the project manually would do.
+     */
+    private Path toCanonicalPath(Path path) {
+        try {
+            return path.toRealPath();
+        } catch (IOException e) {
+            log.warn("[DevServer] Could not canonicalize path {}: {}", path, e.getMessage());
+            return path.toAbsolutePath().normalize();
+        }
+    }
+
+    /**
+     * If the stored content is a base64 data URL (e.g. {@code data:image/png;base64,iVBOR...}),
+     * decode it back to the original bytes. Binary assets such as images and fonts
+     * are imported as data URLs (they are not text), so they must be written to
+     * disk as raw bytes — otherwise bundlers like Vite fail to resolve imports such
+     * as {@code import logo from './logo.png'}. Returns {@code null} for ordinary
+     * text content, which is then written as a string.
+     */
+    private byte[] decodeDataUrl(String content) {
+        if (content == null || !content.startsWith("data:")) return null;
+        int marker = content.indexOf(";base64,");
+        if (marker < 0) return null;
+        String base64 = content.substring(marker + ";base64,".length());
+        try {
+            // MIME decoder tolerates any stray whitespace/newlines in the payload.
+            return Base64.getMimeDecoder().decode(base64);
+        } catch (IllegalArgumentException e) {
+            log.warn("[DevServer] Failed to decode data URL, writing as text instead: {}", e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -416,6 +713,10 @@ public class DevServerService {
             env.put("CI", "true");
             env.put("BROWSER", "none"); // Prevent auto-opening browser
             env.put("FORCE_COLOR", "0"); // Disable ANSI colors for cleaner logs
+            // Framework-specific extras (e.g. SERVER_PORT/FLASK_RUN_PORT for backends).
+            if (server.extraEnv != null && !server.extraEnv.isEmpty()) {
+                env.putAll(server.extraEnv);
+            }
 
             Process process = pb.start();
             server.process = process;
@@ -427,8 +728,12 @@ public class DevServerService {
                     while ((line = reader.readLine()) != null) {
                         server.addLog("  " + line);
 
-                        // Auto-detect port and URL
-                        if (server.detectedPort == 0) {
+                        // Keep parsing the server's own output until it reports its
+                        // real URL. We must NOT stop at the first non-zero port: the
+                        // 3s fallback below may set a provisional default while the
+                        // dev server is still scanning past busy ports (5173→5174→
+                        // 5175). Only a URL parsed from actual output is authoritative.
+                        if (!server.portConfirmed) {
                             detectPortFromLine(line, server);
                         }
                     }
@@ -445,12 +750,25 @@ public class DevServerService {
             outputReader.setDaemon(true);
             outputReader.start();
 
-            // Wait a bit to check for immediate crash
-            Thread.sleep(3000);
+            // Wait for the server to settle. We always wait a minimum time so an
+            // immediate crash (compile error, missing dependency) is caught, and up
+            // to a longer deadline for a slow server to report its URL. We break
+            // early once we've both settled and know the port — parsed from output
+            // for frontends, or assigned up-front for Java/Python backends.
+            final long MIN_SETTLE_MS = 3000;
+            final long DEADLINE_MS = 20000;
+            long startedAt = System.currentTimeMillis();
+            while (process.isAlive()) {
+                long elapsed = System.currentTimeMillis() - startedAt;
+                if (elapsed >= DEADLINE_MS) break;
+                if (elapsed >= MIN_SETTLE_MS && server.portConfirmed) break;
+                Thread.sleep(200);
+            }
 
             if (process.isAlive()) {
                 server.state = "RUNNING";
-                if (server.detectedPort == 0) {
+                if (!server.portConfirmed && server.detectedPort == 0) {
+                    // Nothing reported a port in time — fall back to the framework default.
                     server.detectedPort = server.defaultPort;
                     server.detectedUrl = "http://localhost:" + server.defaultPort;
                 }
@@ -490,6 +808,7 @@ public class DevServerService {
                 if (m.find()) {
                     try {
                         server.detectedPort = Integer.parseInt(m.group(1));
+                        server.portConfirmed = true;
                         server.addLog("  → Detected: " + server.detectedUrl);
                         return;
                     } catch (NumberFormatException ignored) {}
@@ -506,6 +825,7 @@ public class DevServerService {
                     if (port > 1000 && port < 65536) {
                         server.detectedPort = port;
                         server.detectedUrl = "http://localhost:" + port;
+                        server.portConfirmed = true;
                         server.addLog("  → Detected port: " + port);
                         return;
                     }
@@ -573,6 +893,9 @@ public class DevServerService {
         volatile String state = "IDLE";
         volatile int detectedPort = 0;
         volatile String detectedUrl = null;
+        volatile boolean portConfirmed = false; // true once the port is known (parsed or assigned)
+        Map<String, String> extraEnv = new HashMap<>(); // extra process env (e.g. backend SERVER_PORT)
+        Path localRoot;           // Local mode: run here directly instead of copying files out
         Process process;
         Path workspacePath;
         List<String> logs = Collections.synchronizedList(new ArrayList<>());

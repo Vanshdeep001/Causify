@@ -6,11 +6,6 @@
  *  2. CONNECTED, IDLE → Status dashboard + command bar
  *  3. CONNECTED, SUGGESTION → Commit composer + push capability
  *
- * Wrapper separates the two modules cleanly:
- *  GIT      → the hands: commit / push / pull on your code
- *  GUARDIAN → the eyes: Repository Guardian observing the
- *             whole repo (PRs, branches, approvals)
- *
  * Visual language: open editorial layout — hairline dividers
  * instead of nested cards, numbered zone labels, display-font
  * accents, pill actions.
@@ -24,7 +19,241 @@ import {
   gitBranches, gitCheckout, gitUndoCommit
 } from '../../services/api';
 import { getProjectKey, getSavedRepoUrl, saveRepoUrl, clearSavedRepoUrl } from '../../utils/gitRepoMemory';
-import { GuardianPrZone } from './GuardianPanel';
+
+/* ═══════════════════════════════════════════════════════
+ * GitHub PR Zone — fetches open PRs via the public API
+ * ═══════════════════════════════════════════════════════ */
+
+/** Extract { owner, repo, token } from a git URL.
+ *  Handles:
+ *    https://github.com/owner/repo.git
+ *    https://TOKEN@github.com/owner/repo.git
+ *    git@github.com:owner/repo.git                     */
+const parseGitUrl = (url) => {
+  if (!url) return null;
+  let token = null;
+  let clean = url.trim();
+
+  // HTTPS with embedded token: https://TOKEN@github.com/...
+  const tokenMatch = clean.match(/\/\/([^@]+)@github\.com/);
+  if (tokenMatch) token = tokenMatch[1];
+
+  // SSH: git@github.com:owner/repo.git
+  const sshMatch = clean.match(/github\.com[:\/]([^/]+)\/([^/.]+)/);
+  if (sshMatch) return { owner: sshMatch[1], repo: sshMatch[2].replace(/\.git$/, ''), token };
+  return null;
+};
+
+const timeAgo = (dateStr) => {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
+};
+
+const GitHubPrZone = ({ repoUrl, isSplit }) => {
+  const [prs, setPrs] = React.useState(null);       // null = not loaded, [] = empty
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState(null);
+
+  const parsed = React.useMemo(() => parseGitUrl(repoUrl), [repoUrl]);
+
+  const fetchPrs = React.useCallback(async () => {
+    if (!parsed) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const headers = { Accept: 'application/vnd.github.v3+json' };
+      if (parsed.token && !parsed.token.includes('***')) {
+        headers.Authorization = `token ${parsed.token}`;
+      }
+      const res = await fetch(
+        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/pulls?state=open&per_page=15&sort=updated&direction=desc`,
+        { headers },
+      );
+      if (!res.ok) throw new Error(`GitHub API ${res.status}`);
+      const data = await res.json();
+      setPrs(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [parsed]);
+
+  // Fetch on mount + every 3 min
+  React.useEffect(() => {
+    fetchPrs();
+    const interval = setInterval(fetchPrs, 180000);
+    return () => clearInterval(interval);
+  }, [fetchPrs]);
+
+  const MONO = 'var(--font-number)';
+  const BODY = 'var(--font-body)';
+
+  if (!parsed) {
+    return (
+      <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)', lineHeight: 1.6, padding: '4px 0' }}>
+        Connect a GitHub repository to see pull requests.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Headline stat */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '13px', marginBottom: '14px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <span style={{
+            fontFamily: 'var(--font-header)', fontSize: '2.1rem', fontWeight: 800,
+            color: (prs && prs.length > 0) ? '#FFFFFF' : 'var(--t4)', lineHeight: 1, letterSpacing: '-0.02em',
+          }}>
+            {prs ? String(prs.length).padStart(2, '0') : '--'}
+          </span>
+          <span style={{
+            width: '26px', height: '2px', marginTop: '9px', borderRadius: '2px',
+            background: (prs && prs.length > 0) ? '#FFFFFF' : 'var(--line-strong)',
+          }} />
+        </div>
+        <span style={{ fontFamily: BODY, fontSize: '0.66rem', color: 'var(--t3)', paddingBottom: '3px' }}>
+          {loading ? 'loading…' : prs ? (prs.length === 1 ? 'open pull request' : 'open pull requests') : '—'}
+        </span>
+      </div>
+
+      {error && (
+        <div style={{
+          borderLeft: '2px solid var(--crimson)', paddingLeft: '12px',
+          color: 'var(--crimson)', fontFamily: MONO, fontSize: '0.64rem',
+          fontWeight: 600, lineHeight: 1.6, marginBottom: '10px',
+        }}>
+          {error}
+        </div>
+      )}
+
+      {/* PR list */}
+      <div className="no-scrollbar" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        {prs && prs.length === 0 && (
+          <div style={{ fontFamily: BODY, fontSize: '0.7rem', color: 'var(--t4)' }}>
+            No open pull requests.
+          </div>
+        )}
+        {prs && prs.map((pr) => (
+          <div
+            key={pr.id}
+            style={{
+              padding: '10px 8px', margin: '0 -8px', borderRadius: '2px',
+              borderBottom: '1px solid var(--line-faint)',
+              transition: 'background 0.15s ease', cursor: 'default',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.025)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            {/* Row 1: PR number + title */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+              <span style={{
+                fontFamily: MONO, fontSize: '0.62rem', fontWeight: 800,
+                color: 'var(--emerald)', flexShrink: 0, marginTop: '1px',
+              }}>
+                #{pr.number}
+              </span>
+              <span style={{
+                fontFamily: BODY, fontSize: '0.74rem', fontWeight: 600,
+                color: 'var(--t1)', lineHeight: 1.4,
+                overflow: 'hidden', textOverflow: 'ellipsis',
+                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+              }}>
+                {pr.title}
+              </span>
+            </div>
+
+            {/* Row 2: author · time ago · review stats */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap',
+              marginTop: '6px', paddingLeft: '0',
+            }}>
+              {/* Avatar + author */}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <img
+                  src={pr.user?.avatar_url}
+                  alt=""
+                  style={{ width: '14px', height: '14px', borderRadius: '50%', flexShrink: 0 }}
+                />
+                <span style={{ fontFamily: MONO, fontSize: '0.58rem', color: 'var(--t2)', fontWeight: 600 }}>
+                  {pr.user?.login}
+                </span>
+              </span>
+
+              <span style={{ width: '1px', height: '10px', background: 'var(--line-strong)', flexShrink: 0 }} />
+
+              {/* Time */}
+              <span style={{ fontFamily: MONO, fontSize: '0.54rem', color: 'var(--t4)', whiteSpace: 'nowrap' }}>
+                {timeAgo(pr.created_at)}
+              </span>
+
+              {/* Comments */}
+              {(pr.comments > 0 || pr.review_comments > 0) && (
+                <>
+                  <span style={{ width: '1px', height: '10px', background: 'var(--line-strong)', flexShrink: 0 }} />
+                  <span style={{ fontFamily: MONO, fontSize: '0.54rem', color: 'var(--t4)' }}>
+                    💬 {(pr.comments || 0) + (pr.review_comments || 0)}
+                  </span>
+                </>
+              )}
+
+              {/* Draft badge */}
+              {pr.draft && (
+                <span style={{
+                  fontFamily: MONO, fontSize: '0.46rem', fontWeight: 800,
+                  letterSpacing: '0.12em', color: 'var(--t4)',
+                  padding: '1px 6px', borderRadius: '2px',
+                  border: '1px solid var(--line-strong)',
+                }}>
+                  DRAFT
+                </span>
+              )}
+            </div>
+
+            {/* Row 3: labels */}
+            {pr.labels && pr.labels.length > 0 && (
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+                {pr.labels.map((label) => (
+                  <span
+                    key={label.id}
+                    style={{
+                      fontFamily: MONO, fontSize: '0.46rem', fontWeight: 700,
+                      letterSpacing: '0.1em', color: `#${label.color}`,
+                      padding: '1px 7px', borderRadius: '999px',
+                      border: `1px solid #${label.color}44`,
+                      background: `#${label.color}11`,
+                    }}
+                  >
+                    {label.name.toUpperCase()}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Row 4: head → base */}
+            <div style={{
+              fontFamily: MONO, fontSize: '0.52rem', color: 'var(--t4)',
+              marginTop: '5px', display: 'flex', alignItems: 'center', gap: '6px',
+            }}>
+              <span style={{ color: '#818cf8' }}>{pr.head?.ref}</span>
+              <span>→</span>
+              <span>{pr.base?.ref}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 
 /* ═══════════════════════════════════════════════════════
  * Panel-local design primitives
@@ -133,8 +362,15 @@ const blurLine = e => { e.currentTarget.parentElement.style.borderBottomColor = 
 /* Git porcelain status code → classy badge descriptor.
  * XY columns: '??' untracked, 'A' added, 'M' modified, 'D' deleted,
  * 'R' renamed. Untracked/added read as NEW, the rest map to intent. */
-const fileStatusMeta = (code) => {
+const fileStatusMeta = (code, path) => {
   const c = (code || '').trim();
+  // The backend asks git to list untracked files individually, so directory
+  // entries should not appear. Kept as a fallback: an older backend still
+  // collapses a new folder into one entry ending in "/", and calling that a
+  // single new file would misrepresent it.
+  if (typeof path === 'string' && path.trimEnd().endsWith('/')) {
+    return { label: 'NEW DIR', color: 'var(--emerald)' };
+  }
   if (c === '??' || c.includes('A')) return { label: 'NEW', color: 'var(--emerald)' };
   if (c.includes('D')) return { label: 'DEL', color: 'var(--crimson)' };
   if (c.includes('R')) return { label: 'MOVED', color: '#818cf8' };
@@ -143,8 +379,8 @@ const fileStatusMeta = (code) => {
 };
 
 /* Small pill: status dot + micro-caps label, thin-bordered. */
-const FileBadge = ({ code }) => {
-  const m = fileStatusMeta(code);
+const FileBadge = ({ code, path }) => {
+  const m = fileStatusMeta(code, path);
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -253,7 +489,14 @@ const GroundBase = () => (
  * ═══════════════════════════════════════════════════════ */
 
 const GitAssistantCore = () => {
-  const sessionId = useEditorStore(s => s.sessionId);
+  const storeSessionId = useEditorStore(s => s.sessionId);
+  const workspaceRoot = useEditorStore(s => s.workspaceRoot);
+
+  // Git works against a "scope": the user's own repository when a folder is open
+  // from disk, otherwise the session's cloned sandbox. The backend accepts either
+  // in the same field, so everything below is written once.
+  const isLocalRepo = Boolean(workspaceRoot);
+  const sessionId = workspaceRoot || storeSessionId;
   const suggestion = useEditorStore(s => s.commitSuggestion);
   const setCommitSuggestion = useEditorStore(s => s.setCommitSuggestion);
   const terminalLayoutMode = useEditorStore(s => s.terminalLayoutMode);
@@ -274,6 +517,9 @@ const GitAssistantCore = () => {
   const resetGit = useEditorStore(s => s.resetGit);
 
   const [repoUrlInput, setRepoUrlInput] = useState('');
+  // True number of changed files, straight from git. The visible list can be
+  // trimmed for very large working trees, so the count is tracked separately.
+  const [changeCount, setChangeCount] = useState(null);
   const [commandOutput, setCommandOutput] = useState(null);
   const [pullConflict, setPullConflict] = useState(null); // { files: [...] }
   const [showCommitInput, setShowCommitInput] = useState(false);
@@ -294,8 +540,13 @@ const GitAssistantCore = () => {
   const refreshStatus = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const res = await gitStatus(sessionId, Object.entries(files).map(([path, content]) => ({ path, content })));
+      // gitStatus is a GET and carries no body — the backend reads the working
+      // tree itself. Passing files here looked like it did something and didn't.
+      const res = await gitStatus(sessionId);
       setGitStatus(res.output || '');
+      // The backend trims very long listings but always reports the true total,
+      // so the headline number stays right even when the list below is clipped.
+      setChangeCount(typeof res.changeCount === 'number' ? res.changeCount : null);
     } catch (e) { /* silent */ }
   }, [sessionId, files]);
 
@@ -303,7 +554,11 @@ const GitAssistantCore = () => {
     if (!sessionId) return;
     try {
       const res = await gitLog(sessionId, 8);
-      setGitLog(res.output || '');
+      // Git merges stderr into stdout, so a failed `git log` — most commonly
+      // "does not have any commits yet" in a freshly initialised repo — would
+      // otherwise be stored and drawn as if it were a commit. Only keep output
+      // that actually succeeded; anything else means there is no history to show.
+      setGitLog(res.success === false ? '' : (res.output || ''));
     } catch (e) { /* silent */ }
   }, [sessionId]);
 
@@ -317,13 +572,31 @@ const GitAssistantCore = () => {
     if (!sessionId) return;
     gitIsConnected(sessionId).then(async (res) => {
       if (res.connected) {
-        setGitRepoConnected(true);
+        const savedUrl = getSavedRepoUrl(projectKey) || '';
+        const safeUrl = savedUrl.replace(/\/\/[^@]+@/, '//***@');
+        setGitRepoConnected(true, safeUrl);
         refreshStatus();
         refreshLog();
         return;
       }
+
+      // An open folder either is a git repository or it isn't — there is nothing
+      // to clone into it, and attempting to would be destructive. Leave the panel
+      // showing that this folder has no repository yet.
+      if (isLocalRepo) {
+        setGitRepoConnected(false, '');
+        return;
+      }
+
+      // Backend has no clone for this session.
       const savedUrl = getSavedRepoUrl(projectKey);
-      if (!savedUrl || autoConnectAttemptedRef.current) return;
+      if (!savedUrl) {
+        // Nothing to reconnect from — clear any stale persisted "connected"
+        // so the connect form shows (a genuine, non-transient disconnect).
+        setGitRepoConnected(false, '');
+        return;
+      }
+      if (autoConnectAttemptedRef.current) return;
       autoConnectAttemptedRef.current = true;
       setGitLoading(true);
       try {
@@ -334,17 +607,21 @@ const GitAssistantCore = () => {
           refreshStatus();
           refreshLog();
         } else {
-          // Saved URL no longer works (revoked token, deleted repo) —
-          // fall back to the connect form, prefilled for editing.
+          // Saved URL no longer works (revoked token, deleted repo) — the
+          // persisted "connected" is stale, so drop to the connect form,
+          // prefilled. The saved URL is kept, so retry is one click; only a
+          // manual disconnect forgets it.
+          setGitRepoConnected(false, '');
           setRepoUrlInput(savedUrl);
         }
       } catch {
+        setGitRepoConnected(false, '');
         setRepoUrlInput(savedUrl);
       } finally {
         setGitLoading(false);
       }
     }).catch(() => {});
-  }, [sessionId, projectKey, refreshStatus, refreshLog, setGitRepoConnected, setGitLoading]);
+  }, [sessionId, isLocalRepo, projectKey, refreshStatus, refreshLog, setGitRepoConnected, setGitLoading]);
 
   // Prefill the connect form with this project's saved repo URL
   useEffect(() => {
@@ -395,71 +672,210 @@ const GitAssistantCore = () => {
 
     return (
       <div className="no-scrollbar" style={{
-        height: '100%', display: 'flex', alignItems: 'center',
-        justifyContent: 'center', padding: '28px', overflow: 'auto',
+        height: '100%', display: 'flex', alignItems: 'stretch',
+        justifyContent: 'center', padding: '12px 16px', overflow: 'hidden',
       }}>
-        <div style={{ width: '100%', maxWidth: '560px', animation: 'fade-in 0.4s ease-out' }}>
+        <div style={{
+          width: '100%', display: 'flex', alignItems: 'stretch',
+          border: '1px solid var(--line)',
+          borderRadius: '6px',
+          background: 'rgba(255,255,255,0.015)',
+          animation: 'fade-in 0.4s ease-out',
+          overflow: 'hidden',
+          position: 'relative',
+        }}>
+
+          {/* Left decorative panel — Mario × Git Commit */}
           <div style={{
-            fontFamily: MONO, fontSize: '0.56rem', fontWeight: 700,
-            letterSpacing: '0.3em', color: 'var(--t4)', marginBottom: '14px',
+            width: '180px', flexShrink: 0,
+            borderRight: '1px solid var(--line)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            position: 'relative',
+            background: 'rgba(255,255,255,0.01)',
+            overflow: 'hidden',
           }}>
-            REMOTE REPOSITORY
-          </div>
-          <div style={{
-            fontFamily: HEADER, fontSize: '1.3rem', fontWeight: 800,
-            color: 'var(--t1)', letterSpacing: '0.01em', marginBottom: '8px',
-          }}>
-            Connect a repository
-          </div>
-          <div style={{
-            fontFamily: BODY, fontSize: '0.74rem', color: 'var(--t3)',
-            lineHeight: 1.7, marginBottom: '30px', maxWidth: '420px',
-          }}>
-            Link a remote over HTTPS or SSH to enable intelligent commits,
-            push and pull directly from this workspace.
+            {/* Grid dot pattern */}
+            <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, opacity: 0.15 }}>
+              <pattern id="marioGitDots" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
+                <circle cx="1" cy="1" r="0.5" fill="var(--t4)" />
+              </pattern>
+              <rect width="100%" height="100%" fill="url(#marioGitDots)" />
+            </svg>
+
+            <style>{`
+              /* 3-second loop animation */
+              @keyframes panel-mario-jump {
+                0%   { transform: translateY(0) scaleY(1); }
+                10%  { transform: translateY(0) scaleY(0.75); }
+                15%  { transform: translateY(0) scaleY(1.1); }
+                35%  { transform: translateY(-30px) scaleY(1); } /* hits block underside exactly at 35% */
+                40%  { transform: translateY(-30px) scaleY(0.9); }
+                60%  { transform: translateY(0) scaleY(0.8); }
+                70%  { transform: translateY(0) scaleY(1); }
+                100% { transform: translateY(0) scaleY(1); }
+              }
+
+              @keyframes panel-block-bump {
+                0%, 34% { transform: translateY(0); }
+                35%     { transform: translateY(-6px); }
+                42%     { transform: translateY(1.5px); }
+                50%, 100% { transform: translateY(0); }
+              }
+
+              @keyframes panel-commit-rise {
+                0%, 35% { transform: translateY(0); opacity: 0; }
+                55%     { transform: translateY(-16px); opacity: 1; }
+                85%     { transform: translateY(-16px); opacity: 1; }
+                95%, 100% { transform: translateY(-16px) scale(0.8); opacity: 0; }
+              }
+            `}</style>
+
+            <svg width="120" height="120" viewBox="0 0 120 120" shapeRendering="crispEdges" style={{ position: 'relative', zIndex: 1 }}>
+              {/* ── Floor / Ground line ── */}
+              <line x1="10" y1="100" x2="110" y2="100" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
+              
+              {/* ── Git Commit Tag (Rises from block) ── */}
+              <g style={{ animation: 'panel-commit-rise 3s infinite' }}>
+                {/* Border box for hash */}
+                <rect x="36" y="16" width="48" height="12" fill="#1e1e24" stroke="rgba(255,255,255,0.4)" strokeWidth="0.8" rx="2" />
+                <text x="60" y="24" textAnchor="middle" fill="#fff" fontSize="5" fontFamily="var(--font-number)" letterSpacing="0.04em">c4e6727</text>
+              </g>
+
+              {/* ── Git Commit Block (looks like a ? block) ── */}
+              <g style={{ animation: 'panel-block-bump 3s infinite', transformOrigin: 'center center' }}>
+                <rect x="48" y="34" width="24" height="24" fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="1" />
+                {/* Inner question mark shape */}
+                <rect x="58" y="39" width="4" height="1" fill="rgba(255,255,255,0.6)" />
+                <rect x="57" y="40" width="2" height="1" fill="rgba(255,255,255,0.6)" />
+                <rect x="61" y="40" width="2" height="1" fill="rgba(255,255,255,0.6)" />
+                <rect x="60" y="41" width="2" height="2" fill="rgba(255,255,255,0.6)" />
+                <rect x="59" y="43" width="2" height="1" fill="rgba(255,255,255,0.6)" />
+                <rect x="59" y="45" width="2" height="2" fill="rgba(255,255,255,0.6)" />
+              </g>
+
+              {/* ── Jumping Mario (aligned under the block) ── */}
+              <g style={{ animation: 'panel-mario-jump 3s infinite', transformOrigin: 'bottom center' }}>
+                <g transform="translate(52, 86)">
+                  <rect x="4" y="4" width="8" height="8" fill="#FFFFFF" />
+                  <rect x="5" y="5" width="6" height="4" fill="var(--s0)" />
+                  <rect x="6" y="6" width="1" height="2" fill="#FFFFFF" />
+                  <rect x="9" y="6" width="1" height="2" fill="#FFFFFF" />
+                  <rect x="7" y="9" width="2" height="1" fill="#FFFFFF" />
+                  <rect x="3" y="3" width="10" height="1" fill="#FFFFFF" />
+                  <rect x="5" y="2" width="6" height="1" fill="#FFFFFF" />
+                  <rect x="4" y="12" width="2" height="2" fill="#FFFFFF" />
+                  <rect x="10" y="12" width="2" height="2" fill="#FFFFFF" />
+                </g>
+              </g>
+            </svg>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{
-              flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '12px',
-              borderBottom: '1px solid var(--line-strong)', paddingBottom: '10px',
-              transition: 'border-color 0.2s ease',
-            }}>
-              <span style={{ fontFamily: MONO, fontSize: '0.78rem', color: 'var(--t4)', flexShrink: 0 }}>❯</span>
-              <input
-                type="text"
-                value={repoUrlInput}
-                onChange={(e) => setRepoUrlInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
-                onFocus={focusLine}
-                onBlur={blurLine}
-                placeholder="https://github.com/user/repository.git"
-                spellCheck={false}
-                style={{
-                  flex: 1, minWidth: 0, background: 'transparent', border: 'none',
-                  outline: 'none', color: 'var(--t1)', fontSize: '0.82rem',
-                  fontFamily: MONO, fontWeight: 500,
-                }}
-              />
+          {/* Right content area */}
+          <div style={{
+            flex: 1, display: 'flex', flexDirection: 'column',
+            justifyContent: 'center', padding: '20px 32px',
+            minWidth: 0,
+          }}>
+            {/* Top section: label + heading */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{
+                fontFamily: MONO, fontSize: '0.48rem', fontWeight: 700,
+                letterSpacing: '0.32em', color: 'var(--t4)', marginBottom: '6px',
+              }}>
+                REMOTE REPOSITORY
+              </div>
+              <div style={{
+                fontFamily: HEADER, fontSize: '0.95rem', fontWeight: 700,
+                color: 'var(--t1)', letterSpacing: '0.01em', marginBottom: '4px',
+              }}>
+                Connect a repository
+              </div>
+              <div style={{
+                fontFamily: BODY, fontSize: '0.6rem', color: 'var(--t4)',
+                lineHeight: 1.6,
+              }}>
+                Link a remote over HTTPS or SSH to enable intelligent commits, push and pull.
+              </div>
             </div>
-            <PrimaryButton onClick={handleConnect} disabled={gitLoading || !repoUrlInput.trim()}>
-              {gitLoading ? 'CONNECTING…' : 'CONNECT'}
-            </PrimaryButton>
+
+            {/* Input row */}
+            <div style={{ display: 'flex', alignItems: 'stretch', gap: '0' }}>
+              <div style={{
+                flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px',
+                border: '1px solid var(--line-strong)', borderRight: 'none',
+                borderRadius: '4px 0 0 4px', padding: '0 14px',
+                background: 'rgba(255,255,255,0.025)',
+                transition: 'border-color 0.2s ease',
+              }}>
+                <span style={{ fontFamily: MONO, fontSize: '0.68rem', color: 'var(--t4)', flexShrink: 0, userSelect: 'none' }}>›</span>
+                <input
+                  type="text"
+                  value={repoUrlInput}
+                  onChange={(e) => setRepoUrlInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
+                  onFocus={(e) => { e.currentTarget.parentElement.style.borderColor = 'rgba(255,255,255,0.3)'; }}
+                  onBlur={(e) => { e.currentTarget.parentElement.style.borderColor = 'var(--line-strong)'; }}
+                  placeholder="https://github.com/user/repo.git"
+                  spellCheck={false}
+                  style={{
+                    flex: 1, minWidth: 0, background: 'transparent', border: 'none',
+                    outline: 'none', color: 'var(--t1)', fontSize: '0.72rem',
+                    fontFamily: MONO, fontWeight: 500, padding: '9px 0',
+                  }}
+                />
+              </div>
+              <button
+                onClick={handleConnect}
+                disabled={gitLoading || !repoUrlInput.trim()}
+                style={{
+                  padding: '0 22px',
+                  background: 'transparent',
+                  color: 'var(--t2)',
+                  border: '1px solid var(--line-strong)',
+                  borderRadius: '0 4px 4px 0',
+                  cursor: (gitLoading || !repoUrlInput.trim()) ? 'default' : 'pointer',
+                  fontFamily: MONO, fontSize: '0.56rem', fontWeight: 700,
+                  letterSpacing: '0.16em', whiteSpace: 'nowrap',
+                  opacity: (gitLoading || !repoUrlInput.trim()) ? 0.35 : 1,
+                  transition: 'background 0.15s ease, color 0.15s ease, border-color 0.15s ease',
+                }}
+                onMouseEnter={e => {
+                  if (gitLoading || !repoUrlInput.trim()) return;
+                  e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)';
+                  e.currentTarget.style.color = 'var(--t1)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.borderColor = 'var(--line-strong)';
+                  e.currentTarget.style.color = 'var(--t2)';
+                }}
+              >
+                {gitLoading ? 'CONNECTING…' : 'CONNECT'}
+              </button>
+            </div>
+
+            {/* Bottom hint row */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '16px',
+              marginTop: '10px',
+            }}>
+              <div style={{
+                fontFamily: MONO, fontSize: '0.48rem', color: 'var(--t4)',
+                letterSpacing: '0.08em',
+              }}>
+                HTTPS · SSH · TOKEN AUTH
+              </div>
+              <div style={{ flex: 1, height: '1px', background: 'linear-gradient(90deg, var(--line), transparent)' }} />
+            </div>
+
+            {gitError && (
+              <ErrorLine style={{ marginTop: '12px' }}>
+                {gitError}
+              </ErrorLine>
+            )}
           </div>
-
-          {gitError && (
-            <ErrorLine style={{ marginTop: '18px' }}>
-              {gitError}
-            </ErrorLine>
-          )}
         </div>
-
-        <style>{`
-          @keyframes pulse-live {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-          }
-        `}</style>
       </div>
     );
   }
@@ -479,11 +895,15 @@ const GitAssistantCore = () => {
     setGitLoading(true);
     setGitError(null);
     try {
-      // Send the editor's live files so unsaved buffers are committed too
+      // Session mode sends the editor's live files so unsaved buffers are
+      // committed too. Local mode commits the working tree as it stands on
+      // disk — sending contents would only overwrite the user's own files.
       const res = await executeGitCommit({
         sessionId,
         message: inlineCommitMsg.trim(),
-        files: Object.entries(files).map(([path, content]) => ({ path, content })),
+        files: isLocalRepo
+          ? undefined
+          : Object.entries(files).map(([path, content]) => ({ path, content })),
       });
       if (res.success !== false) {
         setCommandOutput({ command: 'commit', output: res.output || 'Committed successfully' });
@@ -618,14 +1038,42 @@ const GitAssistantCore = () => {
   // Parse status lines
   const statusLines = String(gitStatusData || '').split('\n').filter(l => l.trim());
   const actualChanges = statusLines.filter(l => !l.startsWith('##'));
-  const hasChanges = actualChanges.length > 0;
+  // git now lists untracked files individually (-uall), so a line is a file.
+  // Prefer the backend's count, which stays accurate even if the list was
+  // trimmed for a very large working tree.
+  const totalChanges = changeCount ?? actualChanges.length;
+  const hasChanges = totalChanges > 0;
 
   const branchLine = statusLines.find(l => l.startsWith('##')) || '';
   const isAhead = branchLine.includes('[ahead');
-  const currentBranch = branchLine.replace(/^##\s*/, '').split('...')[0].split(' ')[0].trim();
+  /* The porcelain branch header comes in several shapes, and taking the first
+   * word only works for one of them:
+   *   ## master...origin/master [ahead 1]   → master
+   *   ## master                             → master
+   *   ## No commits yet on master           → master   (first word was "No")
+   *   ## HEAD (no branch)                   → detached
+   */
+  const parseBranch = (line) => {
+    const header = line.replace(/^##\s*/, '').trim();
+    if (!header) return '';
 
-  // Parse log lines
-  const logLines = String(gitLogData || '').split('\n').filter(l => l.trim());
+    const noCommitsYet = header.match(/^No commits yet on (.+)$/i);
+    if (noCommitsYet) return noCommitsYet[1].split('...')[0].trim();
+
+    if (/^HEAD\b/.test(header) && header.includes('(no branch)')) return 'detached';
+
+    return header.split('...')[0].split(' ')[0].trim();
+  };
+
+  const currentBranch = parseBranch(branchLine);
+
+  // Parse log lines. `git log --oneline` gives "<abbrev-hash> <subject>", but the
+  // hash length varies with repository size, so a fixed slice would clip or keep
+  // part of the wrong field. Keep only lines that genuinely look like commits.
+  const logLines = String(gitLogData || '')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => /^[0-9a-f]{7,40}\s+/i.test(l));
 
   // Smart recommendation logic
   const getRecommendation = () => {
@@ -640,11 +1088,19 @@ const GitAssistantCore = () => {
       if (deletedCount > 0) parts.push(`${deletedCount} deleted`);
       const summary = parts.join(', ');
 
+      const getRepoName = (url) => {
+        if (!url) return '';
+        let clean = url.trim().replace(/\.git$/, '');
+        const segments = clean.split(/[\/:]/);
+        return segments[segments.length - 1] || '';
+      };
+      const repoName = getRepoName(gitRepoUrl).toUpperCase();
+
       return {
         type: 'commit',
         color: '#FFFFFF',
-        title: 'READY TO COMMIT',
-        detail: `${actualChanges.length} file${actualChanges.length > 1 ? 's' : ''} changed — ${summary}`,
+        title: repoName || 'READY TO COMMIT',
+        detail: `${totalChanges} file${totalChanges === 1 ? '' : 's'} changed — ${summary}`,
         action: 'branch',
         actionLabel: '⎇ SWITCH BRANCH',
       };
@@ -894,9 +1350,20 @@ const GitAssistantCore = () => {
           overflow: isSplit ? 'visible' : 'auto',
         }}>
           <ZoneLabel index="01" right={
-            <TextButton onClick={handleDisconnect} danger style={{ fontSize: '0.52rem' }}>
-              DISCONNECT
-            </TextButton>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
+              {/* The changed-files list polls every 15s, which is a long time to
+                  stare at a stale count — and the other zones already offer this. */}
+              <TextButton
+                onClick={() => { refreshStatus(); setCommandOutput(null); }}
+                style={{ fontSize: '0.66rem', letterSpacing: 0 }}
+                title="Refresh changed files"
+              >
+                ⟳
+              </TextButton>
+              <TextButton onClick={handleDisconnect} danger style={{ fontSize: '0.52rem' }}>
+                DISCONNECT
+              </TextButton>
+            </span>
           }>
             Repository
           </ZoneLabel>
@@ -948,7 +1415,7 @@ const GitAssistantCore = () => {
                   fontFamily: HEADER, fontSize: '2.1rem', fontWeight: 800,
                   color: hasChanges ? '#FFFFFF' : 'var(--t4)', lineHeight: 1, letterSpacing: '-0.02em',
                 }}>
-                  {String(actualChanges.length).padStart(2, '0')}
+                  {String(totalChanges).padStart(2, '0')}
                 </span>
                 <span style={{
                   width: '26px', height: '2px', marginTop: '9px', borderRadius: '2px',
@@ -957,7 +1424,7 @@ const GitAssistantCore = () => {
               </div>
               <span style={{ fontFamily: BODY, fontSize: '0.66rem', color: 'var(--t3)', paddingBottom: '3px' }}>
                 {hasChanges
-                  ? `file${actualChanges.length > 1 ? 's' : ''} changed`
+                  ? `file${totalChanges === 1 ? '' : 's'} changed`
                   : 'clean working tree'}
               </span>
             </div>
@@ -976,7 +1443,7 @@ const GitAssistantCore = () => {
                     onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.025)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                   >
-                    <FileBadge code={status} />
+                    <FileBadge code={status} path={file} />
                     <span style={{
                       fontFamily: MONO, fontSize: '0.7rem', color: 'var(--t2)',
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -1082,14 +1549,28 @@ git push`}
           </div>
         </div>
 
-        {/* ZONE 02: Guardian — pull request readiness */}
+        {/* ZONE 02: Pull Requests — live from GitHub */}
         <div className="no-scrollbar" style={{
           flex: 1, minWidth: 0, minHeight: isSplit ? '180px' : 0,
           display: 'flex', flexDirection: 'column',
           paddingRight: isSplit ? 0 : '24px',
           overflowY: 'auto', ...zoneDivider,
         }}>
-          <GuardianPrZone />
+          <ZoneLabel index="02" right={
+            <TextButton
+              onClick={() => {
+                /* trigger a re-fetch by remounting */
+                const el = document.querySelector('[data-pr-zone]');
+                if (el) el.dispatchEvent(new Event('refetch'));
+              }}
+              style={{ fontSize: '0.66rem', letterSpacing: 0 }}
+            >
+              ⟳
+            </TextButton>
+          }>
+            Pull Requests
+          </ZoneLabel>
+          <GitHubPrZone repoUrl={getSavedRepoUrl(projectKey) || gitRepoUrl} isSplit={isSplit} />
         </div>
 
         {/* ZONE 03: History — commit timeline */}
@@ -1115,7 +1596,9 @@ git push`}
           }}>
             {logLines.length > 0 ? (
               logLines.map((line, i) => {
-                const msg = line.substring(8);
+                // Split on the first run of whitespace rather than a fixed
+                // offset, so the subject survives whatever hash length git chose.
+                const msg = line.replace(/^[0-9a-f]{7,40}\s+/i, '');
                 const isLast = i === logLines.length - 1;
                 const isHead = i === 0;
                 return (
@@ -1187,7 +1670,7 @@ git push`}
 
 /* ═══════════════════════════════════════════════════════
  * Wrapper — single unified panel: git actions (zone 01),
- * Guardian PR readiness (zone 02), history (zone 03).
+ * pull requests (zone 02), history (zone 03).
  * ═══════════════════════════════════════════════════════ */
 
 const GitAssistantPanel = () => (

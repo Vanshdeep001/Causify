@@ -42,6 +42,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener(channel, handler);
   },
 
+  /* ── Local Workspace (disk as source of truth) ──
+   * Opens a real folder and reads/writes files in place, so edits are visible to
+   * any other editor immediately and never round-trip through the database.
+   * Every mutating call is confined to the folder the user opened.
+   */
+  workspace: {
+    open: () => ipcRenderer.invoke('workspace:open'),
+    reopen: (dirPath) => ipcRenderer.invoke('workspace:reopen', dirPath),
+    saveAs: (suggestedName, content) => ipcRenderer.invoke('workspace:save-as', suggestedName, content),
+    list: (root) => ipcRenderer.invoke('workspace:list', root),
+    readAll: (root) => ipcRenderer.invoke('workspace:read-all', root),
+    materialize: (files) => ipcRenderer.invoke('workspace:materialize', files),
+    loadState: (root) => ipcRenderer.invoke('workspace:state-load', root),
+    saveState: (root, state) => ipcRenderer.invoke('workspace:state-save', root, state),
+    read: (filePath) => ipcRenderer.invoke('workspace:read', filePath),
+    write: (filePath, content) => ipcRenderer.invoke('workspace:write', filePath, content),
+    create: (targetPath, isFolder) => ipcRenderer.invoke('workspace:create', targetPath, isFolder),
+    remove: (targetPath) => ipcRenderer.invoke('workspace:delete', targetPath),
+    rename: (fromPath, toPath) => ipcRenderer.invoke('workspace:rename', fromPath, toPath),
+  },
+
   /* ── Window Controls (for future custom titlebar) ── */
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
   maximizeWindow: () => ipcRenderer.send('window:maximize'),
@@ -169,6 +190,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   validateVercelToken: (token) =>
     ipcRenderer.invoke('deploy:validate-token', token),
 
+  listVercelScopes: (token) =>
+    ipcRenderer.invoke('deploy:list-scopes', token),
+
+  setVercelScope: (scope) =>
+    ipcRenderer.invoke('deploy:set-scope', scope),
+
+  getVercelScope: () =>
+    ipcRenderer.invoke('deploy:get-scope'),
+
   detectFramework: (cwd) =>
     ipcRenderer.invoke('deploy:detect-framework', cwd),
 
@@ -210,6 +240,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pushEnvVars: (options) =>
     ipcRenderer.invoke('deploy:push-env', options),
 
+  deleteVercelProject: (options) =>
+    ipcRenderer.invoke('deploy:delete-project', options),
+
+  checkExistingVercelDeploy: (options) =>
+    ipcRenderer.invoke('deploy:check-existing', options),
+
   /* ── Deploy (Render — backend) ── */
   setRenderApiKey: (key) =>
     ipcRenderer.invoke('render-deploy:set-key', key),
@@ -250,6 +286,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cancelRenderDeploy: (deployId) =>
     ipcRenderer.invoke('render-deploy:cancel', deployId),
 
+  deleteRenderService: (options) =>
+    ipcRenderer.invoke('render-deploy:delete-service', options),
+
+  checkExistingRenderDeploy: (options) =>
+    ipcRenderer.invoke('render-deploy:check-existing', options),
+
   onRenderDeployLog: (deployId, callback) => {
     const channel = `render-deploy:log-${deployId}`;
     const handler = (_event, data) => callback(data);
@@ -263,20 +305,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(channel, handler);
     return () => ipcRenderer.removeListener(channel, handler);
   },
-
-  /* ── Repository Guardian ── */
-  guardianDetect: () =>
-    ipcRenderer.invoke('guardian:detect'),
-
-  guardianGetToken: () =>
-    ipcRenderer.invoke('guardian:get-token'),
-
-  guardianSetup: (options) =>
-    ipcRenderer.invoke('guardian:setup', options),
-
-  guardianStart: (repoUrl) =>
-    ipcRenderer.invoke('guardian:start', repoUrl),
-
-  guardianStop: () =>
-    ipcRenderer.invoke('guardian:stop'),
 });

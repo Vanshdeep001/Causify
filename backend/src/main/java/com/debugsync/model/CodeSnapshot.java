@@ -7,7 +7,11 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "code_snapshots")
+// Queried only by session (findBySessionIdOrderByTimestampAsc); indexed so the
+// lookup never scans this table's TEXT columns. See ProjectFile for background.
+@Table(name = "code_snapshots", indexes = {
+    @Index(name = "idx_code_snapshots_session", columnList = "session_id")
+})
 public class CodeSnapshot {
 
     @Id

@@ -8,13 +8,19 @@ import java.util.Map;
 
 public class DevServerDto {
 
-    /* ── Request: Detect project type ── */
+    /* ── Request: Detect project type ──
+     * Exactly one source is used: projectPath when the user opened a folder from
+     * disk (local mode — nothing was ever uploaded), otherwise sessionId.
+     */
     public static class DetectRequest {
         private String sessionId;
+        private String projectPath; // Absolute path of a locally opened folder
 
         public DetectRequest() {}
         public String getSessionId() { return sessionId; }
         public void setSessionId(String sessionId) { this.sessionId = sessionId; }
+        public String getProjectPath() { return projectPath; }
+        public void setProjectPath(String projectPath) { this.projectPath = projectPath; }
     }
 
     /* ── Response: Detected project info ── */
@@ -72,12 +78,15 @@ public class DevServerDto {
     /* ── Request: Start/Stop server ── */
     public static class ServerActionRequest {
         private String sessionId;
+        private String projectPath; // Absolute path of a locally opened folder (local mode)
         private String directory; // Which detected project directory to run
         private String type;     // "frontend" | "backend"
 
         public ServerActionRequest() {}
         public String getSessionId() { return sessionId; }
         public void setSessionId(String sessionId) { this.sessionId = sessionId; }
+        public String getProjectPath() { return projectPath; }
+        public void setProjectPath(String projectPath) { this.projectPath = projectPath; }
         public String getDirectory() { return directory; }
         public void setDirectory(String directory) { this.directory = directory; }
         public String getType() { return type; }

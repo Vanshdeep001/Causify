@@ -185,11 +185,24 @@ const parseExecutionGraph = (code, language) => {
   return { nodes, edges };
 };
 
-// State keys that must NOT survive a window close: they are kept in
-// sessionStorage (per-window), so a refresh reconnects the session but
-// closing the app disconnects it. Everything else that is persisted goes
-// to localStorage and is restored on the next launch.
-const SESSION_ONLY_KEYS = ['sessionId', 'currentUser', 'userRole'];
+// Keys that must live only in sessionStorage (per-window, dropped on close).
+// Session identity used to live here so closing the app disconnected the
+// session — but that meant the session id vanished on reopen, breaking
+// deploy/link (which key off it) and forcing a new session every launch.
+// Session identity now persists to localStorage and App.jsx verifies it
+// against the backend on launch (reconnect if alive, recreate if gone), so
+// nothing needs to be session-only anymore.
+const SESSION_ONLY_KEYS = [];
+
+// Pending debounced disk writes for changes received from collaborators,
+// keyed by path. Deliberately module-level: timer handles are transient
+// machinery, so they must not land in persisted state or trigger re-renders.
+const localPersistTimers = {};
+
+// Debounce handle for writing a folder's history/whiteboard to app data, and the
+// cap on how many points that history keeps.
+let localStateSaveTimer = null;
+const MAX_LOCAL_SNAPSHOTS = 200;
 
 const useEditorStore = create(persist((set, get) => ({
 
@@ -200,7 +213,8 @@ const useEditorStore = create(persist((set, get) => ({
   userRole: null,           // 'owner' or 'collaborator'
   connectedUsers: [],       // List of users currently connected
   lastChange: null,         // Most recent remote change: { userId, path, timestamp }
-  fileActivity: {},         // { [path]: { userId, timestamp, username, color } }
+  fileActivity: {},         // { [path]: { userId, timestamp, username, color } } — recent EDIT ("LIVE")
+  filePresence: {},         // { [userId]: { path, username, color, timestamp } } — who's OPEN in which file
   remoteCursors: {},        // { [userId]: { line, column, path, username, color } }
   changeNotifications: [],  // [ { id, username, path, linesChanged, timestamp, color } ]
   remoteLineChanges: {},    // { [path]: { [lineNumber]: { userId, username, color, timestamp, oldLine, newLine } } }
@@ -212,11 +226,22 @@ const useEditorStore = create(persist((set, get) => ({
   code: '',                 // Code content
   language: 'javascript',  // Editor language mode
   collisionWarning: null,   // { line: number, username: string } - active concurrency block
+  collabReady: false,       // true once the CRDT (Yjs) session is initialized
+
+  // ---- Local Workspace (disk is the source of truth) ----
+  // When workspaceRoot is set the project lives on disk and `files` holds paths
+  // with contents loaded on demand — nothing is copied into the database, and
+  // saves go straight back to the real file so other editors see them.
+  workspaceRoot: null,      // Absolute path of the opened folder; null = session/DB mode
+  workspaceName: '',        // Folder name, for the explorer header
+  workspaceTruncated: false,// true when the project exceeded the directory-walk cap
+  loadedPaths: {},          // { [path]: true } — files whose contents have been read in
 
   // ---- Save State ----
   fileHandles: {},          // { [path]: FileSystemFileHandle } — for silent re-saves
   savedContents: {},        // { [path]: string } — last-saved content, for dirty detection
   fileSavedPaths: {},       // { [path]: string } — on-disk path chosen in Save dialog
+  fileDiskPaths: {},        // { [path]: string } — absolute location of a saved untitled buffer
 
   // ---- Execution State ----
   output: '',               // Stdout from last execution
@@ -303,6 +328,7 @@ const useEditorStore = create(persist((set, get) => ({
   deployFramework: null,          // Detected framework for current deploy
   pendingRedeploy: false,         // Flag to trigger deployment from another tab
   deployTarget: 'frontend',       // 'frontend' (Vercel) | 'backend' (Render) — active Deploy HQ tab
+  lastDeploySessionId: null,      // sessionId used for the last Vercel deploy (survives app restart)
 
   // ---- Render (backend) Deployment State ----
   renderDeployStatus: 'idle',     // 'idle' | 'connecting' | 'env-confirm' | 'pushing-env' | 'deploying' | 'success' | 'error'
@@ -314,6 +340,7 @@ const useEditorStore = create(persist((set, get) => ({
   renderConnected: false,         // Whether a Render API key is stored
   renderOwnerName: null,          // Render account display name
   renderRuntime: null,            // Detected backend runtime label
+  lastRenderDeploySessionId: null, // sessionId used for the last Render deploy (survives app restart)
 
   // ---- UI Layout State ----
   activeView: 'code',               // 'code' | 'whiteboard'
@@ -353,7 +380,38 @@ const useEditorStore = create(persist((set, get) => ({
   setCurrentUser: (user) => set({ currentUser: user }),
   setUserRole: (role) => set({ userRole: role }),
   isOwner: () => get().userRole === 'owner',
-  setConnectedUsers: (users) => set({ connectedUsers: users }),
+  setConnectedUsers: (users) => set((s) => {
+    // Drop presence entries for users who are no longer connected.
+    const ids = new Set((users || []).map(u => u.id));
+    const filePresence = {};
+    Object.entries(s.filePresence).forEach(([uid, p]) => {
+      if (ids.has(uid)) filePresence[uid] = p;
+    });
+    return { connectedUsers: users, filePresence };
+  }),
+
+  // Record which file a remote user currently has open (persistent presence,
+  // distinct from the transient "LIVE" edit flash in fileActivity).
+  updateFilePresence: (userId, data) => set((s) => ({
+    filePresence: {
+      ...s.filePresence,
+      [userId]: {
+        path: data.path,
+        username: data.username,
+        color: data.color || '#6366f1',
+        timestamp: Date.now(),
+      },
+    },
+  })),
+
+  // Can the current user edit? Owner always can; collaborators can unless the
+  // owner set them to "viewer". Absent permission defaults to editable.
+  canCurrentUserEdit: () => {
+    const { userRole, currentUser, connectedUsers } = get();
+    if (userRole === 'owner') return true;
+    const me = connectedUsers.find(u => u.id === currentUser?.id);
+    return !me || me.permission !== 'viewer';
+  },
   addUser: (user) => set((s) => ({
     connectedUsers: [...s.connectedUsers.filter(u => u.id !== user.id), user]
   })),
@@ -418,8 +476,45 @@ const useEditorStore = create(persist((set, get) => ({
     });
   },
 
+  /**
+   * Fold a freshly fetched file list into the workspace.
+   *
+   * Used when a peer uploads a project into the session. Unlike setProject this
+   * keeps whatever the user currently has open — replacing the whole workspace
+   * would rip the file out from under someone mid-edit. Only opens a file if
+   * nothing is open yet, which is the case for a collaborator who has been
+   * waiting for the owner to share something.
+   */
+  mergeRemoteFiles: (fileArray) => {
+    const incoming = fileArray || [];
+    if (incoming.length === 0) return;
+
+    set((s) => {
+      const files = { ...s.files };
+      const savedContents = { ...s.savedContents };
+      incoming.forEach((f) => {
+        if (!f || !f.path) return;
+        files[f.path] = f.content ?? '';
+        savedContents[f.path] = f.content ?? '';
+      });
+
+      const activePath = s.activePath || incoming[0].path || '';
+      const code = activePath ? (files[activePath] ?? '') : '';
+      const language = activePath ? get().detectLanguage(activePath) : s.language;
+
+      return {
+        files,
+        savedContents,
+        activePath,
+        code,
+        language,
+        causalityGraph: activePath ? parseExecutionGraph(code, language) : s.causalityGraph,
+      };
+    });
+  },
+
   openFile: (path) => {
-    const { files, isReplaying } = get();
+    const { files, isReplaying, workspaceRoot, loadedPaths } = get();
     if (isReplaying) return;
     get().markFileOpened(path, files[path] || '');
     const code = files[path] || '';
@@ -433,6 +528,280 @@ const useEditorStore = create(persist((set, get) => ({
       rootCause: null,
       causalityGraph: parseExecutionGraph(code, language)
     });
+
+    // Local mode reads contents on demand: opening a folder costs a directory
+    // listing, not a copy of the project. Fetch this file the first time it is
+    // opened; the editor updates once it lands.
+    if (workspaceRoot && !loadedPaths[path]) {
+      get().loadLocalFile(path);
+    }
+  },
+
+  /* ── Local Workspace ── */
+
+  /**
+   * How the desktop layer should identify this project.
+   *
+   * Deploy, Vercel/Render links and env detection all need a stable scope. In
+   * local mode that is the folder path (the main process hashes it into a
+   * workspace id); otherwise it is the session id. Returned as an object so
+   * call sites can spread it straight into their IPC options.
+   */
+  getDeployScope: () => {
+    const { workspaceRoot, sessionId } = get();
+    return workspaceRoot ? { workspaceRoot } : { sessionId };
+  },
+
+  /**
+   * Save a file that has no project folder behind it — an untitled buffer.
+   *
+   * The first save asks where it goes and remembers the answer, so subsequent
+   * saves write straight there. This is the ordinary editor contract: a new file
+   * exists as soon as you make it, and only acquires a location when saved.
+   *
+   * Returns true if it was written, false if the user backed out.
+   */
+  saveScratchFile: async (path, content) => {
+    const api = typeof window !== 'undefined' ? window.electronAPI?.workspace : null;
+    if (!api?.saveAs || !path) return false;
+
+    const known = get().fileDiskPaths[path];
+    if (known) {
+      await api.write(known, content);
+      get().markFileSaved(path, content);
+      return true;
+    }
+
+    const saved = await api.saveAs(path.split('/').pop(), content);
+    if (!saved) return false; // cancelled
+
+    set((s) => ({ fileDiskPaths: { ...s.fileDiskPaths, [path]: saved.filePath } }));
+    get().markFileSaved(path, content);
+    get().setFileSavedPath(path, saved.fileName);
+    return true;
+  },
+
+  /** Absolute on-disk path for a project-relative path, or null outside local mode. */
+  absolutePathFor: (relPath) => {
+    const root = get().workspaceRoot;
+    if (!root || !relPath) return null;
+    const sep = root.includes('\\') ? '\\' : '/';
+    return `${root}${sep}${relPath.split('/').join(sep)}`;
+  },
+
+  /**
+   * Adopt a folder opened from disk. Only paths are seeded — contents stay null
+   * until each file is opened, so a large project costs almost nothing to load.
+   * projectRootPath is set alongside so integrated terminals open in the project.
+   */
+  openLocalWorkspace: ({ root, name, files: fileList, truncated }) => {
+    const fileMap = {};
+    (fileList || []).forEach((f) => { fileMap[f.path] = null; });
+    set({
+      workspaceRoot: root,
+      workspaceName: name || '',
+      workspaceTruncated: Boolean(truncated),
+      loadedPaths: {},
+      files: fileMap,
+      projectRootPath: root,
+      activePath: '',
+      code: '',
+      savedContents: {},
+      fileSavedPaths: {},
+      fileHandles: {},
+      output: '',
+      error: '',
+      rootCause: null,
+      causalityGraph: null,
+      // Detection belongs to the previous project — re-run it for this folder.
+      detectedProjects: [],
+      devServers: {},
+      projectDetected: false,
+      // Cleared here and repopulated below if this folder has been opened before.
+      snapshots: [],
+      currentSnapshotIndex: -1,
+      isReplaying: false,
+      whiteboardElements: [],
+    });
+
+    // Bring back this folder's own history and whiteboard.
+    get().loadLocalWorkspaceState(root);
+  },
+
+  /** Return to session/DB mode, leaving the files on disk untouched. */
+  closeLocalWorkspace: () => {
+    const { workspaceRoot, snapshots, whiteboardElements } = get();
+
+    // Flush any pending history/whiteboard write straight away. The debounced
+    // save would otherwise still be waiting when the folder reference is torn
+    // down, and anything drawn or saved in the last moment would be lost.
+    const api = typeof window !== 'undefined' ? window.electronAPI?.workspace : null;
+    if (workspaceRoot && api?.saveState) {
+      clearTimeout(localStateSaveTimer);
+      api.saveState(workspaceRoot, { snapshots, whiteboardElements })
+        .catch((err) => console.warn('[Causify] Could not save workspace state:', err.message));
+    }
+
+    set({
+      workspaceRoot: null,
+      workspaceName: '',
+      workspaceTruncated: false,
+      loadedPaths: {},
+      files: {},
+      projectRootPath: null,
+      activePath: '',
+      code: '',
+      savedContents: {},
+      detectedProjects: [],
+      devServers: {},
+      projectDetected: false,
+      // The whiteboard and history belong to the folder that just closed. They
+      // are saved above and reloaded if it is opened again — leaving them on
+      // screen over the welcome view would show one project's board with no
+      // project open.
+      activeView: 'code',
+      whiteboardElements: [],
+      snapshots: [],
+      currentSnapshotIndex: -1,
+      isReplaying: false,
+    });
+  },
+
+  /**
+   * Read one file from disk into the store. Safe to call repeatedly; the editor
+   * is only updated if the file is still the active one when the read returns,
+   * so a fast click through several files can't leave stale content on screen.
+   */
+  loadLocalFile: async (path) => {
+    const api = typeof window !== 'undefined' ? window.electronAPI?.workspace : null;
+    const absolute = get().absolutePathFor(path);
+    if (!api || !absolute) return null;
+
+    try {
+      const result = await api.read(absolute);
+      const content = result?.content ?? '';
+
+      set((s) => ({
+        files: { ...s.files, [path]: content },
+        savedContents: { ...s.savedContents, [path]: content },
+        loadedPaths: { ...s.loadedPaths, [path]: true },
+      }));
+
+      if (get().activePath === path) {
+        const language = get().detectLanguage(path);
+        set({ code: content, language, causalityGraph: parseExecutionGraph(content, language) });
+      }
+      return content;
+    } catch (err) {
+      console.error('[Causify] Could not read', path, err.message);
+      return null;
+    }
+  },
+
+  /* ── Local history ──
+   * Sessions get their timeline from the backend. A folder opened from disk has
+   * no session, so its history is captured here on each save and kept in the
+   * app's data directory, keyed by the folder's path.
+   */
+
+  /** Load a folder's saved history and whiteboard, if it has been opened before. */
+  loadLocalWorkspaceState: async (root) => {
+    const api = typeof window !== 'undefined' ? window.electronAPI?.workspace : null;
+    if (!api?.loadState || !root) return;
+    try {
+      const state = await api.loadState(root);
+      if (!state) return;
+      set({
+        snapshots: Array.isArray(state.snapshots) ? state.snapshots : [],
+        whiteboardElements: Array.isArray(state.whiteboardElements) ? state.whiteboardElements : [],
+      });
+    } catch (err) {
+      console.warn('[Causify] Could not load this folder\'s history:', err.message);
+    }
+  },
+
+  /** Persist history and whiteboard for the open folder. Debounced by the caller. */
+  saveLocalWorkspaceState: () => {
+    const { workspaceRoot, snapshots, whiteboardElements } = get();
+    const api = typeof window !== 'undefined' ? window.electronAPI?.workspace : null;
+    if (!api?.saveState || !workspaceRoot) return;
+
+    clearTimeout(localStateSaveTimer);
+    localStateSaveTimer = setTimeout(() => {
+      api.saveState(workspaceRoot, { snapshots, whiteboardElements })
+        .catch((err) => console.warn('[Causify] Could not save workspace state:', err.message));
+    }, 800);
+  },
+
+  /**
+   * Record a point in the local history.
+   *
+   * Only meaningful changes are kept: saving a file whose content is identical to
+   * the last snapshot would just pad the timeline. The list is capped so a long
+   * session cannot grow the state file without bound.
+   */
+  recordLocalSnapshot: (path, code, { hasError = false } = {}) => {
+    const { workspaceRoot, snapshots } = get();
+    if (!workspaceRoot || !path) return;
+
+    const previous = snapshots[snapshots.length - 1];
+    if (previous && previous.code === code && previous.path === path) return;
+
+    const snapshot = {
+      id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      path,
+      code: code ?? '',
+      userId: 'local',
+      timestamp: new Date().toISOString(),
+      hasError,
+      diff: null,
+    };
+
+    set({ snapshots: [...snapshots, snapshot].slice(-MAX_LOCAL_SNAPSHOTS) });
+    get().saveLocalWorkspaceState();
+  },
+
+  /**
+   * Debounced disk write, used for changes arriving from collaborators.
+   *
+   * Remote edits stream in continuously while someone types, so each path gets
+   * its own timer and only the settled content is written. Timers live outside
+   * the store state — they are transient machinery, not something to persist or
+   * re-render on.
+   */
+  scheduleLocalPersist: (path, content) => {
+    if (!path) return;
+    clearTimeout(localPersistTimers[path]);
+    localPersistTimers[path] = setTimeout(() => {
+      delete localPersistTimers[path];
+      get().writeLocalFile(path, content).catch((err) =>
+        console.error('[Causify] Could not write a collaborator\'s change to disk:', err.message)
+      );
+    }, 1200);
+  },
+
+  /**
+   * Write a file back to its real location on disk.
+   *
+   * This is the whole point of local mode: a save lands in the user's actual
+   * file, so any other editor sees it immediately. Returns false when not in
+   * local mode so callers can fall back to their existing behaviour.
+   */
+  writeLocalFile: async (path, content) => {
+    const api = typeof window !== 'undefined' ? window.electronAPI?.workspace : null;
+    const absolute = get().absolutePathFor(path);
+    if (!api || !absolute) return false;
+
+    await api.write(absolute, content);
+    set((s) => ({
+      files: { ...s.files, [path]: content },
+      loadedPaths: { ...s.loadedPaths, [path]: true },
+    }));
+    get().markFileSaved(path, content);
+    // A save is the natural point in the local history — the same moment the
+    // session flow records one.
+    get().recordLocalSnapshot(path, content);
+    return true;
   },
 
   addFile: (path, content = '') => {
@@ -503,7 +872,7 @@ const useEditorStore = create(persist((set, get) => ({
   },
 
   detectLanguage: (path) => {
-    if (!path) return 'javascript';
+    if (!path) return 'plaintext';
     const lower = path.toLowerCase();
     if (lower.endsWith('.java')) return 'java';
     if (lower.endsWith('.py') || lower.endsWith('.pyw')) return 'python';
@@ -513,8 +882,12 @@ const useEditorStore = create(persist((set, get) => ({
     if (lower.endsWith('.css')) return 'css';
     if (lower.endsWith('.json')) return 'json';
     if (lower.endsWith('.ts') || lower.endsWith('.tsx')) return 'typescript';
-    if (lower.endsWith('.jsx')) return 'javascript';
-    return 'javascript';
+    if (lower.endsWith('.js') || lower.endsWith('.jsx') || lower.endsWith('.mjs') || lower.endsWith('.cjs')) return 'javascript';
+    if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'markdown';
+    // Unrecognized / malformed extensions (e.g. ".cp", or a stray typo) fall back
+    // to plain text — never JavaScript. This keeps unknown files neutral instead
+    // of mislabeling them as JS.
+    return 'plaintext';
   },
 
   setCode: (code, remote = false) => {
@@ -543,6 +916,11 @@ const useEditorStore = create(persist((set, get) => ({
   // Update a specific file from a remote event
   updateRemoteFile: (path, content, userId) => {
     if (!userId) return; // Ignore own changes echoed back from socket to prevent typing glitch
+
+    // A collaborator's edit has to reach this machine's disk too, or the folder
+    // silently falls behind what everyone is looking at. Debounced, because this
+    // fires per keystroke batch and a write per keystroke would hammer the disk.
+    if (get().workspaceRoot) get().scheduleLocalPersist(path, content || '');
     const { activePath, files, connectedUsers, remoteLineChanges } = get();
     const oldContent = files[path] || '';
     const newContent = content || '';
@@ -679,9 +1057,14 @@ const useEditorStore = create(persist((set, get) => ({
   requestExplorerAction: (action) => set({ pendingExplorerAction: action, isFileExplorerOpen: true }),
   clearPendingExplorerAction: () => set({ pendingExplorerAction: null }),
   setActiveView: (activeView) => set({ activeView }),
-  setWhiteboardElements: (val) => set((s) => ({
-    whiteboardElements: typeof val === 'function' ? val(s.whiteboardElements) : val
-  })),
+  setWhiteboardElements: (val) => {
+    set((s) => ({
+      whiteboardElements: typeof val === 'function' ? val(s.whiteboardElements) : val
+    }));
+    // A session syncs the board to the backend; a folder keeps it in app data
+    // alongside its history, so it is still there next time it is opened.
+    if (get().workspaceRoot) get().saveLocalWorkspaceState();
+  },
   setWhiteboardPan: (whiteboardPan) => set({ whiteboardPan }),
   setWhiteboardZoom: (whiteboardZoom) => set({ whiteboardZoom }),
   updateWhiteboardCursor: (userId, cursorData) => {
@@ -1192,6 +1575,7 @@ const useEditorStore = create(persist((set, get) => ({
     deployFramework: null,
   }),
   setDeployTarget: (target) => set({ deployTarget: target }),
+  setLastDeploySessionId: (id) => set({ lastDeploySessionId: id }),
 
   // ---- Actions: Render (backend) Deployment ----
   setRenderDeployStatus: (status) => set({ renderDeployStatus: status }),
@@ -1208,6 +1592,7 @@ const useEditorStore = create(persist((set, get) => ({
     renderDeployError: null, currentRenderDeployId: null, renderDeployStartTime: null,
     renderRuntime: null,
   }),
+  setLastRenderDeploySessionId: (id) => set({ lastRenderDeploySessionId: id }),
 
   // ---- Actions: Impact Detection ----
   addImpactWarning: (warning) => {
@@ -1257,6 +1642,31 @@ const useEditorStore = create(persist((set, get) => ({
 
   // Reset entire session state
   resetSession: () => {
+    // Leaving a session must not take the user's folder with it. When a local
+    // workspace is open the files belong to the disk, not the session, so the
+    // tree and the open file stay exactly as they are — only the collaboration
+    // state is torn down.
+    const {
+      workspaceRoot, files, activePath, code, language, savedContents, projectRootPath,
+      whiteboardElements, snapshots,
+    } = get();
+
+    // The board and history belong to the folder, not the session, and they are
+    // saved under the folder's own key. Blanking them here would leave the next
+    // stroke overwriting the stored copy with an empty one.
+    const keepWorkspace = workspaceRoot
+      ? { files, activePath, code, language, savedContents, projectRootPath, whiteboardElements, snapshots }
+      : {
+          files: {},
+          activePath: '',
+          code: '',
+          language: 'javascript',
+          savedContents: {},
+          projectRootPath: null,
+          whiteboardElements: [],
+          snapshots: [],
+        };
+
     set({
       sessionId: null,
       sessionName: '',
@@ -1266,27 +1676,25 @@ const useEditorStore = create(persist((set, get) => ({
       remoteCursors: {},
       changeNotifications: [],
       remoteLineChanges: {},
+      filePresence: {},
       impactWarnings: [],
       revertNotification: null,
-      files: {},
-      projectRootPath: null,
-      activePath: '',
-      code: '',
-      language: 'javascript',
+      ...keepWorkspace,
       output: '',
       error: '',
-      snapshots: [],
+      // snapshots is set above — a local folder keeps its own history.
       currentSnapshotIndex: -1,
       isReplaying: false,
       rootCause: null,
       causalityGraph: null,
       collisionWarning: null,
-      // Save state
+      collabReady: false,
+      // Save state — savedContents is set above, since a local workspace keeps
+      // its dirty-tracking baseline when only the session goes away.
       fileHandles: {},
-      savedContents: {},
       fileSavedPaths: {},
       activeView: 'code',
-      whiteboardElements: [],
+      // whiteboardElements is set above — a local folder keeps its own board.
       whiteboardCursors: {},
       // Terminal — close it so the welcome screen comes back clean
       isTerminalOpen: false,
@@ -1323,6 +1731,7 @@ const useEditorStore = create(persist((set, get) => ({
       deployFramework: null,
       pendingRedeploy: false,
       deployTarget: 'frontend',
+      lastDeploySessionId: null,
       // Render (backend) deployment
       renderDeployStatus: 'idle',
       renderDeployLogs: [],
@@ -1332,18 +1741,17 @@ const useEditorStore = create(persist((set, get) => ({
       currentRenderDeployId: null,
       renderConnected: false,
       renderOwnerName: null,
-      renderRuntime: null,
+      lastRenderDeploySessionId: null,
     });
   },
 }), {
   name: 'causify-session',
-  // Split persistence:
-  //  - Session identity lives in sessionStorage: it survives a page refresh
-  //    (so the WebSocket auto-reconnects) but dies with the window, so
-  //    closing the app always disconnects the session.
-  //  - Everything else (workspace files, layout, whiteboard) lives in
-  //    localStorage so the user picks up exactly where they left off
-  //    after closing and reopening the app.
+  // Persistence: the workspace (files, layout, whiteboard) AND the session
+  // identity (id, user, role) both live in localStorage, so reopening the app
+  // drops you back into the same session — App.jsx verifies it against the
+  // backend on launch and reconnects the WebSocket (or recreates the session
+  // if the backend no longer has it). The sessionStorage split is retained for
+  // any future per-window-only keys (SESSION_ONLY_KEYS), currently none.
   storage: {
     getItem: (name) => {
       const localStr = localStorage.getItem(name);
@@ -1389,7 +1797,14 @@ const useEditorStore = create(persist((set, get) => ({
     userRole: state.userRole,
     // Workspace (localStorage — restored when the app reopens)
     sessionName: state.sessionName,
-    files: state.files,
+    // In local mode the disk holds the contents, so only the paths are kept —
+    // persisting a whole project here would re-create the duplication (and the
+    // quota failures) that local mode exists to remove.
+    files: state.workspaceRoot
+      ? Object.fromEntries(Object.keys(state.files || {}).map((p) => [p, null]))
+      : state.files,
+    workspaceRoot: state.workspaceRoot,
+    workspaceName: state.workspaceName,
     projectRootPath: state.projectRootPath,
     activePath: state.activePath,
     code: state.code,
@@ -1406,6 +1821,27 @@ const useEditorStore = create(persist((set, get) => ({
     terminalHeight: state.terminalHeight,
     terminalLayoutMode: state.terminalLayoutMode,
     isFileExplorerOpen: state.isFileExplorerOpen,
+    // Git repo connection — persisted so a connected repo stays connected across
+    // reopen (the panel shows it immediately instead of flashing the connect
+    // form) until the user manually disconnects. App/panel reconciles with the
+    // backend on launch and only drops it if the repo truly can't be restored.
+    gitRepoConnected: state.gitRepoConnected,
+    gitRepoUrl: state.gitRepoUrl,
+    // Deployment state (Vercel) — restored so reopening shows the success panel
+    deployStatus: state.deployStatus,
+    deployUrl: state.deployUrl,
+    vercelConnected: state.vercelConnected,
+    vercelUsername: state.vercelUsername,
+    deployFramework: state.deployFramework,
+    deployTarget: state.deployTarget,
+    lastDeploySessionId: state.lastDeploySessionId,
+    // Deployment state (Render)
+    renderDeployStatus: state.renderDeployStatus,
+    renderDeployUrl: state.renderDeployUrl,
+    renderConnected: state.renderConnected,
+    renderOwnerName: state.renderOwnerName,
+    renderRuntime: state.renderRuntime,
+    lastRenderDeploySessionId: state.lastRenderDeploySessionId,
   }),
 }));
 

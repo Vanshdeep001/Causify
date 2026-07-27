@@ -31,7 +31,9 @@ public class GitWorkspaceService {
 
     // ── Safety: Command whitelist ──
     private static final Set<String> ALLOWED_COMMANDS = Set.of(
-        "clone", "add", "commit", "push", "pull", "status", "log", "remote",
+        // "init" is needed to attach a remote to an opened folder that is not a
+        // repository yet — the local equivalent of cloning.
+        "clone", "init", "add", "commit", "push", "pull", "status", "log", "remote",
         "branch", "checkout", "merge", "reset", "config"
     );
 
@@ -58,6 +60,10 @@ public class GitWorkspaceService {
     // In-memory map of sessionId → repo URL (contains token, NEVER persisted)
     private final ConcurrentHashMap<String, String> sessionRepoUrls = new ConcurrentHashMap<>();
 
+    // Folders the user opened in local mode. Git may run in these as well as in
+    // the sandbox — see the working-directory check in executeGitCommand.
+    private final Set<Path> localRoots = ConcurrentHashMap.newKeySet();
+
     private final ProjectFileRepository projectFileRepository;
 
     public GitWorkspaceService(ProjectFileRepository projectFileRepository) {
@@ -72,6 +78,15 @@ public class GitWorkspaceService {
     public Map<String, Object> cloneRepo(String sessionId, String repoUrl) throws Exception {
         validateSessionId(sessionId);
         validateRepoUrl(repoUrl);
+
+        // Cloning wipes the target directory first. That is correct for a
+        // disposable session sandbox and catastrophic for a folder the user
+        // opened — it would delete their project. What "connect a repository"
+        // means for an open folder is attaching a remote to what is already
+        // there, so do that instead.
+        if (isLocalRepo(sessionId)) {
+            return connectLocalRepo(sessionId, repoUrl);
+        }
 
         Path workspace = getWorkspacePath(sessionId);
 
@@ -101,6 +116,69 @@ public class GitWorkspaceService {
     }
 
     /**
+     * Attach a remote to a folder the user already has open.
+     *
+     * The local equivalent of cloning. The folder is initialised as a repository
+     * if it is not one yet, and `origin` is pointed at the given URL.
+     *
+     * The credentials are deliberately stripped from the URL written into
+     * `.git/config`: that file lives in the user's own project, often gets
+     * committed, and is frequently shared — a token embedded there would leak.
+     * The authenticated URL is kept in memory only, and push/pull pass it
+     * explicitly for the duration of the command.
+     */
+    public Map<String, Object> connectLocalRepo(String scope, String repoUrl) throws Exception {
+        Path folder = getWorkspacePath(scope);
+        if (!Files.isDirectory(folder)) {
+            throw new IllegalArgumentException("Project folder not found: " + scope);
+        }
+
+        boolean alreadyRepo = Files.exists(folder.resolve(".git"));
+        if (!alreadyRepo) {
+            log.info("[GitWorkspace] Initialising a repository in the open folder");
+            Map<String, Object> init = executeGitCommand(folder, new String[]{"git", "init"});
+            if (Boolean.FALSE.equals(init.get("success"))) return init;
+        }
+
+        // Remember the authenticated URL for this folder (never logged, never written to disk).
+        sessionRepoUrls.put(scope, repoUrl);
+
+        String safeUrl = stripCredentials(repoUrl);
+        Map<String, Object> existing = executeGitCommand(folder, new String[]{"git", "remote"});
+        boolean hasOrigin = String.valueOf(existing.getOrDefault("output", "")).contains("origin");
+
+        Map<String, Object> result = executeGitCommand(folder, hasOrigin
+            ? new String[]{"git", "remote", "set-url", "origin", safeUrl}
+            : new String[]{"git", "remote", "add", "origin", safeUrl});
+
+        if (Boolean.FALSE.equals(result.get("success"))) return result;
+
+        log.info("[GitWorkspace] Connected the open folder to {}", safeUrl);
+        result.put("success", true);
+        result.put("output", alreadyRepo
+            ? "Connected this folder to " + safeUrl
+            : "Initialised a repository here and connected it to " + safeUrl);
+        return result;
+    }
+
+    /** Remove any user:token@ portion from a URL so it is safe to store or show. */
+    private String stripCredentials(String url) {
+        return url == null ? null : url.replaceAll("://[^@/]+@", "://");
+    }
+
+    /**
+     * How push/pull should refer to the remote.
+     *
+     * A session sandbox cloned with credentials in the URL can just say "origin".
+     * A local repository's origin is deliberately credential-free, so the
+     * authenticated URL held in memory is passed explicitly instead.
+     */
+    private String remoteRefFor(String scope) {
+        String stored = sessionRepoUrls.get(scope);
+        return (isLocalRepo(scope) && stored != null) ? stored : "origin";
+    }
+
+    /**
      * Stage all files and commit with sanitized message.
      */
     public Map<String, Object> commitAll(String sessionId, String message) throws Exception {
@@ -116,13 +194,19 @@ public class GitWorkspaceService {
         validateSessionId(sessionId);
         Path workspace = ensureWorkspaceExists(sessionId);
 
-        // Self-heal before committing (same rationale as getStatus): never
-        // let stale sandbox noise — like line-ending pollution from older
-        // syncs — sneak into a commit alongside the user's real changes.
-        executeGitCommand(workspace, new String[]{"git", "checkout", "--", "."});
-
-        // Sync files to workspace before committing
-        syncFilesToWorkspace(sessionId, workspace, files);
+        // Session sandboxes need two things that local mode must never do:
+        //
+        //   `git checkout -- .` discards every uncommitted change. In a sandbox
+        //   that only clears line-ending noise, because the real content is
+        //   re-synced immediately afterwards. Against the user's own repository
+        //   it would destroy their working tree.
+        //
+        //   syncFilesToWorkspace writes the session's files over the checkout.
+        //   In local mode the files already are the working tree.
+        if (!isLocalRepo(sessionId)) {
+            executeGitCommand(workspace, new String[]{"git", "checkout", "--", "."});
+            syncFilesToWorkspace(sessionId, workspace, files);
+        }
 
         // Sanitize commit message
         String safeMessage = sanitizeCommitMessage(message);
@@ -150,7 +234,14 @@ public class GitWorkspaceService {
         Path workspace = ensureWorkspaceExists(sessionId);
 
         log.info("[GitWorkspace] Pushing for session {}", sessionId);
-        return executeGitCommand(workspace, new String[]{"git", "push"});
+
+        // "HEAD" pushes the current branch to a branch of the same name, which is
+        // what is needed when the remote is given explicitly and there may be no
+        // upstream configured yet (a folder that was just initialised).
+        String remote = remoteRefFor(sessionId);
+        return "origin".equals(remote)
+            ? executeGitCommand(workspace, new String[]{"git", "push"})
+            : executeGitCommand(workspace, new String[]{"git", "push", "-u", remote, "HEAD"});
     }
 
     /**
@@ -172,11 +263,20 @@ public class GitWorkspaceService {
         // come from editor/DB syncs and always survive in the session itself.
         // Restore tracked files to HEAD first so background sync noise can
         // never block the merge with "local changes would be overwritten".
-        executeGitCommand(workspace, new String[]{"git", "checkout", "--", "."});
+        // A real repository is not derived — discarding the user's uncommitted
+        // work here would be unrecoverable, so let git refuse the pull instead.
+        if (!isLocalRepo(sessionId)) {
+            executeGitCommand(workspace, new String[]{"git", "checkout", "--", "."});
+        }
 
         // --no-rebase: force merge semantics so newer git doesn't refuse
         // divergent branches outright, and conflicts stay detectable/abortable.
-        Map<String, Object> result = executeGitCommand(workspace, new String[]{"git", "pull", "--no-rebase"});
+        // As with push: a local repository's origin carries no credentials, so
+        // the authenticated URL held in memory is supplied for this command only.
+        String remote = remoteRefFor(sessionId);
+        Map<String, Object> result = "origin".equals(remote)
+            ? executeGitCommand(workspace, new String[]{"git", "pull", "--no-rebase"})
+            : executeGitCommand(workspace, new String[]{"git", "pull", "--no-rebase", remote});
 
         String output = String.valueOf(result.getOrDefault("output", ""));
         if (Boolean.FALSE.equals(result.get("success")) && output.contains("CONFLICT")) {
@@ -284,12 +384,52 @@ public class GitWorkspaceService {
         // noise (e.g. files once written with the wrong line endings).
         // Restore tracked files first; the sync re-applies real edits, so
         // the status reflects exactly editor-vs-HEAD.
-        executeGitCommand(workspace, new String[]{"git", "checkout", "--", "."});
+        //
+        // Local mode needs neither step: the working tree IS the user's files,
+        // so git already reports exactly the right thing — and the checkout
+        // would wipe the very changes we are being asked to report.
+        if (!isLocalRepo(sessionId)) {
+            executeGitCommand(workspace, new String[]{"git", "checkout", "--", "."});
+            syncFilesToWorkspace(sessionId, workspace, files);
+        }
 
-        // Sync files before checking status so changed files are detected
-        syncFilesToWorkspace(sessionId, workspace, files);
+        // "-uall" lists untracked files individually instead of collapsing a whole
+        // directory into one entry ending in "/". Without it, a new folder counts
+        // as a single change no matter how many files it holds, so the reported
+        // total is wrong. Files matched by .gitignore are still excluded.
+        Map<String, Object> result =
+            executeGitCommand(workspace, new String[]{"git", "status", "--porcelain", "-b", "-uall"});
 
-        return executeGitCommand(workspace, new String[]{"git", "status", "--porcelain", "-b"});
+        return capStatusOutput(result);
+    }
+
+    /** Upper bound on status lines sent to the client. */
+    private static final int MAX_STATUS_LINES = 2000;
+
+    /**
+     * Keep a status response to a sane size.
+     *
+     * A project without a .gitignore can have tens of thousands of untracked
+     * files, and shipping all of them would bloat the response and stall the UI.
+     * The full count is reported separately so the number stays truthful even
+     * when the list is trimmed.
+     */
+    private Map<String, Object> capStatusOutput(Map<String, Object> result) {
+        String output = String.valueOf(result.getOrDefault("output", ""));
+        if (output.isEmpty()) return result;
+
+        String[] lines = output.split("\n", -1);
+        long changeCount = Arrays.stream(lines)
+            .filter(l -> !l.isBlank() && !l.startsWith("##"))
+            .count();
+
+        result.put("changeCount", changeCount);
+        result.put("truncated", lines.length > MAX_STATUS_LINES);
+
+        if (lines.length > MAX_STATUS_LINES) {
+            result.put("output", String.join("\n", Arrays.copyOfRange(lines, 0, MAX_STATUS_LINES)));
+        }
+        return result;
     }
 
     /**
@@ -316,6 +456,15 @@ public class GitWorkspaceService {
      */
     public void disconnectRepo(String sessionId) {
         sessionRepoUrls.remove(sessionId);
+
+        // In local mode the "workspace" is the user's own project folder.
+        // Disconnecting must forget the credentials and nothing else — deleting
+        // the directory here would destroy their entire project.
+        if (isLocalRepo(sessionId)) {
+            log.info("[GitWorkspace] Forgot credentials for local repository (folder left untouched)");
+            return;
+        }
+
         Path workspace = getWorkspacePath(sessionId);
         if (Files.exists(workspace)) {
             try {
@@ -478,10 +627,14 @@ public class GitWorkspaceService {
             }
         }
 
-        // Safety: Ensure working directory is within our sandbox
+        // Safety: the working directory must be either the session sandbox or a
+        // folder the user opened in local mode. Anything else — in particular a
+        // path smuggled in through the session id — is refused.
         Path resolvedWorkDir = workDir.toAbsolutePath().normalize();
         Path rootPath = Paths.get(workspaceRoot).toAbsolutePath().normalize();
-        if (!resolvedWorkDir.startsWith(rootPath)) {
+        boolean inSandbox = resolvedWorkDir.startsWith(rootPath);
+        boolean inOpenedFolder = localRoots.stream().anyMatch(resolvedWorkDir::startsWith);
+        if (!inSandbox && !inOpenedFolder) {
             throw new SecurityException("Path traversal detected — operation blocked");
         }
 
@@ -534,9 +687,27 @@ public class GitWorkspaceService {
 
     // ── SAFETY VALIDATORS ───────────────────────────────────
 
+    /**
+     * True when the scope is an absolute filesystem path — a folder the user
+     * opened in local mode, rather than a session id naming a sandbox.
+     */
+    private static boolean isLocalRepo(String scope) {
+        return scope != null
+            && (scope.matches("^[A-Za-z]:[\\\\/].*") || scope.startsWith("/"));
+    }
+
     private void validateSessionId(String sessionId) {
         if (sessionId == null || sessionId.isBlank()) {
             throw new IllegalArgumentException("Session ID is required");
+        }
+        // Local mode: the value is a real folder, used verbatim as the git working
+        // directory and never concatenated onto anything. It must therefore be an
+        // existing directory, but the UUID character rules below cannot apply.
+        if (isLocalRepo(sessionId)) {
+            if (!Files.isDirectory(Paths.get(sessionId))) {
+                throw new IllegalArgumentException("Project folder not found: " + sessionId);
+            }
+            return;
         }
         // Only allow alphanumeric + hyphens (standard UUID chars)
         if (!sessionId.matches("^[a-zA-Z0-9-]+$")) {
@@ -583,13 +754,25 @@ public class GitWorkspaceService {
     // ── HELPERS ─────────────────────────────────────────────
 
     private Path getWorkspacePath(String sessionId) {
+        // Local mode operates on the user's own repository, in place.
+        if (isLocalRepo(sessionId)) {
+            Path folder = Paths.get(sessionId).toAbsolutePath().normalize();
+            // Record it as a permitted working directory. Every caller reaches
+            // here only after validateSessionId has confirmed the path is an
+            // existing directory, so this admits exactly the folders the user
+            // opened — and nothing else.
+            localRoots.add(folder);
+            return folder;
+        }
         return Paths.get(workspaceRoot, sessionId).toAbsolutePath().normalize();
     }
 
     private Path ensureWorkspaceExists(String sessionId) throws Exception {
         Path workspace = getWorkspacePath(sessionId);
         if (!Files.exists(workspace) || !Files.exists(workspace.resolve(".git"))) {
-            throw new IllegalStateException("No repository connected for this session. Clone a repo first.");
+            throw new IllegalStateException(isLocalRepo(sessionId)
+                ? "This folder is not a Git repository. Run `git init` in it, or open a folder that already has one."
+                : "No repository connected for this session. Clone a repo first.");
         }
         return workspace;
     }
@@ -608,7 +791,15 @@ public class GitWorkspaceService {
             Files.walk(directory)
                 .sorted(Comparator.reverseOrder())
                 .map(Path::toFile)
-                .forEach(File::delete);
+                .forEach(file -> {
+                    if (!file.delete()) {
+                        // On Windows, git files inside .git/objects/ are read-only; make writable and retry
+                        file.setWritable(true);
+                        if (!file.delete()) {
+                            log.warn("[GitWorkspace] Failed to delete file/directory: {}", file.getAbsolutePath());
+                        }
+                    }
+                });
         }
     }
 }

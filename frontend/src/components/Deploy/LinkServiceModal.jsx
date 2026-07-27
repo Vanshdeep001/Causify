@@ -56,6 +56,13 @@ const LinkServiceModal = ({ sessionId, onClose, onLinked }) => {
   }, [services, query]);
 
   const handleLink = async (service) => {
+    // Render links are stored per session, so a link needs an active session.
+    // Catch it here with a clear instruction instead of leaking the internal
+    // "sessionId is required" error from the main process.
+    if (!sessionId) {
+      setError('No active session. Start or join a session first (top-left → New Session), then link — Render links are saved per session.');
+      return;
+    }
     setLinkingId(service.id);
     setError(null);
     try {
@@ -170,6 +177,25 @@ const LinkServiceModal = ({ sessionId, onClose, onLinked }) => {
           onFocus={e => e.currentTarget.style.borderColor = RENDER_MINT}
           onBlur={e => e.currentTarget.style.borderColor = 'var(--line-strong)'}
         />
+
+        {/* No-session notice — linking needs an active session to attach to. */}
+        {!sessionId && (
+          <div style={{
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontSize: '0.6rem',
+            lineHeight: 1.6,
+            color: '#FFB224',
+            letterSpacing: '0.01em',
+            padding: '9px 12px',
+            background: 'rgba(255, 178, 36, 0.05)',
+            border: '1px solid rgba(255, 178, 36, 0.25)',
+            borderRadius: '4px',
+          }}>
+            No active session — start or join one first (top-left → New Session).
+            Render links are saved per session, so you can browse below but can't
+            link until a session exists.
+          </div>
+        )}
 
         {/* Body */}
         <div style={{
