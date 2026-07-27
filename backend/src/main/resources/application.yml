@@ -19,9 +19,16 @@ spring:
       max-file-size: 50MB
       max-request-size: 100MB
 
-  # H2 in-memory database (swap to PostgreSQL for production)
+  # H2 file database (swap to PostgreSQL for production)
+  #
+  # The data directory is overridable via CAUSIFY_DATA_DIR so the desktop app can
+  # keep the database in the user's profile (Electron userData) instead of inside
+  # the install directory. The old location — resolved relative to the backend's
+  # working directory — sits under resources/backend/data in a packaged install,
+  # which an app update deletes and a Program Files install cannot even write.
+  # Defaults to ./data so `mvn spring-boot:run` behaves exactly as before.
   datasource:
-    url: jdbc:h2:file:./data/debugsync;AUTO_SERVER=TRUE
+    url: jdbc:h2:file:${CAUSIFY_DATA_DIR:./data}/debugsync;AUTO_SERVER=TRUE
     driver-class-name: org.h2.Driver
     username: sa
     password:

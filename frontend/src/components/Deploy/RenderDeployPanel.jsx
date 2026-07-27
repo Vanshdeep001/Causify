@@ -108,7 +108,13 @@ const RenderDeployPanel = () => {
   const renderConnected = useEditorStore((s) => s.renderConnected);
   const renderOwnerName = useEditorStore((s) => s.renderOwnerName);
   const renderRuntime = useEditorStore((s) => s.renderRuntime);
-  const sessionId = useEditorStore((s) => s.sessionId);
+  const storeSessionId = useEditorStore((s) => s.sessionId);
+  const workspaceRoot = useEditorStore((s) => s.workspaceRoot);
+  // See DeployPanel: a locally opened folder is scoped by its path, not a session.
+  // Render never derives a directory from this — links are a JSON map keyed by
+  // string and deploys run from the Git repo via the API — so the scope string
+  // is passed straight through as sessionId.
+  const sessionId = workspaceRoot || storeSessionId;
   const sessionName = useEditorStore((s) => s.sessionName);
   const gitRepoUrl = useEditorStore((s) => s.gitRepoUrl);
   const gitRepoConnected = useEditorStore((s) => s.gitRepoConnected);
@@ -287,7 +293,8 @@ const RenderDeployPanel = () => {
         const gitCommit = commitMatch ? commitMatch[1] : undefined;
 
         const record = {
-          sessionId: store.sessionId,
+          // Keyed by scope: folder path in local mode, session id otherwise.
+          sessionId: store.workspaceRoot || store.sessionId,
           deploymentUrl: data.url,
           target: 'production',
           gitBranch,
@@ -325,7 +332,7 @@ const RenderDeployPanel = () => {
     try {
       const store = useEditorStore.getState();
       await window.electronAPI.runRenderDeploy({
-        sessionId: store.sessionId,
+        sessionId: store.workspaceRoot || store.sessionId,
         deployId,
       });
     } catch (err) {
@@ -526,7 +533,7 @@ const RenderDeployPanel = () => {
 
     try {
       const store = useEditorStore.getState();
-      const res = await window.electronAPI.deleteRenderService({ sessionId: store.sessionId });
+      const res = await window.electronAPI.deleteRenderService({ sessionId: store.workspaceRoot || store.sessionId });
       if (res.success) {
         addDeployLog(`✓ Service${res.serviceName ? ` "${res.serviceName}"` : ''} deleted from Render.`);
         setLinkedService(null);

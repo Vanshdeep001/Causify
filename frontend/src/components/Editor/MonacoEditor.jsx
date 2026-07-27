@@ -169,6 +169,29 @@ const MonacoEditor = () => {
         const content = state.code;
         if (!path) return;
 
+        // Local mode: the file has a real location, so save writes there directly
+        // instead of prompting for one.
+        if (state.workspaceRoot) {
+          try {
+            await state.writeLocalFile(path, content);
+            console.log('[Causify] Saved to disk:', path);
+          } catch (err) {
+            console.error('[Causify] Disk save failed:', err.message);
+          }
+          return;
+        }
+
+        // Untitled buffer on the desktop: first save chooses a location, later
+        // ones write straight to it.
+        if (window.electronAPI?.workspace) {
+          try {
+            await state.saveScratchFile(path, content);
+          } catch (err) {
+            console.error('[Causify] Save failed:', err.message);
+          }
+          return;
+        }
+
         const { saveFileAs, saveFileToHandle } = await import('../../services/fileSave');
 
         const existingHandle = state.fileHandles[path];

@@ -7,7 +7,9 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "deployments")
+@Table(name = "deployments", indexes = {
+    @Index(name = "idx_deployments_session", columnList = "session_id")
+})
 public class Deployment {
 
     @Id

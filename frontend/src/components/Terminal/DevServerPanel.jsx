@@ -116,7 +116,7 @@ const StatusLabel = ({ state }) => {
 /* ══════════════════════════════════════════════════
  *  SERVER CARD COMPONENT
  * ══════════════════════════════════════════════════ */
-const ServerCard = ({ project, serverState, sessionId }) => {
+const ServerCard = ({ project, serverState, scope, isLocal }) => {
   const logContainerRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
   const updateDevServer = useEditorStore((s) => s.updateDevServer);
@@ -169,7 +169,7 @@ const ServerCard = ({ project, serverState, sessionId }) => {
   const handleStart = async () => {
     setIsLoading(true);
     try {
-      const status = await startDevServer(sessionId, project.directory, project.type);
+      const status = await startDevServer(scope, project.directory, project.type, { local: isLocal });
       updateDevServer(project.type, status);
     } catch (err) {
       updateDevServer(project.type, { state: 'ERROR', errorMessage: err.message });
@@ -180,7 +180,7 @@ const ServerCard = ({ project, serverState, sessionId }) => {
   const handleStop = async () => {
     setIsLoading(true);
     try {
-      const status = await stopDevServer(sessionId, project.type);
+      const status = await stopDevServer(scope, project.type, { local: isLocal });
       updateDevServer(project.type, status);
     } catch (err) {
       console.error('Stop error:', err);
@@ -457,6 +457,12 @@ const ServerCard = ({ project, serverState, sessionId }) => {
 
 const DevServerPanel = () => {
   const sessionId = useEditorStore((s) => s.sessionId);
+  // A locally opened folder runs its dev server in place, with no session at all.
+  // The folder path is the scope everything else keys off.
+  const workspaceRoot = useEditorStore((s) => s.workspaceRoot);
+  const isLocal = Boolean(workspaceRoot);
+  const scope = workspaceRoot || sessionId;
+
   const detectedProjects = useEditorStore((s) => s.detectedProjects);
   const devServers = useEditorStore((s) => s.devServers);
   const projectDetected = useEditorStore((s) => s.projectDetected);
@@ -469,18 +475,18 @@ const DevServerPanel = () => {
   const pollingRef = useRef(null);
 
   useEffect(() => {
-    if (sessionId && !projectDetected) handleDetect();
-  }, [sessionId]);
+    if (scope && !projectDetected) handleDetect();
+  }, [scope]);
 
   useEffect(() => {
     const hasActiveServer = Object.values(devServers).some(
       s => s?.state && !['IDLE', 'STOPPED', 'ERROR'].includes(s.state)
     );
 
-    if (hasActiveServer && sessionId) {
+    if (hasActiveServer && scope) {
       pollingRef.current = setInterval(async () => {
         try {
-          const status = await getDevServerStatus(sessionId);
+          const status = await getDevServerStatus(scope);
           if (status?.servers) {
             Object.entries(status.servers).forEach(([type, serverStatus]) => {
               updateDevServer(type, serverStatus);
@@ -490,18 +496,20 @@ const DevServerPanel = () => {
       }, 2000);
     }
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
-  }, [devServers, sessionId]);
+  }, [devServers, scope]);
 
   const handleDetect = async () => {
-    if (!sessionId) return;
+    if (!scope) return;
     setIsDetecting(true);
     setDetectError('');
     try {
-      const result = await detectProject(sessionId);
+      const result = await detectProject(scope, { local: isLocal });
       setDetectedProjects(result.projects || []);
       if (result.projects?.length > 0) setActiveIdx(0); // Reset to first on scan
       if (!result.projects || result.projects.length === 0) {
-        setDetectError('No React/Node projects detected in this session.');
+        setDetectError(isLocal
+          ? 'No React/Node projects detected in this folder.'
+          : 'No React/Node projects detected in this session.');
       }
     } catch (err) {
       setDetectError(err.message || 'Detection failed');
@@ -509,7 +517,8 @@ const DevServerPanel = () => {
     setIsDetecting(false);
   };
 
-  if (!sessionId) return null;
+  // Needs either an open folder or a session — otherwise there's no project to run.
+  if (!scope) return null;
 
   const currentProject = detectedProjects[activeIdx];
 
@@ -693,8 +702,9 @@ const DevServerPanel = () => {
           <ServerCard 
             key={currentProject.type} 
             project={currentProject} 
-            serverState={devServers[currentProject.type]} 
-            sessionId={sessionId} 
+            serverState={devServers[currentProject.type]}
+            scope={scope}
+            isLocal={isLocal}
           />
         )}
       </div>

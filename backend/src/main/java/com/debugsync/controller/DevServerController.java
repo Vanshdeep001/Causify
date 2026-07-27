@@ -28,10 +28,21 @@ public class DevServerController {
         this.devServerService = devServerService;
     }
 
+    /** True when the client supplied a usable value (not blank, not a stringified null). */
+    private static boolean provided(String value) {
+        return value != null && !value.trim().isEmpty()
+            && !"null".equals(value) && !"undefined".equals(value);
+    }
+
     @PostMapping("/detect")
     public ResponseEntity<?> detectProject(@RequestBody DetectRequest request) {
+        // Local mode scans the folder on disk; session mode reads uploaded files.
+        if (provided(request.getProjectPath())) {
+            return ResponseEntity.ok(devServerService.detectProjectsAtPath(request.getProjectPath()));
+        }
+
         String sessionId = request.getSessionId();
-        if (sessionId == null || sessionId.trim().isEmpty() || "null".equals(sessionId) || "undefined".equals(sessionId)) {
+        if (!provided(sessionId)) {
             return ResponseEntity.badRequest().body(Map.of("message", "Invalid Session ID"));
         }
         DetectionResult result = devServerService.detectProjects(sessionId);
@@ -40,20 +51,26 @@ public class DevServerController {
 
     @PostMapping("/start")
     public ResponseEntity<ServerStatus> startServer(@RequestBody ServerActionRequest request) {
-        ServerStatus status = devServerService.startServer(
-            request.getSessionId(),
-            request.getDirectory(),
-            request.getType()
-        );
+        ServerStatus status = provided(request.getProjectPath())
+            ? devServerService.startLocalServer(
+                request.getProjectPath(),
+                request.getDirectory(),
+                request.getType())
+            : devServerService.startServer(
+                request.getSessionId(),
+                request.getDirectory(),
+                request.getType());
         return ResponseEntity.ok(status);
     }
 
     @PostMapping("/stop")
     public ResponseEntity<ServerStatus> stopServer(@RequestBody ServerActionRequest request) {
-        ServerStatus status = devServerService.stopServer(
-            request.getSessionId(),
-            request.getType()
-        );
+        // Servers are keyed by whichever scope started them — project path in
+        // local mode, session id otherwise.
+        String scope = provided(request.getProjectPath())
+            ? request.getProjectPath()
+            : request.getSessionId();
+        ServerStatus status = devServerService.stopServer(scope, request.getType());
         return ResponseEntity.ok(status);
     }
 

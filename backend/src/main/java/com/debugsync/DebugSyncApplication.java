@@ -9,7 +9,11 @@ package com.debugsync;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
+// Scheduling drives SessionCleanupService's sweep, which keeps abandoned
+// sessions from accumulating in the database.
+@EnableScheduling
 @SpringBootApplication
 public class DebugSyncApplication {
 

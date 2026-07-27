@@ -114,6 +114,16 @@ export const connectWebSocket = (sessionId, userInfo, callbacks = {}) => {
         }
       );
 
+      // Subscribe to bulk project changes (a folder upload). Individual edits
+      // arrive as code changes; this covers the file list changing all at once.
+      subscriptions.projectSync = stompClient.subscribe(
+        `/topic/session/${sessionId}/project-sync`,
+        (message) => {
+          const data = JSON.parse(message.body);
+          if (callbacks.onProjectSync) callbacks.onProjectSync(data);
+        }
+      );
+
       // Subscribe to whiteboard updates
       subscriptions.whiteboard = stompClient.subscribe(
         `/topic/session/${sessionId}/whiteboard`,
@@ -241,6 +251,17 @@ export const sendFileDelete = (sessionId, userId, path) => {
     stompClient.publish({
       destination: `/app/session/${sessionId}/file-delete`,
       body: JSON.stringify({ userId, path }),
+    });
+  }
+};
+
+// Tell peers the project's file list changed as a whole (e.g. a folder upload),
+// so they re-read it rather than waiting for per-file edits that never come.
+export const sendProjectSync = (sessionId, userId) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/project-sync`,
+      body: JSON.stringify({ userId }),
     });
   }
 };

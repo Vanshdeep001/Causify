@@ -30,15 +30,61 @@ const crypto = require('crypto');
  * prepareWorkspace), and the `.vercel/` link folder is preserved across deploys
  * so updates are pushed to the same Vercel project instead of creating new ones.
  */
+/**
+ * Stable, filesystem-safe id for a deploy workspace.
+ *
+ * Session mode names the workspace after the session id. Local mode has no
+ * session — the project is a folder path, which cannot be a directory name — so
+ * it is hashed. The hash is derived from the resolved path, so reopening the
+ * same folder keeps the same deploy workspace and therefore the same `.vercel/`
+ * link, and updates keep landing on the same Vercel project.
+ */
+function deployScopeId(options) {
+  if (!options || typeof options === 'string') return null;
+  const { sessionId, workspaceRoot } = options;
+  if (sessionId) return sessionId;
+  if (workspaceRoot) {
+    const digest = crypto.createHash('sha1')
+      .update(path.resolve(workspaceRoot))
+      .digest('hex')
+      .slice(0, 16);
+    return `local-${digest}`;
+  }
+  return null;
+}
+
+/**
+ * Write one file into the deploy workspace.
+ *
+ * Images and fonts travel as base64 data URLs. Writing them with String() puts
+ * the literal "data:image/png;base64,…" text into the file, so every binary
+ * asset in a deployment was a corrupt text file — broken images on the deployed
+ * site. Decode those back to bytes; everything else is written as text.
+ */
+function writeDeployFile(target, content) {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+
+  if (typeof content === 'string' && content.startsWith('data:')) {
+    const marker = content.indexOf(';base64,');
+    if (marker >= 0) {
+      fs.writeFileSync(target, Buffer.from(content.slice(marker + ';base64,'.length), 'base64'));
+      return;
+    }
+  }
+
+  fs.writeFileSync(target, content == null ? '' : String(content), 'utf-8');
+}
+
 function resolveWorkspaceCwd(options) {
   if (!options) return process.cwd();
   if (typeof options === 'string') return options;
 
-  const { cwd, sessionId } = options;
+  const { cwd } = options;
   if (cwd) return cwd;
 
-  if (sessionId) {
-    return path.join(os.tmpdir(), 'causify-deploy', sessionId);
+  const scopeId = deployScopeId(options);
+  if (scopeId) {
+    return path.join(os.tmpdir(), 'causify-deploy', scopeId);
   }
 
   return process.cwd();
@@ -127,8 +173,7 @@ function prepareWorkspace(sessionId, files, chosenWebRoot = null) {
       if (!rel) continue;
       const target = path.join(dir, rel);
       if (!target.startsWith(dir)) continue; // path-traversal guard
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      fs.writeFileSync(target, content == null ? '' : String(content), 'utf-8');
+      writeDeployFile(target, content);
       fileCount++;
     }
 
@@ -204,8 +249,7 @@ function prepareWorkspace(sessionId, files, chosenWebRoot = null) {
     const target = path.join(dir, rel);
     if (!target.startsWith(dir)) continue; // guard against path traversal
 
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, content == null ? '' : String(content), 'utf-8');
+    writeDeployFile(target, content);
     fileCount++;
   }
 
@@ -1314,8 +1358,17 @@ function registerDeployHandlers() {
 
   ipcMain.handle('deploy:prepare', async (_event, options = {}) => {
     try {
-      const { sessionId, files, webRoot } = options;
-      const result = prepareWorkspace(sessionId, files, webRoot ?? null);
+      const { files, webRoot, workspaceRoot } = options;
+      const sessionId = deployScopeId(options);
+
+      // Local mode holds only paths in memory (contents are read on demand), so
+      // the project is read from disk here. Deploy still builds in its own temp
+      // workspace — it must not push node_modules or mutate the user's folder.
+      const source = workspaceRoot
+        ? await require('./workspace').readProjectFiles(workspaceRoot)
+        : files;
+
+      const result = prepareWorkspace(sessionId, source, webRoot ?? null);
       if (result.needsChoice) {
         console.log(
           `[Causify Deploy] Multiple web roots detected for ${String(sessionId).substring(0, 8)}: ` +

@@ -362,8 +362,15 @@ const blurLine = e => { e.currentTarget.parentElement.style.borderBottomColor = 
 /* Git porcelain status code → classy badge descriptor.
  * XY columns: '??' untracked, 'A' added, 'M' modified, 'D' deleted,
  * 'R' renamed. Untracked/added read as NEW, the rest map to intent. */
-const fileStatusMeta = (code) => {
+const fileStatusMeta = (code, path) => {
   const c = (code || '').trim();
+  // The backend asks git to list untracked files individually, so directory
+  // entries should not appear. Kept as a fallback: an older backend still
+  // collapses a new folder into one entry ending in "/", and calling that a
+  // single new file would misrepresent it.
+  if (typeof path === 'string' && path.trimEnd().endsWith('/')) {
+    return { label: 'NEW DIR', color: 'var(--emerald)' };
+  }
   if (c === '??' || c.includes('A')) return { label: 'NEW', color: 'var(--emerald)' };
   if (c.includes('D')) return { label: 'DEL', color: 'var(--crimson)' };
   if (c.includes('R')) return { label: 'MOVED', color: '#818cf8' };
@@ -372,8 +379,8 @@ const fileStatusMeta = (code) => {
 };
 
 /* Small pill: status dot + micro-caps label, thin-bordered. */
-const FileBadge = ({ code }) => {
-  const m = fileStatusMeta(code);
+const FileBadge = ({ code, path }) => {
+  const m = fileStatusMeta(code, path);
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: '6px',
@@ -482,7 +489,14 @@ const GroundBase = () => (
  * ═══════════════════════════════════════════════════════ */
 
 const GitAssistantCore = () => {
-  const sessionId = useEditorStore(s => s.sessionId);
+  const storeSessionId = useEditorStore(s => s.sessionId);
+  const workspaceRoot = useEditorStore(s => s.workspaceRoot);
+
+  // Git works against a "scope": the user's own repository when a folder is open
+  // from disk, otherwise the session's cloned sandbox. The backend accepts either
+  // in the same field, so everything below is written once.
+  const isLocalRepo = Boolean(workspaceRoot);
+  const sessionId = workspaceRoot || storeSessionId;
   const suggestion = useEditorStore(s => s.commitSuggestion);
   const setCommitSuggestion = useEditorStore(s => s.setCommitSuggestion);
   const terminalLayoutMode = useEditorStore(s => s.terminalLayoutMode);
@@ -503,6 +517,9 @@ const GitAssistantCore = () => {
   const resetGit = useEditorStore(s => s.resetGit);
 
   const [repoUrlInput, setRepoUrlInput] = useState('');
+  // True number of changed files, straight from git. The visible list can be
+  // trimmed for very large working trees, so the count is tracked separately.
+  const [changeCount, setChangeCount] = useState(null);
   const [commandOutput, setCommandOutput] = useState(null);
   const [pullConflict, setPullConflict] = useState(null); // { files: [...] }
   const [showCommitInput, setShowCommitInput] = useState(false);
@@ -523,8 +540,13 @@ const GitAssistantCore = () => {
   const refreshStatus = useCallback(async () => {
     if (!sessionId) return;
     try {
-      const res = await gitStatus(sessionId, Object.entries(files).map(([path, content]) => ({ path, content })));
+      // gitStatus is a GET and carries no body — the backend reads the working
+      // tree itself. Passing files here looked like it did something and didn't.
+      const res = await gitStatus(sessionId);
       setGitStatus(res.output || '');
+      // The backend trims very long listings but always reports the true total,
+      // so the headline number stays right even when the list below is clipped.
+      setChangeCount(typeof res.changeCount === 'number' ? res.changeCount : null);
     } catch (e) { /* silent */ }
   }, [sessionId, files]);
 
@@ -532,7 +554,11 @@ const GitAssistantCore = () => {
     if (!sessionId) return;
     try {
       const res = await gitLog(sessionId, 8);
-      setGitLog(res.output || '');
+      // Git merges stderr into stdout, so a failed `git log` — most commonly
+      // "does not have any commits yet" in a freshly initialised repo — would
+      // otherwise be stored and drawn as if it were a commit. Only keep output
+      // that actually succeeded; anything else means there is no history to show.
+      setGitLog(res.success === false ? '' : (res.output || ''));
     } catch (e) { /* silent */ }
   }, [sessionId]);
 
@@ -553,6 +579,15 @@ const GitAssistantCore = () => {
         refreshLog();
         return;
       }
+
+      // An open folder either is a git repository or it isn't — there is nothing
+      // to clone into it, and attempting to would be destructive. Leave the panel
+      // showing that this folder has no repository yet.
+      if (isLocalRepo) {
+        setGitRepoConnected(false, '');
+        return;
+      }
+
       // Backend has no clone for this session.
       const savedUrl = getSavedRepoUrl(projectKey);
       if (!savedUrl) {
@@ -586,7 +621,7 @@ const GitAssistantCore = () => {
         setGitLoading(false);
       }
     }).catch(() => {});
-  }, [sessionId, projectKey, refreshStatus, refreshLog, setGitRepoConnected, setGitLoading]);
+  }, [sessionId, isLocalRepo, projectKey, refreshStatus, refreshLog, setGitRepoConnected, setGitLoading]);
 
   // Prefill the connect form with this project's saved repo URL
   useEffect(() => {
@@ -860,11 +895,15 @@ const GitAssistantCore = () => {
     setGitLoading(true);
     setGitError(null);
     try {
-      // Send the editor's live files so unsaved buffers are committed too
+      // Session mode sends the editor's live files so unsaved buffers are
+      // committed too. Local mode commits the working tree as it stands on
+      // disk — sending contents would only overwrite the user's own files.
       const res = await executeGitCommit({
         sessionId,
         message: inlineCommitMsg.trim(),
-        files: Object.entries(files).map(([path, content]) => ({ path, content })),
+        files: isLocalRepo
+          ? undefined
+          : Object.entries(files).map(([path, content]) => ({ path, content })),
       });
       if (res.success !== false) {
         setCommandOutput({ command: 'commit', output: res.output || 'Committed successfully' });
@@ -999,14 +1038,42 @@ const GitAssistantCore = () => {
   // Parse status lines
   const statusLines = String(gitStatusData || '').split('\n').filter(l => l.trim());
   const actualChanges = statusLines.filter(l => !l.startsWith('##'));
-  const hasChanges = actualChanges.length > 0;
+  // git now lists untracked files individually (-uall), so a line is a file.
+  // Prefer the backend's count, which stays accurate even if the list was
+  // trimmed for a very large working tree.
+  const totalChanges = changeCount ?? actualChanges.length;
+  const hasChanges = totalChanges > 0;
 
   const branchLine = statusLines.find(l => l.startsWith('##')) || '';
   const isAhead = branchLine.includes('[ahead');
-  const currentBranch = branchLine.replace(/^##\s*/, '').split('...')[0].split(' ')[0].trim();
+  /* The porcelain branch header comes in several shapes, and taking the first
+   * word only works for one of them:
+   *   ## master...origin/master [ahead 1]   → master
+   *   ## master                             → master
+   *   ## No commits yet on master           → master   (first word was "No")
+   *   ## HEAD (no branch)                   → detached
+   */
+  const parseBranch = (line) => {
+    const header = line.replace(/^##\s*/, '').trim();
+    if (!header) return '';
 
-  // Parse log lines
-  const logLines = String(gitLogData || '').split('\n').filter(l => l.trim());
+    const noCommitsYet = header.match(/^No commits yet on (.+)$/i);
+    if (noCommitsYet) return noCommitsYet[1].split('...')[0].trim();
+
+    if (/^HEAD\b/.test(header) && header.includes('(no branch)')) return 'detached';
+
+    return header.split('...')[0].split(' ')[0].trim();
+  };
+
+  const currentBranch = parseBranch(branchLine);
+
+  // Parse log lines. `git log --oneline` gives "<abbrev-hash> <subject>", but the
+  // hash length varies with repository size, so a fixed slice would clip or keep
+  // part of the wrong field. Keep only lines that genuinely look like commits.
+  const logLines = String(gitLogData || '')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => /^[0-9a-f]{7,40}\s+/i.test(l));
 
   // Smart recommendation logic
   const getRecommendation = () => {
@@ -1033,7 +1100,7 @@ const GitAssistantCore = () => {
         type: 'commit',
         color: '#FFFFFF',
         title: repoName || 'READY TO COMMIT',
-        detail: `${actualChanges.length} file${actualChanges.length > 1 ? 's' : ''} changed — ${summary}`,
+        detail: `${totalChanges} file${totalChanges === 1 ? '' : 's'} changed — ${summary}`,
         action: 'branch',
         actionLabel: '⎇ SWITCH BRANCH',
       };
@@ -1283,9 +1350,20 @@ const GitAssistantCore = () => {
           overflow: isSplit ? 'visible' : 'auto',
         }}>
           <ZoneLabel index="01" right={
-            <TextButton onClick={handleDisconnect} danger style={{ fontSize: '0.52rem' }}>
-              DISCONNECT
-            </TextButton>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '12px' }}>
+              {/* The changed-files list polls every 15s, which is a long time to
+                  stare at a stale count — and the other zones already offer this. */}
+              <TextButton
+                onClick={() => { refreshStatus(); setCommandOutput(null); }}
+                style={{ fontSize: '0.66rem', letterSpacing: 0 }}
+                title="Refresh changed files"
+              >
+                ⟳
+              </TextButton>
+              <TextButton onClick={handleDisconnect} danger style={{ fontSize: '0.52rem' }}>
+                DISCONNECT
+              </TextButton>
+            </span>
           }>
             Repository
           </ZoneLabel>
@@ -1337,7 +1415,7 @@ const GitAssistantCore = () => {
                   fontFamily: HEADER, fontSize: '2.1rem', fontWeight: 800,
                   color: hasChanges ? '#FFFFFF' : 'var(--t4)', lineHeight: 1, letterSpacing: '-0.02em',
                 }}>
-                  {String(actualChanges.length).padStart(2, '0')}
+                  {String(totalChanges).padStart(2, '0')}
                 </span>
                 <span style={{
                   width: '26px', height: '2px', marginTop: '9px', borderRadius: '2px',
@@ -1346,7 +1424,7 @@ const GitAssistantCore = () => {
               </div>
               <span style={{ fontFamily: BODY, fontSize: '0.66rem', color: 'var(--t3)', paddingBottom: '3px' }}>
                 {hasChanges
-                  ? `file${actualChanges.length > 1 ? 's' : ''} changed`
+                  ? `file${totalChanges === 1 ? '' : 's'} changed`
                   : 'clean working tree'}
               </span>
             </div>
@@ -1365,7 +1443,7 @@ const GitAssistantCore = () => {
                     onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.025)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
                   >
-                    <FileBadge code={status} />
+                    <FileBadge code={status} path={file} />
                     <span style={{
                       fontFamily: MONO, fontSize: '0.7rem', color: 'var(--t2)',
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -1518,7 +1596,9 @@ git push`}
           }}>
             {logLines.length > 0 ? (
               logLines.map((line, i) => {
-                const msg = line.substring(8);
+                // Split on the first run of whitespace rather than a fixed
+                // offset, so the subject survives whatever hash length git chose.
+                const msg = line.replace(/^[0-9a-f]{7,40}\s+/i, '');
                 const isLast = i === logLines.length - 1;
                 const isHead = i === 0;
                 return (

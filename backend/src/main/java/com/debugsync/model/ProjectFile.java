@@ -6,8 +6,18 @@ package com.debugsync.model;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
+/*
+ * Every lookup here is by session — findBySessionId, findBySessionIdAndPath and
+ * the recursive delete. Without these indexes each one degenerates into a full
+ * scan that materializes the `content` of every row in the table (binary assets
+ * are stored as base64 data URLs), which is what exhausted the packaged app's
+ * heap and left H2 reporting "The database has been closed [90098]".
+ */
 @Entity
-@Table(name = "project_files")
+@Table(name = "project_files", indexes = {
+    @Index(name = "idx_project_files_session", columnList = "session_id"),
+    @Index(name = "idx_project_files_session_path", columnList = "session_id, path")
+})
 public class ProjectFile {
 
     @Id

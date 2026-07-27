@@ -15,7 +15,7 @@ const fs = require('fs');
 
 // IPC handler modules
 const { registerFileSystemHandlers } = require('./ipc/fileSystem');
-const { registerBackendHandlers, spawnBackend, killBackend } = require('./ipc/backend');
+const { registerBackendHandlers, spawnBackend, shutdownBackend, killBackend } = require('./ipc/backend');
 const { registerUpdaterHandlers } = require('./ipc/updater');
 const { registerSecurityHandlers } = require('./ipc/security');
 const { registerClipboardHandlers } = require('./ipc/clipboard');
@@ -23,6 +23,7 @@ const { registerPtyHandlers, killAllPtySessions } = require('./ipc/pty');
 const { registerDeployHandlers, killAllDeploySessions } = require('./ipc/deploy');
 const { registerRenderDeployHandlers, killAllRenderDeploySessions } = require('./ipc/renderDeploy');
 const { registerCaptureHandlers } = require('./ipc/capture');
+const { registerWorkspaceHandlers } = require('./ipc/workspace');
 
 
 /* ── Constants ── */
@@ -202,6 +203,7 @@ app.whenReady().then(async () => {
   registerDeployHandlers();
   registerRenderDeployHandlers();
   registerCaptureHandlers();
+  registerWorkspaceHandlers();
 
 
   // Allow renderer getDisplayMedia() to record the screen without a picker.
@@ -267,9 +269,15 @@ app.on('window-all-closed', () => {
   killAllPtySessions();
   killAllDeploySessions();
   killAllRenderDeploySessions();
-  killBackend();
+
   if (process.platform !== 'darwin') {
+    // The backend is stopped by the before-quit handler below, which shuts it
+    // down gracefully. Killing it here first would pre-empt that.
     app.quit();
+  } else {
+    // macOS keeps the app alive with no windows; stop the backend as before —
+    // 'activate' respawns it when a window is reopened.
+    killBackend();
   }
 });
 
@@ -280,9 +288,29 @@ app.on('activate', () => {
   }
 });
 
-app.on('before-quit', () => {
+// Quitting is deferred once so the backend can close its context and let H2
+// release its file lock. Every path here is bounded by a timeout and ends in
+// app.exit(), so a slow or unresponsive backend can never block the quit.
+let isQuitting = false;
+
+app.on('before-quit', (event) => {
+  if (isQuitting) return; // second pass — let the quit proceed
+  isQuitting = true;
+  event.preventDefault();
+
+  // Run every child-process cleanup here too: quitting via the menu or Cmd+Q
+  // never fires 'window-all-closed', and app.exit() below skips it as well.
   killAllPtySessions();
-  killBackend();
+  killAllDeploySessions();
+  killAllRenderDeploySessions();
+
+  const forceExit = setTimeout(() => app.exit(0), 8000);
+  Promise.resolve(shutdownBackend())
+    .catch(() => killBackend())
+    .finally(() => {
+      clearTimeout(forceExit);
+      app.exit(0);
+    });
 });
 
 /* ── Export mainWindow getter for IPC handlers ── */

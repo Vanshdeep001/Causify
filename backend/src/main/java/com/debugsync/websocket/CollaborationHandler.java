@@ -7,7 +7,6 @@
 package com.debugsync.websocket;
 
 import com.debugsync.service.CollaborationService;
-import com.debugsync.service.FileService;
 import com.debugsync.service.WhiteboardService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,13 +22,11 @@ public class CollaborationHandler {
     private static final Logger log = LoggerFactory.getLogger(CollaborationHandler.class);
     private final CollaborationService collaborationService;
     private final SimpMessagingTemplate messagingTemplate;
-    private final FileService fileService;
     private final WhiteboardService whiteboardService;
 
-    public CollaborationHandler(CollaborationService collaborationService, SimpMessagingTemplate messagingTemplate, FileService fileService, WhiteboardService whiteboardService) {
+    public CollaborationHandler(CollaborationService collaborationService, SimpMessagingTemplate messagingTemplate, WhiteboardService whiteboardService) {
         this.collaborationService = collaborationService;
         this.messagingTemplate = messagingTemplate;
-        this.fileService = fileService;
         this.whiteboardService = whiteboardService;
     }
 
@@ -38,12 +35,11 @@ public class CollaborationHandler {
         log.debug("Code change in session {} for file {} from user {}", 
             sessionId, payload.get("path"), payload.get("userId"));
         
-        String path = (String) payload.get("path");
-        String code = (String) payload.get("code");
-        if (path != null && code != null) {
-            fileService.saveFile(sessionId, path, code);
-        }
-        
+        // Relay only. This used to write to the database on every keystroke
+        // batch, which put a full row update on the hot path of typing — the
+        // dominant source of write pressure on the store. Persistence is already
+        // handled by the debounced REST save the client schedules (see
+        // collabDoc.schedulePersist), and in local mode by the write to disk.
         messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/code", payload);
     }
 
@@ -67,6 +63,21 @@ public class CollaborationHandler {
     public void handleFileDelete(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
         log.info("File deleted in session {}: {}", sessionId, payload.get("path"));
         messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/file-delete", payload);
+    }
+
+    /**
+     * The project's file list changed wholesale — an upload, or a folder shared
+     * into the session.
+     *
+     * Single-file edits travel as code changes, but a bulk upload goes over REST
+     * and would otherwise be invisible to everyone else: collaborators sat on
+     * "waiting for the owner to upload files" while the files were already there.
+     * This carries no payload; it simply tells peers to re-read the file list.
+     */
+    @MessageMapping("/session/{sessionId}/project-sync")
+    public void handleProjectSync(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
+        log.info("Project files synced in session {}", sessionId);
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/project-sync", payload);
     }
 
     @MessageMapping("/session/{sessionId}/join")

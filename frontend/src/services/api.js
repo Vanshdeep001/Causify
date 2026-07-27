@@ -26,6 +26,22 @@ const api = axios.create({
 //   AI    — LLM round-trips (root-cause, key verification)
 const TIMEOUT = { HEAVY: 300000, LONG: 120000, AI: 120000 };
 
+// If the local database becomes unusable, every request fails and Axios reports
+// only its generic "Request failed with status code 500", which tells the user
+// nothing about the remedy. The backend flags that one specific unrecoverable
+// state; surface its message so the UI can explain it. Deliberately narrow —
+// all other failures keep exactly the message they had before.
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const data = error?.response?.data;
+    if (data?.error === 'DATABASE_UNAVAILABLE' && data.message) {
+      error.message = data.message;
+    }
+    return Promise.reject(error);
+  }
+);
+
 /* ---- Session APIs ---- */
 
 export const createSession = async (name, username, password) => {
@@ -35,6 +51,19 @@ export const createSession = async (name, username, password) => {
 
 export const joinSession = async (id, password, username) => {
   const response = await api.post('/session/join', { id, password, username });
+  return response.data;
+};
+
+// Leaving is what lets the backend delete the session once everybody is gone —
+// a session carries files between collaborators, it is not storage.
+export const leaveSession = async (sessionId, userId) => {
+  const response = await api.post('/session/leave', { sessionId, userId });
+  return response.data;
+};
+
+// Signals that a session is still in use, so the retention sweep skips it.
+export const touchSession = async (sessionId) => {
+  const response = await api.post(`/session/${sessionId}/touch`);
   return response.data;
 };
 
@@ -133,7 +162,12 @@ export const analyzeRootCause = async (sessionId, error, code) => {
   return response.data;
 };
 
-/* ---- Git Workspace APIs ---- */
+/* ---- Git Workspace APIs ----
+ * The `sessionId` argument is really a scope: a session id for a cloned sandbox,
+ * or the absolute folder path when the user opened a project from disk, in which
+ * case the backend runs git against that repository in place. Paths contain
+ * separators, colons and spaces, so query parameters must be encoded.
+ */
 
 export const cloneGitRepo = async (sessionId, repoUrl) => {
   const response = await api.post('/git/clone', { sessionId, repoUrl }, { timeout: TIMEOUT.HEAVY });
@@ -157,12 +191,14 @@ export const gitPull = async (sessionId) => {
 };
 
 export const gitStatus = async (sessionId) => {
-  const response = await api.get(`/git/status?sessionId=${sessionId}`);
+  const response = await api.get(`/git/status?sessionId=${encodeURIComponent(sessionId)}`);
   return response.data;
 };
 
 export const gitLog = async (sessionId, count = 10) => {
-  const response = await api.get(`/git/log?sessionId=${sessionId}&count=${count}`);
+  const response = await api.get(
+    `/git/log?sessionId=${encodeURIComponent(sessionId)}&count=${count}`
+  );
   return response.data;
 };
 
@@ -172,7 +208,7 @@ export const gitUndoCommit = async (sessionId) => {
 };
 
 export const gitBranches = async (sessionId) => {
-  const response = await api.get(`/git/branches?sessionId=${sessionId}`);
+  const response = await api.get(`/git/branches?sessionId=${encodeURIComponent(sessionId)}`);
   return response.data;
 };
 
@@ -182,7 +218,7 @@ export const gitCheckout = async (sessionId, branch, create = false) => {
 };
 
 export const gitIsConnected = async (sessionId) => {
-  const response = await api.get(`/git/connected?sessionId=${sessionId}`);
+  const response = await api.get(`/git/connected?sessionId=${encodeURIComponent(sessionId)}`);
   return response.data;
 };
 

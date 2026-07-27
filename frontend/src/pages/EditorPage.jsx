@@ -334,6 +334,10 @@ const EditorPage = () => {
   const snapshots = useEditorStore((s) => s.snapshots);
   const currentSnapshotIndex = useEditorStore((s) => s.currentSnapshotIndex);
   const sessionId = useEditorStore((s) => s.sessionId);
+  const workspaceRoot = useEditorStore((s) => s.workspaceRoot);
+  // Anything that needs a project — rather than specifically a session — should
+  // key off this. An opened folder is just as much a workspace as a session is.
+  const hasWorkspace = Boolean(sessionId || workspaceRoot);
   const sessionName = useEditorStore((s) => s.sessionName);
   const isFileExplorerOpen = useEditorStore((s) => s.isFileExplorerOpen);
   const fileActivity = useEditorStore((s) => s.fileActivity);
@@ -420,6 +424,28 @@ const EditorPage = () => {
     setIsSaving(true);
     try {
       const currentCode = useEditorStore.getState().code;
+
+      // Local mode: write straight back to the file on disk. No Save As dialog —
+      // the file already has a home, and this is what makes the change visible
+      // in other editors.
+      if (useEditorStore.getState().workspaceRoot) {
+        await useEditorStore.getState().writeLocalFile(activePath, currentCode);
+        setSaveFlash(true);
+        setTimeout(() => setSaveFlash(false), 1500);
+        return;
+      }
+
+      // An untitled buffer on the desktop: the first save picks a location, and
+      // every save after that writes there directly.
+      if (window.electronAPI?.workspace) {
+        const written = await useEditorStore.getState().saveScratchFile(activePath, currentCode);
+        if (written) {
+          setSaveFlash(true);
+          setTimeout(() => setSaveFlash(false), 1500);
+        }
+        return;
+      }
+
       const existingHandle = useEditorStore.getState().fileHandles[activePath];
 
       if (existingHandle) {
@@ -483,6 +509,34 @@ const EditorPage = () => {
       setIsSaving(false);
     }
   }, [activePath, isSaving, sessionId, markFileSaved, setFileHandle, setFileSavedPath]);
+
+  /* ── Pick up edits made outside Causify ──
+   * In local mode the file on disk is the source of truth, so another editor (or
+   * a git checkout) can change it underneath us. Watch the open file and pull
+   * the new contents in — but never over unsaved edits, which would silently
+   * discard the user's work. A dirty buffer keeps what's on screen.
+   */
+  useEffect(() => {
+    if (!activePath) return;
+    const store = useEditorStore.getState();
+    if (!store.workspaceRoot || !window.electronAPI?.watchFile) return;
+
+    const absolute = store.absolutePathFor(activePath);
+    if (!absolute) return;
+
+    const unsubscribe = window.electronAPI.watchFile(absolute, ({ content }) => {
+      const state = useEditorStore.getState();
+      if (state.activePath !== activePath) return;      // user moved on
+      if (state.isFileDirty(activePath)) return;        // don't clobber unsaved work
+      if (state.code === content) return;               // our own write echoing back
+
+      state.updateRemoteFile(activePath, content, null);
+      state.markFileSaved(activePath, content);
+      console.log('[Causify] Reloaded from disk after an external change:', activePath);
+    });
+
+    return unsubscribe;
+  }, [activePath]);
 
   /* ── Protect against closing with unsaved changes ── */
   useEffect(() => {
@@ -705,12 +759,15 @@ const EditorPage = () => {
             )}
 
             {/* Separator line between file info and view switcher */}
-            {sessionId && (
+            {hasWorkspace && (
               <div style={{ width: '1px', height: '14px', background: 'var(--line-strong)', margin: '0 4px' }} />
             )}
 
-            {/* View Switcher: Editor / Whiteboard second */}
-            {sessionId && (
+            {/* View Switcher: Editor / Whiteboard second.
+                Available for an opened folder too — the whiteboard is a thinking
+                tool, not a collaboration-only one, and its contents are kept
+                locally when there is no session to sync them to. */}
+            {hasWorkspace && (
               <div style={{
                 display: 'flex',
                 background: 'rgba(255, 255, 255, 0.03)',
@@ -905,7 +962,11 @@ const EditorPage = () => {
           )}
 
           <div style={{ flex: 1, position: 'relative', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-            {activeView === 'whiteboard' ? (
+            {/* The switcher is hidden without a project, so showing the board
+                here would strand the user on it with no way back to the editor.
+                activeView is persisted, so this also covers reopening the app
+                after closing it while the whiteboard was up. */}
+            {activeView === 'whiteboard' && hasWorkspace ? (
               <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <Whiteboard />
               </div>

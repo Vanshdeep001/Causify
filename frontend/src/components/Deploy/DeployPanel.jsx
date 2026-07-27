@@ -97,7 +97,11 @@ const DeployPanel = () => {
   const vercelConnected = useEditorStore((s) => s.vercelConnected);
   const vercelUsername = useEditorStore((s) => s.vercelUsername);
   const deployFramework = useEditorStore((s) => s.deployFramework);
-  const sessionId = useEditorStore((s) => s.sessionId);
+  const storeSessionId = useEditorStore((s) => s.sessionId);
+  const workspaceRoot = useEditorStore((s) => s.workspaceRoot);
+  // A locally opened folder deploys without any session; the folder path is the
+  // scope the desktop layer keys its deploy workspace and Vercel link off.
+  const sessionId = workspaceRoot || storeSessionId;
 
   const setDeployStatus = useEditorStore((s) => s.setDeployStatus);
   const addDeployLog = useEditorStore((s) => s.addDeployLog);
@@ -246,7 +250,9 @@ const DeployPanel = () => {
     const loadLink = async () => {
       if (!sessionId || !window.electronAPI?.getLinkedVercelProject) return;
       try {
-        const info = await window.electronAPI.getLinkedVercelProject({ sessionId });
+        const info = await window.electronAPI.getLinkedVercelProject(
+          useEditorStore.getState().getDeployScope()
+        );
         if (info?.projectName) setLinkedProject(info.projectName);
       } catch {
         // No link yet — fine
@@ -342,7 +348,9 @@ const DeployPanel = () => {
         const snapshotId = latestSnapshot?.id || null;
 
         const deploymentData = {
-          sessionId: store.sessionId,
+          // Deployment history is keyed by scope: the folder path in local mode,
+          // the session id otherwise.
+          sessionId: store.workspaceRoot || store.sessionId,
           deploymentUrl: data.url,
           vercelDeploymentId: deployId,
           target: 'production',
@@ -386,7 +394,7 @@ const DeployPanel = () => {
     try {
       const store = useEditorStore.getState();
       const deployOptions = {
-        sessionId: store.sessionId,
+        ...store.getDeployScope(),
         deployId,
         ...(projectNameRef.current ? { projectName: projectNameRef.current } : {}),
       };
@@ -440,14 +448,19 @@ const DeployPanel = () => {
 
     try {
       const store = useEditorStore.getState();
-      const deployOptions = { sessionId: store.sessionId };
+      // Local mode has no session — the folder path identifies the project, and
+      // the main process reads its contents from disk.
+      const scopeOptions = store.workspaceRoot
+        ? { workspaceRoot: store.workspaceRoot }
+        : { sessionId: store.sessionId };
+      const deployOptions = { ...scopeOptions };
 
       // Write the current in-memory files to the deploy workspace. This is what
       // makes plain static (HTML/CSS/JS) projects deployable and ensures the
       // very latest edits are what gets pushed.
       if (window.electronAPI.prepareDeployWorkspace) {
         const prep = await window.electronAPI.prepareDeployWorkspace({
-          sessionId: store.sessionId,
+          ...scopeOptions,
           files: store.files,
           ...(chosenWebRoot != null ? { webRoot: chosenWebRoot } : {}),
         });
@@ -530,7 +543,7 @@ const DeployPanel = () => {
 
     try {
       const store = useEditorStore.getState();
-      const deployOptions = { sessionId: store.sessionId };
+      const deployOptions = store.getDeployScope();
 
       const res = await window.electronAPI.pushEnvVars({ ...deployOptions, vars: selectedVars });
       if (res.success) {

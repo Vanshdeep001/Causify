@@ -63,6 +63,77 @@ public class DevServerService {
     }
 
     /**
+     * Detect project types by scanning a folder the user opened from disk.
+     */
+    public DetectionResult detectProjectsAtPath(String projectPath) {
+        return projectDetectorService.detectFromDisk(Paths.get(projectPath));
+    }
+
+    /**
+     * Start a dev server against a folder on disk.
+     *
+     * Local mode runs the project exactly where it lives, which is both simpler
+     * and more correct than the session path: no files are copied, so there is no
+     * temp workspace to keep in sync, no node_modules to preserve across restarts,
+     * and the dev server sees the same tree the user sees in their own editor.
+     *
+     * Servers are keyed by the project path here rather than a session id; the
+     * client passes that same value to stop/status/logs, so the rest of the API
+     * is unchanged.
+     */
+    public ServerStatus startLocalServer(String projectPath, String directory, String type) {
+        String key = serverKey(projectPath, type);
+
+        ManagedServer existing = servers.get(key);
+        if (existing != null && existing.isAlive()) {
+            log.info("[DevServer] Server {} is already running", key);
+            return buildStatus(key, existing);
+        }
+
+        Path root = Paths.get(projectPath);
+        if (!Files.isDirectory(root)) {
+            ServerStatus status = new ServerStatus();
+            status.setServerId(key);
+            status.setType(type);
+            status.setState("ERROR");
+            status.setErrorMessage("Project folder no longer exists: " + projectPath);
+            return status;
+        }
+
+        DetectionResult detection = detectProjectsAtPath(projectPath);
+        DetectedProject project = detection.getProjects().stream()
+            .filter(p -> p.getType().equals(type) && p.getDirectory().equals(directory))
+            .findFirst()
+            .orElse(null);
+
+        if (project == null) {
+            ServerStatus status = new ServerStatus();
+            status.setServerId(key);
+            status.setType(type);
+            status.setState("ERROR");
+            status.setErrorMessage("No " + type + " project detected in directory: " + directory);
+            return status;
+        }
+
+        ManagedServer server = new ManagedServer();
+        server.type = type;
+        server.directory = directory;
+        server.framework = project.getFramework();
+        server.displayName = project.getDisplayName();
+        server.defaultPort = project.getDefaultPort();
+        server.startCommand = project.getStartCommand();
+        server.state = "PREPARING";
+        server.logs = Collections.synchronizedList(new ArrayList<>());
+        // Run in place — this is what makes the copy-to-temp step unnecessary.
+        server.localRoot = directory == null || directory.isEmpty() ? root : root.resolve(directory);
+
+        servers.put(key, server);
+        executor.submit(() -> runServerPipeline(null, key, server));
+
+        return buildStatus(key, server);
+    }
+
+    /**
      * Start a dev server for a detected project.
      */
     public ServerStatus startServer(String sessionId, String directory, String type) {
@@ -180,12 +251,21 @@ public class DevServerService {
             server.addLog("🚀 CAUSIFY DEV SERVER — " + server.displayName.toUpperCase());
             server.addLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
             server.addLog("");
-            server.addLog("📂 Writing project files to workspace...");
-
-            Path workspaceDir = writeFilesToDisk(sessionId, server.directory);
+            Path workspaceDir;
+            if (server.localRoot != null) {
+                // Local mode: the project is already on disk exactly where the user
+                // put it. Nothing to write, nothing to keep in sync.
+                workspaceDir = toCanonicalPath(server.localRoot);
+                server.addLog("📂 Running in your project folder (no copy made)");
+                server.addLog("   " + workspaceDir);
+                server.addLog("");
+            } else {
+                server.addLog("📂 Writing project files to workspace...");
+                workspaceDir = writeFilesToDisk(sessionId, server.directory);
+                server.addLog("✓ Files written to: " + workspaceDir.toString());
+                server.addLog("");
+            }
             server.workspacePath = workspaceDir;
-            server.addLog("✓ Files written to: " + workspaceDir.toString());
-            server.addLog("");
 
             // Step 1b: Validate critical files exist
             validateWorkspace(workspaceDir, server);
@@ -815,6 +895,7 @@ public class DevServerService {
         volatile String detectedUrl = null;
         volatile boolean portConfirmed = false; // true once the port is known (parsed or assigned)
         Map<String, String> extraEnv = new HashMap<>(); // extra process env (e.g. backend SERVER_PORT)
+        Path localRoot;           // Local mode: run here directly instead of copying files out
         Process process;
         Path workspacePath;
         List<String> logs = Collections.synchronizedList(new ArrayList<>());

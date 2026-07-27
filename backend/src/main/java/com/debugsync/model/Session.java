@@ -32,6 +32,17 @@ public class Session {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 
+    /**
+     * When this session was last used.
+     *
+     * Retention is based on activity rather than age: a session someone is still
+     * working in must never be swept out from under them just because it was
+     * created a while ago, and an abandoned one should not linger merely because
+     * it was touched once recently.
+     */
+    @Column
+    private LocalDateTime lastActiveAt;
+
     public Session() {
     }
 
@@ -45,6 +56,12 @@ public class Session {
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();
+        this.lastActiveAt = this.createdAt;
+    }
+
+    /** Mark the session as in use, so the retention sweep leaves it alone. */
+    public void touch() {
+        this.lastActiveAt = LocalDateTime.now();
     }
 
     // Getters and Setters
@@ -94,5 +111,13 @@ public class Session {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getLastActiveAt() {
+        return lastActiveAt;
+    }
+
+    public void setLastActiveAt(LocalDateTime lastActiveAt) {
+        this.lastActiveAt = lastActiveAt;
     }
 }

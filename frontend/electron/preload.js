@@ -42,6 +42,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener(channel, handler);
   },
 
+  /* ── Local Workspace (disk as source of truth) ──
+   * Opens a real folder and reads/writes files in place, so edits are visible to
+   * any other editor immediately and never round-trip through the database.
+   * Every mutating call is confined to the folder the user opened.
+   */
+  workspace: {
+    open: () => ipcRenderer.invoke('workspace:open'),
+    reopen: (dirPath) => ipcRenderer.invoke('workspace:reopen', dirPath),
+    saveAs: (suggestedName, content) => ipcRenderer.invoke('workspace:save-as', suggestedName, content),
+    list: (root) => ipcRenderer.invoke('workspace:list', root),
+    readAll: (root) => ipcRenderer.invoke('workspace:read-all', root),
+    materialize: (files) => ipcRenderer.invoke('workspace:materialize', files),
+    loadState: (root) => ipcRenderer.invoke('workspace:state-load', root),
+    saveState: (root, state) => ipcRenderer.invoke('workspace:state-save', root, state),
+    read: (filePath) => ipcRenderer.invoke('workspace:read', filePath),
+    write: (filePath, content) => ipcRenderer.invoke('workspace:write', filePath, content),
+    create: (targetPath, isFolder) => ipcRenderer.invoke('workspace:create', targetPath, isFolder),
+    remove: (targetPath) => ipcRenderer.invoke('workspace:delete', targetPath),
+    rename: (fromPath, toPath) => ipcRenderer.invoke('workspace:rename', fromPath, toPath),
+  },
+
   /* ── Window Controls (for future custom titlebar) ── */
   minimizeWindow: () => ipcRenderer.send('window:minimize'),
   maximizeWindow: () => ipcRenderer.send('window:maximize'),

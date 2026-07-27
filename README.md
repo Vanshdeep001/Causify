@@ -1,4 +1,4 @@
-# 🌌 Causify (formerly DebugSync)
+# 🌌 Causify 
 
 > **The Intelligent Collaborative Debugging & Development Environment**
 
