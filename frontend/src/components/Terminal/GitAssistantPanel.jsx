@@ -528,7 +528,7 @@ const GitAssistantCore = () => {
   }, [sessionId]);
 
   const sessionName = useEditorStore(s => s.sessionName);
-  const projectKey = getProjectKey(files, sessionName);
+  const projectKey = getProjectKey(files, sessionName, workspaceRoot);
   const autoConnectAttemptedRef = useRef(false);
 
   // Check connection on mount; if not connected but this project has a
@@ -537,8 +537,13 @@ const GitAssistantCore = () => {
     if (!sessionId) return;
     gitIsConnected(sessionId).then(async (res) => {
       if (res.connected) {
+        /* Prefer the remote git itself reports. That lives in .git/config, so a
+         * connected folder stays connected across restarts and even a cleared
+         * browser store — nothing here has to remember it. The locally saved URL
+         * is only a fallback for session sandboxes, which have no folder to
+         * carry the answer. */
         const savedUrl = getSavedRepoUrl(projectKey) || '';
-        const safeUrl = savedUrl.replace(/\/\/[^@]+@/, '//***@');
+        const safeUrl = res.remoteUrl || savedUrl.replace(/\/\/[^@]+@/, '//***@');
         setGitRepoConnected(true, safeUrl);
         refreshStatus();
         refreshLog();
@@ -669,15 +674,24 @@ const GitAssistantCore = () => {
 
             <style>{`
               /* 3-second loop animation */
+              /* Much punchier, without changing the height.
+                 -30px is fixed by the geometry: Mario's head sits at y≈88 and
+                 the block's underside at y=58, so that is exactly the distance
+                 at which he connects. Going further would send him through it.
+                 The energy therefore comes from timing and squash — a deeper
+                 crouch, a faster launch, a harder landing — which is what sells
+                 weight anyway. The 35% keyframe stays put because the block's
+                 bump is timed to it. */
               @keyframes panel-mario-jump {
                 0%   { transform: translateY(0) scaleY(1); }
-                10%  { transform: translateY(0) scaleY(0.75); }
-                15%  { transform: translateY(0) scaleY(1.1); }
-                35%  { transform: translateY(-30px) scaleY(1); } /* hits block underside exactly at 35% */
-                40%  { transform: translateY(-30px) scaleY(0.9); }
-                60%  { transform: translateY(0) scaleY(0.8); }
-                70%  { transform: translateY(0) scaleY(1); }
-                100% { transform: translateY(0) scaleY(1); }
+                12%  { transform: translateY(0) scaleY(0.6); }
+                18%  { transform: translateY(-6px) scaleY(1.25); }
+                35%  { transform: translateY(-30px) scaleY(1.05); } /* hits block underside exactly at 35% */
+                42%  { transform: translateY(-28px) scaleY(0.85); }
+                58%  { transform: translateY(0) scaleY(0.65); }
+                68%  { transform: translateY(0) scaleY(1.15); }
+                76%  { transform: translateY(0) scaleY(0.95); }
+                84%, 100% { transform: translateY(0) scaleY(1); }
               }
 
               @keyframes panel-block-bump {
@@ -696,9 +710,7 @@ const GitAssistantCore = () => {
             `}</style>
 
             <svg width="120" height="120" viewBox="0 0 120 120" shapeRendering="crispEdges" style={{ position: 'relative', zIndex: 1 }}>
-              {/* ── Floor / Ground line ── */}
-              <line x1="10" y1="100" x2="110" y2="100" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
-              
+
               {/* ── Git Commit Tag (Rises from block) ── */}
               <g style={{ animation: 'panel-commit-rise 3s infinite' }}>
                 {/* Border box for hash */}

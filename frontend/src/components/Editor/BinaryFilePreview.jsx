@@ -7,14 +7,20 @@
  */
 import React from 'react';
 import useEditorStore from '../../store/useEditorStore';
-import { isImagePath, isDataUrl } from '../../utils/binaryAssets';
+import { isImagePath, isDataUrl, isTextImagePath, svgToDataUrl } from '../../utils/binaryAssets';
 
-const BinaryFilePreview = () => {
+const BinaryFilePreview = ({ onEditSource }) => {
   const activePath = useEditorStore((s) => s.activePath);
   const content = useEditorStore((s) => s.code);
 
   const fileName = activePath ? activePath.split('/').pop() : '';
-  const canShowImage = isImagePath(activePath || '') && isDataUrl(content);
+  const isSvg = isTextImagePath(activePath || '');
+
+  // Raster assets arrive base64-encoded; SVG arrives as its own markup and is
+  // wrapped into a data URL here.
+  const imageSrc = isSvg
+    ? (content ? svgToDataUrl(content) : null)
+    : (isImagePath(activePath || '') && isDataUrl(content) ? content : null);
 
   return (
     <div
@@ -30,9 +36,9 @@ const BinaryFilePreview = () => {
         overflow: 'auto',
       }}
     >
-      {canShowImage ? (
+      {imageSrc ? (
         <img
-          src={content}
+          src={imageSrc}
           alt={fileName}
           style={{
             maxWidth: '100%',
@@ -54,8 +60,36 @@ const BinaryFilePreview = () => {
       <div style={{ textAlign: 'center', color: 'var(--t2)', fontFamily: 'var(--font-mono, monospace)' }}>
         <div style={{ fontSize: '0.9rem', color: 'var(--t1)', fontWeight: 600 }}>{fileName}</div>
         <div style={{ fontSize: '0.75rem', color: 'var(--t3)', marginTop: '4px' }}>
-          Binary asset — not editable as text. Served as-is to the dev server.
+          {isSvg
+            ? 'Vector image — editable as markup.'
+            : 'Binary asset — not editable as text. Served as-is to the dev server.'}
         </div>
+
+        {/* SVG is markup, so there has to be a way back to it. Raster assets
+            have no source worth showing, so no button. */}
+        {isSvg && onEditSource && (
+          <button
+            onClick={onEditSource}
+            style={{
+              marginTop: '14px',
+              padding: '6px 14px',
+              background: 'transparent',
+              border: '1px solid var(--line-strong)',
+              borderRadius: '3px',
+              color: 'var(--t2)',
+              fontFamily: 'var(--font-number)',
+              fontSize: '0.58rem',
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--t1)'; e.currentTarget.style.borderColor = 'var(--t2)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--t2)'; e.currentTarget.style.borderColor = 'var(--line-strong)'; }}
+          >
+            Edit source
+          </button>
+        )}
       </div>
     </div>
   );

@@ -31,7 +31,13 @@ const writeAll = (map) => {
  * sessions for the same uploaded project), falling back to the
  * session/project name.
  */
-export const getProjectKey = (files, sessionName) => {
+export const getProjectKey = (files, sessionName, workspaceRoot) => {
+  /* A folder opened from disk has a real, stable identity: its path. Falling
+   * through to the heuristics below would key it off an arbitrary file name,
+   * so two different projects could collide and the same project could change
+   * key as files are added. */
+  if (workspaceRoot) return `dir:${workspaceRoot}`;
+
   const paths = Object.keys(files || {});
   const roots = new Set(
     paths.filter((p) => p.includes('/')).map((p) => p.split('/')[0])

@@ -225,6 +225,13 @@ public class GitController {
             boolean connected = gitWorkspaceService.isRepoConnected(sessionId);
             Map<String, Object> result = new HashMap<>();
             result.put("connected", connected);
+            // The remote comes back with it so the client never has to remember
+            // the connection itself — git already does, in .git/config, which is
+            // why a connected folder stays connected across restarts.
+            if (connected) {
+                String remote = gitWorkspaceService.getRemoteUrl(sessionId);
+                if (remote != null) result.put("remoteUrl", remote);
+            }
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             log.error("[Git] Connected check failed", e);

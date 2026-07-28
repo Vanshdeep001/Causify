@@ -31,9 +31,10 @@ public class GitWorkspaceService {
 
     // ── Safety: Command whitelist ──
     private static final Set<String> ALLOWED_COMMANDS = Set.of(
-        // "init" is needed to attach a remote to an opened folder that is not a
-        // repository yet — the local equivalent of cloning.
-        "clone", "init", "add", "commit", "push", "pull", "status", "log", "remote",
+        // "init" and the plumbing beside it are needed to attach a remote to an
+        // opened folder and bring its history in — the local equivalent of cloning.
+        "clone", "init", "fetch", "symbolic-ref", "update-ref", "rev-parse",
+        "add", "commit", "push", "pull", "status", "log", "remote",
         "branch", "checkout", "merge", "reset", "config"
     );
 
@@ -138,6 +139,12 @@ public class GitWorkspaceService {
             log.info("[GitWorkspace] Initialising a repository in the open folder");
             Map<String, Object> init = executeGitCommand(folder, new String[]{"git", "init"});
             if (Boolean.FALSE.equals(init.get("success"))) return init;
+
+            // `git init` still names the first branch "master" on most installs,
+            // while GitHub creates "main" — so the panel reported a branch that
+            // did not exist on the remote. Set it before anything is committed,
+            // while the ref is still unborn and renaming costs nothing.
+            executeGitCommand(folder, new String[]{"git", "symbolic-ref", "HEAD", "refs/heads/main"});
         }
 
         // Remember the authenticated URL for this folder (never logged, never written to disk).
@@ -153,12 +160,176 @@ public class GitWorkspaceService {
 
         if (Boolean.FALSE.equals(result.get("success"))) return result;
 
+        /* Bring the remote's history in.
+         *
+         * Attaching a remote alone left a repository that was empty: no commits,
+         * and a branch name invented locally. The panel then truthfully reported
+         * "no commit history" about a repository the user had never seen, while
+         * their real one sat on GitHub with a full log. Fetching is what makes
+         * the two the same repository.
+         *
+         * The refspec is explicit because the URL is passed inline rather than
+         * as a named remote — fetching a bare URL would otherwise land in
+         * FETCH_HEAD and leave origin/* unpopulated. */
+        Map<String, Object> fetch = executeGitCommand(folder, new String[]{
+            "git", "fetch", repoUrl, "+refs/heads/*:refs/remotes/origin/*"
+        });
+        if (Boolean.FALSE.equals(fetch.get("success"))) {
+            result.put("success", false);
+            result.put("output", "Connected, but could not read the repository: "
+                + String.valueOf(fetch.getOrDefault("output", "")).replace(repoUrl, safeUrl));
+            return result;
+        }
+
+        String branch = detectRemoteDefaultBranch(folder);
+        boolean hasLocalCommits = Boolean.TRUE.equals(
+            executeGitCommand(folder, new String[]{"git", "rev-parse", "--verify", "HEAD"}).get("success"));
+
+        String summary;
+        if (branch == null) {
+            summary = "Connected to " + safeUrl + " — the repository is empty.";
+        } else if (hasLocalCommits) {
+            // The folder already had its own history. Leave it alone; merging is
+            // the user's decision, and pull is right there.
+            summary = "Connected to " + safeUrl + ". Use Pull to bring in origin/" + branch + ".";
+        } else {
+            summary = adoptRemoteBranch(folder, branch, safeUrl);
+        }
+
         log.info("[GitWorkspace] Connected the open folder to {}", safeUrl);
         result.put("success", true);
-        result.put("output", alreadyRepo
-            ? "Connected this folder to " + safeUrl
-            : "Initialised a repository here and connected it to " + safeUrl);
+        result.put("output", summary);
         return result;
+    }
+
+    /** The remote's default branch — main, then master, then whatever exists. */
+    private String detectRemoteDefaultBranch(Path folder) throws Exception {
+        for (String candidate : new String[]{"main", "master"}) {
+            Map<String, Object> check = executeGitCommand(folder, new String[]{
+                "git", "rev-parse", "--verify", "refs/remotes/origin/" + candidate
+            });
+            if (Boolean.TRUE.equals(check.get("success"))) return candidate;
+        }
+
+        Map<String, Object> all = executeGitCommand(folder, new String[]{"git", "branch", "-r"});
+        for (String line : String.valueOf(all.getOrDefault("output", "")).split("\n")) {
+            String name = line.trim();
+            if (name.isEmpty() || name.contains("->")) continue;
+            if (name.startsWith("origin/")) return name.substring("origin/".length());
+        }
+        return null;
+    }
+
+    /**
+     * Point a freshly initialised repository at the remote's history.
+     *
+     * An empty folder gets a real checkout — the same result as cloning. A
+     * folder that already holds the user's files gets the history and the branch
+     * without touching a single file: their work is not something to overwrite
+     * on the strength of a URL they typed. Their files then show up as changes
+     * against the remote, which is the truth of the situation.
+     */
+    private String adoptRemoteBranch(Path folder, String branch, String safeUrl) throws Exception {
+        boolean folderIsEmpty;
+        try (java.util.stream.Stream<Path> entries = Files.list(folder)) {
+            folderIsEmpty = entries.noneMatch(p -> !p.getFileName().toString().equals(".git"));
+        }
+
+        if (folderIsEmpty) {
+            Map<String, Object> checkout = executeGitCommand(folder, new String[]{
+                "git", "checkout", "-B", branch, "refs/remotes/origin/" + branch
+            });
+            if (Boolean.TRUE.equals(checkout.get("success"))) {
+                return "Cloned " + safeUrl + " into this folder (" + branch + ").";
+            }
+            return "Connected to " + safeUrl + ", but the checkout failed: "
+                + checkout.getOrDefault("output", "");
+        }
+
+        /* A folder that already holds files but is not a clone of this remote
+         * gets the remote recorded and nothing else.
+         *
+         * Pointing HEAD at the remote's tip here was wrong: without checking the
+         * files out, git compares a full repository against a folder that does
+         * not contain it and reports every remote file as deleted. That produced
+         * a screen of phantom deletions describing nothing the user had done.
+         *
+         * The history is fetched and available under origin/<branch>; making it
+         * this folder's history would require overwriting their files, which is
+         * not something to do on the strength of a pasted URL. */
+        return "Connected to " + safeUrl + ". This folder is not a working copy of "
+            + branch + " — its history is available as origin/" + branch + ". "
+            + "To work on that repository, open a clone of it; to publish this "
+            + "folder instead, commit and push.";
+    }
+
+    /**
+     * The remote this repository points at, or null if it has none.
+     *
+     * For a folder opened from disk this is the authoritative answer, and it is
+     * already persistent: git keeps it in .git/config, so a connection survives
+     * restarts, upgrades and cleared browser storage without us storing
+     * anything. Credentials are stripped before it leaves here.
+     */
+    public String getRemoteUrl(String scope) throws Exception {
+        validateSessionId(scope);
+        Path workspace = getWorkspacePath(scope);
+        if (!Files.exists(workspace.resolve(".git"))) return null;
+
+        Map<String, Object> result = executeGitCommand(workspace,
+            new String[]{"git", "remote", "get-url", "origin"});
+        if (Boolean.FALSE.equals(result.get("success"))) return null;
+
+        String url = String.valueOf(result.getOrDefault("output", "")).trim();
+        return url.isEmpty() ? null : stripCredentials(url);
+    }
+
+    /**
+     * Undo a HEAD that connect adopted from the remote.
+     *
+     * An earlier version of connect pointed HEAD at the remote's tip without
+     * checking the files out, so git compared a whole repository against a
+     * folder that did not contain it and reported every file as deleted.
+     * Removing that branch ref puts the repository back to "no commits yet",
+     * and the folder's files go back to being untracked — which is what they
+     * actually are.
+     *
+     * Guarded hard: the ref is only removed when everything reachable from HEAD
+     * also exists on the remote. The moment the user has a commit of their own,
+     * HEAD is theirs and nothing here touches it.
+     */
+    private void detachAdoptedHead(Path folder) throws Exception {
+        Map<String, Object> head = executeGitCommand(folder,
+            new String[]{"git", "rev-parse", "--verify", "HEAD"});
+        if (Boolean.FALSE.equals(head.get("success"))) return; // already unborn
+
+        String sha = String.valueOf(head.getOrDefault("output", "")).trim();
+        if (sha.isEmpty()) return;
+
+        // Is this commit present on a remote branch? If so, nothing local is lost.
+        Map<String, Object> containing = executeGitCommand(folder,
+            new String[]{"git", "branch", "-r", "--contains", sha});
+        boolean onlyFromRemote = Boolean.TRUE.equals(containing.get("success"))
+            && !String.valueOf(containing.getOrDefault("output", "")).trim().isEmpty();
+
+        if (!onlyFromRemote) {
+            log.info("[GitWorkspace] HEAD has local commits — leaving it alone");
+            return;
+        }
+
+        Map<String, Object> branch = executeGitCommand(folder,
+            new String[]{"git", "symbolic-ref", "--short", "HEAD"});
+        String name = String.valueOf(branch.getOrDefault("output", "")).trim();
+        if (name.isEmpty()) return;
+
+        executeGitCommand(folder, new String[]{"git", "update-ref", "-d", "refs/heads/" + name});
+
+        // The index still holds the adopted tree, so the same files would keep
+        // reporting as staged deletions. With HEAD now unborn, a plain reset
+        // empties it — and touches no file on disk.
+        executeGitCommand(folder, new String[]{"git", "reset"});
+
+        log.info("[GitWorkspace] Cleared an adopted HEAD; the folder's files are untracked again");
     }
 
     /** Remove any user:token@ portion from a URL so it is safe to store or show. */
@@ -457,11 +628,24 @@ public class GitWorkspaceService {
     public void disconnectRepo(String sessionId) {
         sessionRepoUrls.remove(sessionId);
 
-        // In local mode the "workspace" is the user's own project folder.
-        // Disconnecting must forget the credentials and nothing else — deleting
-        // the directory here would destroy their entire project.
+        // In local mode the "workspace" is the user's own project folder, so
+        // disconnecting must never delete it. It does, however, undo what
+        // connecting put there.
         if (isLocalRepo(sessionId)) {
-            log.info("[GitWorkspace] Forgot credentials for local repository (folder left untouched)");
+            try {
+                Path folder = getWorkspacePath(sessionId);
+                if (Files.exists(folder.resolve(".git"))) {
+                    // Order matters: the safety check reads refs/remotes/origin/*
+                    // to prove HEAD holds nothing local, and removing the remote
+                    // deletes those refs. Detach first, or the guard sees no
+                    // remote branches and declines to clean up.
+                    detachAdoptedHead(folder);
+                    executeGitCommand(folder, new String[]{"git", "remote", "remove", "origin"});
+                }
+            } catch (Exception e) {
+                log.warn("[GitWorkspace] Could not fully disconnect local repository: {}", e.getMessage());
+            }
+            log.info("[GitWorkspace] Disconnected local repository (files left untouched)");
             return;
         }
 

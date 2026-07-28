@@ -39,38 +39,104 @@ const EXTENSIONS = ['', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.css', '.scss', '
  * Resolve an import specifier relative to the importing file.
  * Tries multiple extensions and index files.
  */
-const resolveImport = (specifier, importerPath, allPaths) => {
-  // Skip node_modules / bare specifiers (react, express, etc.)
-  if (!specifier.startsWith('.') && !specifier.startsWith('/')) return null;
-
-  const importerDir = getFolder(importerPath);
-  
-  // Normalize path
-  let resolved = specifier.replace(/\\/g, '/');
-  if (resolved.startsWith('.')) {
-    const parts = importerDir.split('/');
-    const specParts = resolved.split('/');
-    
-    for (const seg of specParts) {
-      if (seg === '.') continue;
-      if (seg === '..') parts.pop();
-      else parts.push(seg);
-    }
-    resolved = parts.join('/');
-  }
-
-  // Try exact match, then with extensions, then as directory index
+/**
+ * Try a resolved path against the project, with extensions and as a directory
+ * index — the same order a bundler would.
+ */
+const matchPath = (resolved, allPaths) => {
   for (const ext of EXTENSIONS) {
     const candidate = resolved + ext;
     if (allPaths.has(candidate)) return candidate;
   }
-
-  // Try as directory with index file
   for (const indexName of ['index.js', 'index.jsx', 'index.ts', 'index.tsx']) {
     const candidate = resolved + '/' + indexName;
     if (allPaths.has(candidate)) return candidate;
   }
+  return null;
+};
 
+/**
+ * Resolve an aliased or root-relative import by matching the tail of a path.
+ *
+ * `@/components/Button` is a path alias — configured in vite.config or
+ * tsconfig, which we do not parse. Rather than read every possible bundler
+ * config, match on the suffix: the alias target is a real path tail, so
+ * `components/Button` finds `src/components/Button.jsx`.
+ *
+ * Where several files could match, the shortest path wins: an alias points at
+ * one root, and the shallowest candidate is the one nearest it. Genuinely
+ * ambiguous cases are rare and a wrong edge is better than the graph being
+ * empty, which is what happened before.
+ */
+const resolveByTail = (target, allPaths) => {
+  let best = null;
+  for (const ext of EXTENSIONS) {
+    const tail = '/' + target + ext;
+    for (const path of allPaths) {
+      if (!path.endsWith(tail)) continue;
+      if (!best || path.length < best.length) best = path;
+    }
+    if (best) return best;
+  }
+
+  for (const indexName of ['index.js', 'index.jsx', 'index.ts', 'index.tsx']) {
+    const tail = '/' + target + '/' + indexName;
+    for (const path of allPaths) {
+      if (!path.endsWith(tail)) continue;
+      if (!best || path.length < best.length) best = path;
+    }
+    if (best) return best;
+  }
+
+  return null;
+};
+
+const resolveImport = (specifier, importerPath, allPaths) => {
+  const spec = specifier.replace(/\\/g, '/');
+
+  // Relative and absolute imports resolve against the importing file.
+  if (spec.startsWith('.') || spec.startsWith('/')) {
+    const importerDir = getFolder(importerPath);
+    let resolved = spec;
+
+    if (resolved.startsWith('.')) {
+      const parts = importerDir ? importerDir.split('/') : [];
+      for (const seg of resolved.split('/')) {
+        if (seg === '.') continue;
+        if (seg === '..') parts.pop();
+        else parts.push(seg);
+      }
+      resolved = parts.join('/');
+    } else {
+      resolved = resolved.replace(/^\/+/, '');
+    }
+
+    const direct = matchPath(resolved, allPaths);
+    if (direct) return direct;
+
+    // A leading-slash import is root-relative to the project, not to the
+    // uploaded folder, so fall through to tail matching.
+    return resolveByTail(resolved, allPaths);
+  }
+
+  /* Path aliases — `@/x`, `~/x`, `#/x` — and root-relative specifiers like
+   * `src/components/Button`. These were previously discarded along with real
+   * package imports, which is why projects using aliases showed almost no
+   * dependencies: every internal import looked like a node_modules package. */
+  // The slash must come immediately after the sigil. `@/utils` is an alias;
+  // `@babel/parser` and `@xterm/addon-fit` are scoped npm packages and must
+  // keep being skipped.
+  const aliased = spec.match(/^[@~#]\/(.+)$/);
+  if (aliased) return resolveByTail(aliased[1], allPaths);
+
+  // A bare specifier that names a real folder in this project (`src/...`,
+  // `app/...`) rather than a package.
+  if (spec.includes('/')) {
+    const asRoot = matchPath(spec, allPaths) || resolveByTail(spec, allPaths);
+    if (asRoot) return asRoot;
+  }
+
+  // Anything left is a genuine package — react, express, lodash.
   return null;
 };
 

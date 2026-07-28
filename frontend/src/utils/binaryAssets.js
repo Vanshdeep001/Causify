@@ -43,3 +43,23 @@ export const isDataUrl = (content) =>
 /** True when the asset is a previewable raster/vector image. */
 export const isImagePath = (path) =>
   ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'avif', 'svg'].includes(extensionOf(path));
+
+/**
+ * True for images that are stored as text rather than base64 — SVG.
+ *
+ * SVG sits in both camps: it is a real image and worth seeing, but it is also
+ * markup people edit by hand. It is deliberately NOT a binary asset (that would
+ * base64 it and make it uneditable), so it needs its own test — otherwise it
+ * falls through to the code editor and you never get to look at it.
+ */
+export const isTextImagePath = (path) => extensionOf(path) === 'svg';
+
+/**
+ * Build an <img> source for SVG markup.
+ *
+ * Rendered through an <img> rather than injected into the DOM: an image context
+ * will not run scripts or load external references, so viewing a file cannot
+ * execute anything it contains.
+ */
+export const svgToDataUrl = (markup) =>
+  `data:image/svg+xml;utf8,${encodeURIComponent(String(markup ?? ''))}`;

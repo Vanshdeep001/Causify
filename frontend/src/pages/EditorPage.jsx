@@ -13,7 +13,7 @@ import { saveFileAs, saveFileToHandle } from '../services/fileSave';
 import FileExplorer from '../components/Editor/FileExplorer';
 import BinaryFilePreview from '../components/Editor/BinaryFilePreview';
 import EmptyEditorState from '../components/Editor/EmptyEditorState';
-import { isBinaryAssetPath } from '../utils/binaryAssets';
+import { isBinaryAssetPath, isTextImagePath } from '../utils/binaryAssets';
 import ImpactWarningBanner from '../components/Editor/ImpactWarningBanner';
 import Whiteboard from '../components/Editor/Whiteboard';
 import ScreenCapture from '../components/Capture/ScreenCapture';
@@ -351,6 +351,13 @@ const EditorPage = () => {
   const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
   const setFileExplorerOpen = useEditorStore((s) => s.setFileExplorerOpen);
   const activePath = useEditorStore((s) => s.activePath);
+
+  // Whether an SVG is showing its markup rather than the picture. Declared here,
+  // after activePath, because the effect below reads it — a const referenced
+  // above its declaration is in the temporal dead zone and throws during render.
+  const [showSvgSource, setShowSvgSource] = useState(false);
+  useEffect(() => { setShowSvgSource(false); }, [activePath]);
+
   const collisionWarning = useEditorStore((s) => s.collisionWarning);
   const code = useEditorStore((s) => s.code);
   const connectedUsers = useEditorStore((s) => s.connectedUsers);
@@ -635,6 +642,33 @@ const EditorPage = () => {
                     {fileName}
                   </span>
                 </div>
+                {/* Picture / markup toggle, for files that are legitimately
+                    both. Only rendered for SVG — nothing else has two views. */}
+                {isTextImagePath(activePath) && (
+                  <button
+                    onClick={() => setShowSvgSource((v) => !v)}
+                    title={showSvgSource ? 'Show the image' : 'Show the markup'}
+                    style={{
+                      marginLeft: '4px',
+                      padding: '2px 8px',
+                      background: 'transparent',
+                      border: '1px solid var(--line-strong)',
+                      borderRadius: '3px',
+                      color: 'var(--t3)',
+                      fontFamily: 'var(--font-number)',
+                      fontSize: '0.5rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.12em',
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--t1)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--t3)'; }}
+                  >
+                    {showSvgSource ? 'Preview' : 'Source'}
+                  </button>
+                )}
+
                 {/* Disk path badge */}
                 {diskName && (
                   <span title={`Saved to: ${diskName}`} style={{
@@ -972,8 +1006,10 @@ const EditorPage = () => {
               <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                 <Whiteboard />
               </div>
-            ) : activePath && isBinaryAssetPath(activePath) ? (
-              <BinaryFilePreview />
+            ) : activePath && (isBinaryAssetPath(activePath) || (isTextImagePath(activePath) && !showSvgSource)) ? (
+              /* An SVG opens as a picture, because that is what you usually want
+                 to check. "Edit source" switches to the markup. */
+              <BinaryFilePreview onEditSource={() => setShowSvgSource(true)} />
             ) : activePath ? (
               <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 {/* Line-collision lock removed — the CRDT merges concurrent edits,
