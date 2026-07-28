@@ -22,6 +22,7 @@ import React, { useMemo, useCallback, useState, useEffect, useRef } from 'react'
 import {
   ReactFlow,
   Controls,
+  Panel,
   Background,
   Handle,
   Position,
@@ -270,6 +271,21 @@ const LayeredDepMode = ({ depMap, files, activePath }) => {
   const prevActivePathRef = useRef(activePath);
   const graphInstanceRef = useRef(null);
 
+  /**
+   * Zoom by a multiplier, animated.
+   *
+   * Multiplying rather than adding keeps each press feeling the same at any
+   * scale — a fixed step is huge when zoomed out and imperceptible when zoomed
+   * in. Clamped to the same bounds as the canvas so it stops cleanly at the
+   * ends instead of appearing to do nothing.
+   */
+  const stepZoom = useCallback((factor) => {
+    const flow = graphInstanceRef.current;
+    if (!flow) return;
+    const next = Math.min(2.5, Math.max(0.1, flow.getZoom() * factor));
+    flow.zoomTo(next, { duration: 200 });
+  }, []);
+
   useEffect(() => {
     if (!depMap) { setNodes([]); setEdges([]); return; }
 
@@ -418,11 +434,25 @@ const LayeredDepMode = ({ depMap, files, activePath }) => {
           proOptions={{ hideAttribution: true }}
         >
           <Background color="#D4D4D4" gap={40} variant="dots" size={1} />
-          <Controls
-            position="bottom-left"
-            showInteractive={false}
-            style={{ background: 'var(--s2)', border: '1px solid var(--line-strong)', borderRadius: '6px', boxShadow: 'var(--shadow-brutal-sm)' }}
-          />
+          {/* Custom controls rather than React Flow's own.
+              The built-in buttons step by a small fixed amount with no
+              animation, so crossing a large graph meant a dozen clicks and the
+              view jumped each time. These multiply the current zoom — so each
+              press covers proportionally more ground — and animate, which also
+              makes it obvious which direction you moved. */}
+          <Panel position="bottom-left">
+            <div className="dep-zoom">
+              <button className="dep-zoom-btn" title="Zoom in" onClick={() => stepZoom(1.6)}>+</button>
+              <button className="dep-zoom-btn" title="Zoom out" onClick={() => stepZoom(1 / 1.6)}>−</button>
+              <button
+                className="dep-zoom-btn"
+                title="Fit to view"
+                onClick={() => graphInstanceRef.current?.fitView({ padding: 0.15, duration: 320 })}
+              >
+                ⤢
+              </button>
+            </div>
+          </Panel>
           <MiniMap
             position="bottom-right"
             nodeColor={(n) =>

@@ -3423,3 +3423,49 @@ body {
   text-decoration-color: #FFFFFF;
   text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
 }
+
+/* ── Dependency graph zoom controls ──
+ * Replaces React Flow's default cluster. Larger tap targets and the app's own
+ * surface treatment, so it reads as part of the panel rather than a library
+ * default dropped on top of it.
+ */
+.dep-zoom {
+  display: flex;
+  flex-direction: column;
+  background: var(--s2);
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  box-shadow: var(--shadow-brutal-sm);
+  overflow: hidden;
+}
+
+.dep-zoom-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  color: var(--t2);
+  font-family: var(--font-number);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.dep-zoom-btn:last-child {
+  border-bottom: none;
+  font-size: 0.7rem;
+}
+
+.dep-zoom-btn:hover {
+  background: var(--s4);
+  color: var(--t1);
+}
+
+.dep-zoom-btn:active {
+  background: var(--s3);
+}
