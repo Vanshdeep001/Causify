@@ -218,22 +218,46 @@ public class ExecutionService {
 
     private ExecutionResponse buildResponse(String stdout, String stderr, ExecutionRequest request,
             long executionTime) {
-        // Create snapshot
-        CodeSnapshot lastSnapshot = snapshotRepository.findTopBySessionIdOrderByTimestampDesc(request.getSessionId());
+        // A run outside any session — a folder opened from disk, or an untitled
+        // file — has nothing to attach history to, and its timeline is kept on
+        // the client instead. Persisting here would fail anyway: a snapshot
+        // requires a session id.
+        boolean persist = request.getSessionId() != null && !request.getSessionId().isBlank();
+
+        CodeSnapshot lastSnapshot = persist
+                ? snapshotRepository.findTopBySessionIdOrderByTimestampDesc(request.getSessionId())
+                : null;
         String previousCode = lastSnapshot != null ? lastSnapshot.getCode() : "";
         String diff = DiffUtil.computeDiff(previousCode, request.getCode());
         boolean hasError = stderr != null && !stderr.isEmpty();
 
-        CodeSnapshot snapshot = timelineService.createSnapshot(
-                request.getSessionId(), request.getCode(), "system", diff, hasError);
+        CodeSnapshot snapshot;
+        if (persist) {
+            snapshot = timelineService.createSnapshot(
+                    request.getSessionId(), request.getCode(), "system", diff, hasError);
+        } else {
+            // Transient — populated only so the response carries the same shape.
+            snapshot = new CodeSnapshot();
+            snapshot.setId("local-" + java.util.UUID.randomUUID());
+            snapshot.setCode(request.getCode());
+            snapshot.setUserId("local");
+            snapshot.setTimestamp(java.time.LocalDateTime.now());
+            snapshot.setDiff(diff);
+            snapshot.setHasError(hasError);
+        }
 
-        // Save execution log
-        ExecutionLog execLog = new ExecutionLog();
-        execLog.setSnapshotId(snapshot.getId());
-        execLog.setOutput(stdout != null ? stdout : "");
-        execLog.setError(stderr != null ? stderr : "");
-        execLog.setExecutionTimeMs(executionTime);
-        executionRepository.save(execLog);
+        // Save execution log — only meaningful when it can reference a stored
+        // snapshot. Stays in scope for the error analysis below, which links a
+        // parsed error back to the run that produced it.
+        ExecutionLog execLog = null;
+        if (persist) {
+            execLog = new ExecutionLog();
+            execLog.setSnapshotId(snapshot.getId());
+            execLog.setOutput(stdout != null ? stdout : "");
+            execLog.setError(stderr != null ? stderr : "");
+            execLog.setExecutionTimeMs(executionTime);
+            executionRepository.save(execLog);
+        }
 
         // Analysis if error
         ExecutionResponse.RootCauseData rootCauseData = null;
@@ -245,8 +269,12 @@ public class ExecutionService {
                     : request.getLanguage().toLowerCase();
             ErrorLog parsedError = ErrorParser.parse(stderr, request.getCode(), lang);
             if (parsedError != null) {
-                parsedError.setExecutionId(execLog.getId());
-                errorRepository.save(parsedError);
+                // No execution log for a run outside a session — the error is
+                // still parsed and reported, it just has no stored run to link to.
+                if (execLog != null) {
+                    parsedError.setExecutionId(execLog.getId());
+                    errorRepository.save(parsedError);
+                }
                 rootCauseData = rootCauseService.analyze(parsedError, request.getCode(), request.getSessionId());
                 if (rootCauseData != null)
                     graphData = causalityGraphService.buildCausalityGraph(parsedError, rootCauseData,
@@ -294,7 +322,8 @@ public class ExecutionService {
                 com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
                 String suggestionJson = mapper.writeValueAsString(suggestion);
                 snapshot.setSuggestionJson(suggestionJson);
-                snapshotRepository.save(snapshot);
+                // Only a stored snapshot can be updated; a local run's is transient.
+                if (persist) snapshotRepository.save(snapshot);
             } catch (Exception e) {
                 log.warn("Failed to serialize commit suggestion", e);
             }

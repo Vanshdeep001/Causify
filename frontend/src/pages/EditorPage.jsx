@@ -335,9 +335,11 @@ const EditorPage = () => {
   const currentSnapshotIndex = useEditorStore((s) => s.currentSnapshotIndex);
   const sessionId = useEditorStore((s) => s.sessionId);
   const workspaceRoot = useEditorStore((s) => s.workspaceRoot);
-  // Anything that needs a project — rather than specifically a session — should
-  // key off this. An opened folder is just as much a workspace as a session is.
-  const hasWorkspace = Boolean(sessionId || workspaceRoot);
+  const openFileCount = useEditorStore((s) => Object.keys(s.files || {}).length);
+  // Anything that needs something to work on — rather than specifically a
+  // session — keys off this. An opened folder counts, and so does an untitled
+  // file: having a buffer open is reason enough for the whiteboard to exist.
+  const hasWorkspace = Boolean(sessionId || workspaceRoot || openFileCount > 0);
   const sessionName = useEditorStore((s) => s.sessionName);
   const isFileExplorerOpen = useEditorStore((s) => s.isFileExplorerOpen);
   const fileActivity = useEditorStore((s) => s.fileActivity);

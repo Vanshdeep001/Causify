@@ -194,6 +194,12 @@ const parseExecutionGraph = (code, language) => {
 // nothing needs to be session-only anymore.
 const SESSION_ONLY_KEYS = [];
 
+// Keys that must always fall back to their initial value on launch, whatever is
+// in storage. The terminal panel is one: its shell does not survive a restart,
+// so reopening it would present an empty terminal rather than the one that was
+// there. The user opens it again when they want it.
+const NEVER_RESTORED_KEYS = ['isTerminalOpen'];
+
 // Pending debounced disk writes for changes received from collaborators,
 // keyed by path. Deliberately module-level: timer handles are transient
 // machinery, so they must not land in persisted state or trigger re-renders.
@@ -569,6 +575,7 @@ const useEditorStore = create(persist((set, get) => ({
     if (known) {
       await api.write(known, content);
       get().markFileSaved(path, content);
+      get().recordLocalSnapshot(path, content);
       return true;
     }
 
@@ -578,6 +585,7 @@ const useEditorStore = create(persist((set, get) => ({
     set((s) => ({ fileDiskPaths: { ...s.fileDiskPaths, [path]: saved.filePath } }));
     get().markFileSaved(path, content);
     get().setFileSavedPath(path, saved.fileName);
+    get().recordLocalSnapshot(path, content);
     return true;
   },
 
@@ -741,8 +749,11 @@ const useEditorStore = create(persist((set, get) => ({
    * session cannot grow the state file without bound.
    */
   recordLocalSnapshot: (path, code, { hasError = false } = {}) => {
-    const { workspaceRoot, snapshots } = get();
-    if (!workspaceRoot || !path) return;
+    const { snapshots } = get();
+    if (!path) return;
+    // An untitled file has no folder to store history against, so its timeline
+    // lives in memory for as long as it is open — saveLocalWorkspaceState below
+    // is a no-op until there is a folder to write it beside.
 
     const previous = snapshots[snapshots.length - 1];
     if (previous && previous.code === code && previous.path === path) return;
@@ -1763,9 +1774,17 @@ const useEditorStore = create(persist((set, get) => ({
       // (covers entries written before a key became session-only).
       const localState = { ...(local?.state || {}) };
       SESSION_ONLY_KEYS.forEach((key) => delete localState[key]);
+
+      const merged = { ...localState, ...(session?.state || {}) };
+      // Always start with the terminal closed. Dropping it from partialize stops
+      // it being written from now on, but anyone upgrading still has a stored
+      // `true` sitting in localStorage that would restore once — so strip it on
+      // the way in as well.
+      NEVER_RESTORED_KEYS.forEach((key) => delete merged[key]);
+
       return {
         version: (session ?? local)?.version ?? 0,
-        state: { ...localState, ...(session?.state || {}) },
+        state: merged,
       };
     },
     setItem: (name, value) => {
@@ -1817,7 +1836,11 @@ const useEditorStore = create(persist((set, get) => ({
     whiteboardZoom: state.whiteboardZoom,
     terminalActiveTab: state.terminalActiveTab,
     terminalSecondActiveTab: state.terminalSecondActiveTab,
-    isTerminalOpen: state.isTerminalOpen,
+    // isTerminalOpen is deliberately NOT persisted. The size and the last tab
+    // are preferences worth remembering; whether the panel was open is not —
+    // a shell from the previous session is gone, so restoring the panel would
+    // show an empty terminal the user has to close. It starts closed, and Run
+    // opens it again.
     terminalHeight: state.terminalHeight,
     terminalLayoutMode: state.terminalLayoutMode,
     isFileExplorerOpen: state.isFileExplorerOpen,

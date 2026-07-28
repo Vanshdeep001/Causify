@@ -30,10 +30,11 @@ const TerminalPanel = () => {
   const snapshots = useEditorStore((s) => s.snapshots);
   const userRole = useEditorStore((s) => s.userRole);
   const workspaceRoot = useEditorStore((s) => s.workspaceRoot);
-  // The timeline is the owner's view of a session's history — and, for a folder
-  // opened from disk, simply your own history. A collaborator still doesn't get
-  // it, but working solo is not the same as being a collaborator.
-  const canSeeTimeline = userRole === 'owner' || Boolean(workspaceRoot);
+  const hasOpenFiles = useEditorStore((s) => Object.keys(s.files || {}).length > 0);
+  // The timeline is the owner's view of a session's history — and, when working
+  // alone, simply your own. A collaborator still doesn't get it, but working
+  // solo is not the same as being a collaborator.
+  const canSeeTimeline = userRole === 'owner' || Boolean(workspaceRoot) || hasOpenFiles;
   const commitSuggestion = useEditorStore((s) => s.commitSuggestion);
   const detectedProjects = useEditorStore((s) => s.detectedProjects);
   const deployStatus = useEditorStore((s) => s.deployStatus);
@@ -372,37 +373,19 @@ const TerminalPanel = () => {
                   key={session.id}
                   onClick={() => setActiveTermIdx(idx)}
                   title={session.label}
-                  style={{
-                    ...tabBtn(activeTermIdx === idx),
-                    width: 'auto',
-                    padding: '0 6px',
-                    fontSize: '0.5rem',
-                    fontFamily: 'var(--font-number)',
-                    fontWeight: 600,
-                    letterSpacing: '0.04em',
-                    gap: '4px',
-                    borderRadius: '3px',
-                    height: '20px',
-                  }}
-                  onMouseEnter={e => { if (activeTermIdx !== idx) e.currentTarget.style.color = 'var(--t1)'; }}
-                  onMouseLeave={e => { if (activeTermIdx !== idx) e.currentTarget.style.color = 'var(--t3)'; }}
+                  /* Shells numbered as levels — 1-1, 1-2 — matching the world
+                     the git history already draws Mario climbing through. */
+                  className={'sigbay-chan' + (activeTermIdx === idx ? ' is-active' : '')}
                 >
-                  {idx + 1}
+                  1-{idx + 1}
                   {termSessions.length > 1 && (
                     <span
+                      className="sigbay-chan-close"
                       onClick={(e) => {
                         e.stopPropagation();
                         closeTerminalSession(idx);
                       }}
-                      style={{
-                        marginLeft: '2px',
-                        fontSize: '0.55rem',
-                        color: 'var(--t4)',
-                        cursor: 'pointer',
-                        lineHeight: 1,
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.color = 'var(--crimson)'}
-                      onMouseLeave={e => e.currentTarget.style.color = 'var(--t4)'}
+                      style={{ cursor: 'pointer', lineHeight: 1 }}
                     >
                       ✕
                     </span>

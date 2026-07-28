@@ -98,11 +98,25 @@ function checkVite(retries = 0) {
 
 function launchElectron() {
   const electronPath = require('electron');
+
+  // --no-backend: leave port 8080 alone so a backend run from source can own it.
+  // Without this the app claims the port on startup and `mvn spring-boot:run`
+  // fails until the app is closed.
+  const noBackend = process.argv.includes('--no-backend');
+  if (noBackend) {
+    console.log('[dev] --no-backend: the app will not start a backend; run one yourself on 8080.');
+  }
+
   electronProcess = spawn(electronPath.toString(), ['.'], {
     cwd: path.join(__dirname, '..'),
     stdio: 'inherit',
     // Tell Electron exactly which URL to load — no port guessing.
-    env: { ...process.env, NODE_ENV: 'development', VITE_DEV_SERVER_URL: devUrl },
+    env: {
+      ...process.env,
+      NODE_ENV: 'development',
+      VITE_DEV_SERVER_URL: devUrl,
+      ...(noBackend ? { CAUSIFY_NO_BACKEND: '1' } : {}),
+    },
   });
 
   electronProcess.on('error', (err) => {

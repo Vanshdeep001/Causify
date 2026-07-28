@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron:dev": "node scripts/electron-dev.js",
+    "electron:dev:nobackend": "node scripts/electron-dev.js --no-backend",
     "electron:build": "npx vite build && npx electron-builder",
     "electron:preview": "npx vite build && npx electron ."
   },
