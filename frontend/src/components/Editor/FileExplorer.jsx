@@ -10,6 +10,67 @@ import { detectProject } from '../../services/devserver';
 import { isBinaryAssetPath, isSkippedAssetPath } from '../../utils/binaryAssets';
 import MarioLoader from '../common/MarioLoader';
 
+/* Shown while a project is being read in. Defined at module scope: inside the
+   component it would be a new type on every render, so React would rebuild it
+   mid-upload — precisely when the parent re-renders most. */
+const LoadingOverlay = () => (
+  <div style={{
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    background: 'var(--s0)', zIndex: 1000,
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    padding: '24px', textAlign: 'center'
+  }}>
+    {/* ── BOLD TYPOGRAPHY ── */}
+    <div style={{
+      fontFamily: 'var(--font-header)',
+      fontSize: '0.85rem',
+      fontWeight: 900,
+      letterSpacing: '-0.02em',
+      textTransform: 'uppercase',
+      color: '#FFFFFF',
+      lineHeight: 1
+    }}>
+      <span>Index</span>
+      <span style={{ color: 'transparent', WebkitTextStroke: '1px rgba(255,255,255,0.7)', textStroke: '1px rgba(255,255,255,0.7)' }}>ing</span>
+    </div>
+
+    {/* ── PROGRESS BAR ── */}
+    <div style={{
+      width: '100%',
+      maxWidth: '160px',
+      marginTop: '20px',
+      fontFamily: 'var(--font-number)',
+      fontSize: '0.55rem',
+      boxSizing: 'border-box',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '6px'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--t3)', letterSpacing: '0.08em' }}>
+        <span>PROGRESS</span>
+        <span style={{ color: '#FFFFFF', fontWeight: 600 }}>74%</span>
+      </div>
+      <div style={{
+        height: '4px',
+        width: '100%',
+        background: 'rgba(255, 255, 255, 0.03)',
+        border: '1px solid var(--line)',
+        borderRadius: '2px',
+        overflow: 'hidden',
+        position: 'relative'
+      }}>
+        <div style={{
+          height: '100%',
+          width: '74%',
+          background: 'linear-gradient(90deg, rgba(255, 255, 255, 0.4), #FFFFFF)',
+          boxShadow: '0 0 8px rgba(255, 255, 255, 0.6)',
+          borderRadius: '2px'
+        }} />
+      </div>
+    </div>
+  </div>
+);
+
 const ActionButton = ({ onClick, title, children }) => {
   const [hovered, setHovered] = useState(false);
   return (
@@ -153,63 +214,6 @@ const FileExplorer = ({ onToggle }) => {
   const folderInputRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  const LoadingOverlay = () => (
-    <div style={{
-      position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-      background: 'var(--s0)', zIndex: 1000,
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      padding: '24px', textAlign: 'center'
-    }}>
-      {/* ── BOLD TYPOGRAPHY ── */}
-      <div style={{
-        fontFamily: 'var(--font-header)',
-        fontSize: '0.85rem',
-        fontWeight: 900,
-        letterSpacing: '-0.02em',
-        textTransform: 'uppercase',
-        color: '#FFFFFF',
-        lineHeight: 1
-      }}>
-        <span>Index</span>
-        <span style={{ color: 'transparent', WebkitTextStroke: '1px rgba(255,255,255,0.7)', textStroke: '1px rgba(255,255,255,0.7)' }}>ing</span>
-      </div>
-
-      {/* ── PROGRESS BAR ── */}
-      <div style={{
-        width: '100%',
-        maxWidth: '160px',
-        marginTop: '20px',
-        fontFamily: 'var(--font-number)',
-        fontSize: '0.55rem',
-        boxSizing: 'border-box',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '6px'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--t3)', letterSpacing: '0.08em' }}>
-          <span>PROGRESS</span>
-          <span style={{ color: '#FFFFFF', fontWeight: 600 }}>74%</span>
-        </div>
-        <div style={{
-          height: '4px',
-          width: '100%',
-          background: 'rgba(255, 255, 255, 0.03)',
-          border: '1px solid var(--line)',
-          borderRadius: '2px',
-          overflow: 'hidden',
-          position: 'relative'
-        }}>
-          <div style={{
-            height: '100%',
-            width: '74%',
-            background: 'linear-gradient(90deg, rgba(255, 255, 255, 0.4), #FFFFFF)',
-            boxShadow: '0 0 8px rgba(255, 255, 255, 0.6)',
-            borderRadius: '2px'
-          }} />
-        </div>
-      </div>
-    </div>
-  );
 
   const initSocket = (sessId, user) => {
     connectWebSocket(sessId, user, {
@@ -1255,20 +1259,27 @@ const FileExplorer = ({ onToggle }) => {
             <div style={{ paddingTop: '4px' }}>
               {/* Creative "Workspaces" Typography */}
               <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--line-faint)' }}>
+                {/* VT323, the same face as the terminal. A pixel font needs the
+                    opposite typographic treatment to Unbounded: it renders small
+                    for its em so the size goes up, it has one weight so 900 is
+                    meaningless, and it wants tracking opened out rather than
+                    tightened — negative letter-spacing closes up the gaps the
+                    pixel grid depends on. */}
+                {/* One uniform treatment across the whole word — hollow pixel
+                    letters throughout, rather than a solid half and an outlined
+                    half. */}
                 <span style={{
-                  fontFamily: "var(--font-header), sans-serif",
-                  fontSize: '1.25rem',
-                  fontWeight: 900,
-                  letterSpacing: '-0.02em',
+                  fontFamily: "'VT323', 'Silkscreen', monospace",
+                  fontSize: '1.9rem',
+                  fontWeight: 400,
+                  letterSpacing: '0.04em',
                   textTransform: 'uppercase',
-                  lineHeight: 1
+                  lineHeight: 1,
+                  color: 'transparent',
+                  WebkitTextStrokeWidth: '1px',
+                  WebkitTextStrokeColor: 'rgba(255,255,255,0.7)'
                 }}>
-                  <span style={{ color: '#FFFFFF' }}>Work</span>
-                  <span style={{
-                    color: 'transparent',
-                    WebkitTextStroke: '1px rgba(255,255,255,0.7)',
-                    textStroke: '1px rgba(255,255,255,0.7)'
-                  }}>spaces</span>
+                  Workspaces
                 </span>
               </div>
             </div>

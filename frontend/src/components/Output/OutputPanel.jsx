@@ -34,6 +34,28 @@ const LogLine = ({ type, message, timestamp }) => {
 };
 
 /* ── Animated SVG Confidence Ring ── */
+/**
+ * A collapsible section of the diagnostic report.
+ *
+ * Declared at module scope on purpose. Defined inside the panel it would be a
+ * new component type on every render, so React would discard the existing DOM
+ * and rebuild it — restarting the content's entry animation each time the panel
+ * re-rendered, which showed up as flickering.
+ */
+const RcaSection = ({ label, expanded, onToggle, children }) => (
+  <div className={`rca2-section ${expanded ? 'is-expanded' : ''}`}>
+    <div className="rca2-section-head" onClick={onToggle}>
+      <span className="rca2-section-label">{label}</span>
+      <svg className="rca2-section-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="2.5"
+        style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0)' }}>
+        <polyline points="6 9 12 15 18 9" />
+      </svg>
+    </div>
+    {expanded && <div className="rca2-section-content">{children}</div>}
+  </div>
+);
+
 const ConfidenceRing = ({ percent, color, size = 52 }) => {
   const r = (size - 8) / 2;
   const circumference = 2 * Math.PI * r;
@@ -223,21 +245,6 @@ const RootCauseCard = ({ rootCause, code }) => {
 
   const chainSteps = parseChain(rootCause.rootCauseChain);
 
-  /* Minimal Section Header Component */
-  const SectionHead = ({ label, sectionKey, children }) => (
-    <div className={`rca2-section ${expandedSections[sectionKey] ? 'is-expanded' : ''}`}>
-      <div className="rca2-section-head" onClick={() => toggleSection(sectionKey)}>
-        <span className="rca2-section-label">{label}</span>
-        <svg className="rca2-section-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" strokeWidth="2.5" style={{ transform: expandedSections[sectionKey] ? 'rotate(180deg)' : 'rotate(0)' }}>
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
-      </div>
-      {expandedSections[sectionKey] && (
-        <div className="rca2-section-content">{children}</div>
-      )}
-    </div>
-  );
 
   return (
     <div className="rca2-wrapper">
@@ -268,14 +275,16 @@ const RootCauseCard = ({ rootCause, code }) => {
 
             {/* Section: What Happened */}
             {rootCause.whatHappened && (
-              <SectionHead label="What Happened" sectionKey="what">
+              <RcaSection label="What Happened" expanded={Boolean(expandedSections.what)}
+                onToggle={() => toggleSection('what')}>
                 <div className="rca2-explanation">{rootCause.whatHappened}</div>
-              </SectionHead>
+              </RcaSection>
             )}
 
             {/* Section: Error Location */}
             {failingCode && (
-              <SectionHead label="Error Location" sectionKey="location">
+              <RcaSection label="Error Location" expanded={Boolean(expandedSections.location)}
+                onToggle={() => toggleSection('location')}>
                 <div className="rca2-code-viewer">
                   <div className="rca2-code-header">
                     <span className="rca2-code-file-label">main.cpp</span>
@@ -302,12 +311,13 @@ const RootCauseCard = ({ rootCause, code }) => {
                     )}
                   </div>
                 </div>
-              </SectionHead>
+              </RcaSection>
             )}
 
             {/* Section: Root Cause Chain */}
             {chainSteps.length > 0 && (
-              <SectionHead label="Cause Chain" sectionKey="chain">
+              <RcaSection label="Cause Chain" expanded={Boolean(expandedSections.chain)}
+                onToggle={() => toggleSection('chain')}>
                 <div className="rca2-chain">
                   {chainSteps.map((step, i) => (
                     <div key={i} className="rca2-chain-item">
@@ -318,12 +328,13 @@ const RootCauseCard = ({ rootCause, code }) => {
                     </div>
                   ))}
                 </div>
-              </SectionHead>
+              </RcaSection>
             )}
 
             {/* Section: Suggested Fix */}
             {(fixContent.code || fixContent.explanation) && (
-              <SectionHead label="Suggested Fix" sectionKey="fix">
+              <RcaSection label="Suggested Fix" expanded={Boolean(expandedSections.fix)}
+                onToggle={() => toggleSection('fix')}>
                 {fixContent.explanation && (
                   <div className="rca2-fix-text">{fixContent.explanation}</div>
                 )}
@@ -338,14 +349,15 @@ const RootCauseCard = ({ rootCause, code }) => {
                     <pre className="rca2-fix-pre">{fixContent.code}</pre>
                   </div>
                 )}
-              </SectionHead>
+              </RcaSection>
             )}
 
             {/* Section: Pro Tip */}
             {rootCause.proTip && (
-              <SectionHead label="Pro Tip" sectionKey="tip">
+              <RcaSection label="Pro Tip" expanded={Boolean(expandedSections.tip)}
+                onToggle={() => toggleSection('tip')}>
                 <div className="rca2-tip">{rootCause.proTip}</div>
-              </SectionHead>
+              </RcaSection>
             )}
           </div>
         </div>

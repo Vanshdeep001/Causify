@@ -161,13 +161,47 @@ function getMaxHeapMb() {
 /* ── Spawn Backend ── */
 
 async function spawnBackend(isDev = false) {
-  // Always check if port 8080 is already occupied (external backend running)
-  const portBusy = await isPortInUse(8080);
-  if (portBusy) {
-    console.log('[Backend] Port 8080 already in use — skipping spawn (backend running externally)');
+  // Opt out entirely, for working on the backend itself. Without this the app
+  // grabs port 8080 the moment it starts, and a backend you then try to run
+  // from source cannot bind — the app has to be closed first, every time.
+  if (process.env.CAUSIFY_NO_BACKEND === '1') {
+    console.log('[Backend] CAUSIFY_NO_BACKEND=1 — not starting one; expecting an external backend on 8080');
     backendStatus = 'running';
-    pushLog('[SYSTEM] Detected external backend on port 8080 — skipping spawn.');
+    pushLog('[SYSTEM] CAUSIFY_NO_BACKEND=1 — using an externally managed backend.');
     return;
+  }
+
+  // Something is already on 8080. Who it is decides what to do.
+  let portBusy = await isPortInUse(8080);
+  if (portBusy) {
+    if (!app.isPackaged) {
+      // Development: a backend run from source is almost certainly deliberate,
+      // and taking it away mid-session would be hostile.
+      console.log('[Backend] Port 8080 already in use — skipping spawn (backend running externally)');
+      backendStatus = 'running';
+      pushLog('[SYSTEM] Detected external backend on port 8080 — skipping spawn.');
+      return;
+    }
+
+    // Installed app: nobody is running a backend by hand, so this is almost
+    // always one we left behind after a crash — and after an update it is the
+    // previous version, which silently serves stale behaviour with no way for
+    // the user to tell. Reclaim the port so the app always runs the backend it
+    // shipped with.
+    console.log('[Backend] Port 8080 is busy on a packaged build — reclaiming it');
+    pushLog('[SYSTEM] Found a leftover backend — restarting it.');
+
+    await requestShutdown();
+    portBusy = await waitForPortFree(8080, 6000);
+
+    if (portBusy) {
+      // Not ours, or it ignored the request. Use it rather than fight over the
+      // port — failing to start at all would be worse than possibly-stale data.
+      console.warn('[Backend] Could not reclaim port 8080 — using whatever is there');
+      backendStatus = 'running';
+      pushLog('[WARN] Another program is using port 8080. Causify will try to use it.');
+      return;
+    }
   }
 
   const jarPath = getJarPath();
@@ -372,6 +406,34 @@ async function spawnBackend(isDev = false) {
       reject(err);
     }
   });
+}
+
+/**
+ * Ask whatever is on 8080 to shut down.
+ *
+ * Used to reclaim the port from a backend left behind by a crash. Only our own
+ * backend implements this endpoint, so anything else simply ignores it.
+ */
+function requestShutdown(timeoutMs = 2000) {
+  return new Promise((resolve) => {
+    const req = http.request(
+      { host: '127.0.0.1', port: 8080, path: '/api/system/shutdown', method: 'POST', timeout: timeoutMs },
+      (res) => { res.resume(); resolve(); }
+    );
+    req.on('error', () => resolve());
+    req.on('timeout', () => { req.destroy(); resolve(); });
+    req.end();
+  });
+}
+
+/** Poll until the port frees up. Resolves true if it is still busy at the deadline. */
+async function waitForPortFree(port, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await isPortInUse(port))) return false;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return isPortInUse(port);
 }
 
 /* ── Shutdown ── */

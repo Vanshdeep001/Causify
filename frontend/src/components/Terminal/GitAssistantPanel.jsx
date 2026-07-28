@@ -13,6 +13,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import useEditorStore from '../../store/useEditorStore';
+import { PixelSprite, MARIO_PAL, MARIO_ROWS } from '../common/pixelArt';
 import {
   executeGitCommit, cloneGitRepo, gitPush, gitPull,
   gitStatus, gitLog, gitIsConnected, gitDisconnect,
@@ -420,42 +421,6 @@ const GhostAction = ({ icon, label, onClick, disabled }) => (
  * flagpole; the first commit plants into a brick ground block.
  * ═══════════════════════════════════════════════════════ */
 
-const MARIO_PAL = { R: '#E52521', S: '#FCB985', N: '#5C2E00', B: '#2A6DE0', Y: '#FBD000' };
-const MARIO_ROWS = [
-  '....RRRRRRR.....',
-  '...RRRRRRRRR....',
-  '..RRRRRRRRRRR...',
-  '..NNNSSSSNSS....',
-  '.NSNSSSSSNSSS...',
-  '.NSNNSSSSNNNN...',
-  '.NNSSSSSSNNN....',
-  '...SSSSSSSS.....',
-  '..RRRBBBBRRR....',
-  '.RRRRBYBBYBRRRR.',
-  '.SSRBBBBBBBBSS..',
-  '.SSBBBBBBBBBBSS.',
-  '..BBBBB..BBBBB..',
-  '..BBB......BBB..',
-  '.NNNN......NNNN.',
-  '.NNNN......NNNN.',
-];
-
-/* Render a character-grid sprite as crisp 1×1 pixel rects. */
-const PixelSprite = ({ rows, palette, px = 1.5, style }) => {
-  const w = rows[0].length, h = rows.length;
-  const cells = [];
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      const fill = palette[row[x]];
-      if (fill) cells.push(<rect key={`${x}-${y}`} x={x} y={y} width="1" height="1" fill={fill} />);
-    }
-  });
-  return (
-    <svg width={w * px} height={h * px} viewBox={`0 0 ${w} ${h}`} shapeRendering="crispEdges" style={{ display: 'block', ...style }}>
-      {cells}
-    </svg>
-  );
-};
 
 /* Checkpoint flag on a silver pole — marks each past commit. */
 const CheckpointFlag = ({ active }) => (

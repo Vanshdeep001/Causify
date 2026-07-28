@@ -11,7 +11,7 @@
    Motion   : sparing — smooth transitions, subtle pulses.
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Silkscreen:wght@400;700&family=Syne:wght@700;800&family=Unbounded:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Fraunces:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=VT323&family=Silkscreen:wght@400;700&family=Syne:wght@700;800&family=Unbounded:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Fraunces:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&display=swap');
 
 :root {
   /* ── Surfaces (legacy names kept, values remapped) ── */
@@ -1290,9 +1290,13 @@ body {
 
 .rca2-title-stroke {
   color: transparent;
-  -webkit-text-stroke: 1px rgba(255, 255, 255, 0.7);
-  text-stroke: 1px rgba(255, 255, 255, 0.7);
-  transition: -webkit-text-stroke 0.15s ease, text-stroke 0.15s ease;
+  -webkit-text-stroke-width: 1px;
+  -webkit-text-stroke-color: rgba(255, 255, 255, 0.7);
+  /* Only the colour is transitioned. The `-webkit-text-stroke` shorthand carries
+     the stroke *width*, which browsers cannot interpolate — animating it made the
+     text repaint on every frame, which read as flickering on hover. Keeping the
+     width fixed and fading just the colour is smooth. */
+  transition: -webkit-text-stroke-color 0.15s ease;
 }
 
 .rca2-trigger-subtext {
@@ -1312,8 +1316,7 @@ body {
 }
 
 .rca2-collapse-trigger:hover .rca2-title-stroke {
-  -webkit-text-stroke: 1px rgba(255, 79, 86, 0.7);
-  text-stroke: 1px rgba(255, 79, 86, 0.7);
+  -webkit-text-stroke-color: rgba(255, 79, 86, 0.7);
 }
 
 .rca2-collapse-trigger:hover .rca2-trigger-subtext {
@@ -3189,4 +3192,234 @@ body {
 
 .dhub-seg.is-active .dhub-seg-provider {
   color: var(--dhub-accent);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * WORLD 1-1 — terminal chrome
+ *
+ * Black and white only. With colour off the table the character has to come
+ * from somewhere else, so it comes from surface and type: a CRT with scanlines
+ * and a soft bloom, hollow pixel lettering borrowed from the welcome screen,
+ * and Mario standing where the cursor is.
+ *
+ * Every layer is a static gradient or border — nothing animates per frame, and
+ * nothing sits between you and the text.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+.sigbay {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #080808;
+  /* Screen curvature, faked: a little more light at the top, vignetted corners.
+     This is what stops flat #080808 reading as a div rather than a display. */
+  background-image:
+    radial-gradient(130% 100% at 50% -10%, rgba(255, 255, 255, 0.055), transparent 60%),
+    radial-gradient(120% 120% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.55));
+}
+
+/* Scanlines. Tighter and stronger than a subtle nod — with no colour to carry
+   the theme, the surface has to. */
+.sigbay-scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.32) 0px,
+    rgba(0, 0, 0, 0.32) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  opacity: 0.6;
+}
+
+/* Brick edge, in grey. Repeating gradients, so no image and no request. */
+.sigbay-rail {
+  position: absolute;
+  top: 0;
+  bottom: 26px;
+  left: 0;
+  width: 18px;
+  pointer-events: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+  background-color: rgba(255, 255, 255, 0.035);
+  background-image:
+    repeating-linear-gradient(to bottom,
+      rgba(0, 0, 0, 0.5) 0px, rgba(0, 0, 0, 0.5) 1px, transparent 1px, transparent 12px),
+    repeating-linear-gradient(to right,
+      rgba(0, 0, 0, 0.5) 0px, rgba(0, 0, 0, 0.5) 1px, transparent 1px, transparent 9px);
+}
+
+.sigbay-screen {
+  position: absolute;
+  inset: 0 0 26px 18px;
+  padding: 10px 0 0 12px;
+}
+
+/* Phosphor bloom, white. A CRT halates, and this is what stops the greys
+   reading as flat web colours. One small shadow only — text-shadow is
+   per-glyph work, so anything heavier would show as jank on fast output. */
+.sigbay-screen .xterm-rows {
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.22);
+}
+
+/* ── Mario, as the cursor ──
+ * Positioned from JS against the panel root. Inert to the pointer so text
+ * selection still passes straight through him.
+ */
+.sigbay-mario {
+  position: absolute;
+  pointer-events: none;
+  z-index: 4;
+  /* Desaturated to keep the screen strictly black and white. He reads perfectly
+     well as a silhouette — the shape is what makes him recognisable, not the
+     red. Drop this filter and he becomes the single spot of colour, which is a
+     good look too if you ever want one. */
+  filter: grayscale(1) contrast(1.35) brightness(1.25);
+  animation: sigbay-mario-idle 1.4s steps(2, end) infinite;
+}
+
+/* Two frames, not an eased bob — an NES sprite snaps between poses. */
+@keyframes sigbay-mario-idle {
+  0%, 49%   { transform: translateY(0); }
+  50%, 100% { transform: translateY(-1px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sigbay-mario { animation: none; }
+}
+
+/* ── Level HUD ──
+ * Hollow pixel lettering, the same treatment as the welcome screen's wordmark:
+ * Silkscreen with a stroke and no fill.
+ */
+.sigbay-status {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 12px;
+  background: #000000;
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+  font-family: 'Silkscreen', 'VT323', monospace;
+  font-size: 0.5rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #C8C8C8;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* The labels are hollow; the values are solid. That contrast is what separates
+   them without needing a second colour. */
+.sigbay-status-key {
+  color: transparent;
+  -webkit-text-stroke-width: 0.6px;
+  -webkit-text-stroke-color: rgba(255, 255, 255, 0.85);
+}
+
+.sigbay-status-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.sigbay-live {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+/* The coin spins while the shell is alive. Desaturated to sit in a black and
+   white screen while still reading as a coin. */
+.sigbay-coin {
+  filter: grayscale(1) brightness(1.6) contrast(1.2);
+  animation: sigbay-coin-spin 1.6s steps(4, end) infinite;
+}
+
+/* Stepped, not smooth: an NES coin flips through a handful of frames. */
+@keyframes sigbay-coin-spin {
+  0%   { transform: scaleX(1); }
+  25%  { transform: scaleX(0.35); }
+  50%  { transform: scaleX(1); }
+  75%  { transform: scaleX(0.35); }
+  100% { transform: scaleX(1); }
+}
+
+.sigbay-live.is-down .sigbay-coin {
+  animation: none;
+  filter: grayscale(1) brightness(0.5);
+}
+
+.sigbay-live.is-down {
+  color: #7E7E7E;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sigbay-coin { animation: none; }
+}
+
+/* ── Level tabs ── */
+.sigbay-chan {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 9px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 2px;
+  color: #9A9A9A;
+  font-family: 'Silkscreen', 'VT323', monospace;
+  font-size: 0.5rem;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.sigbay-chan:hover {
+  color: #FFFFFF;
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+/* The active shell is a lit block — inverted, the way an 8-bit UI shows focus. */
+.sigbay-chan.is-active {
+  color: #000000;
+  background: #FFFFFF;
+  border-color: #FFFFFF;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.3);
+}
+
+.sigbay-chan-close {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.sigbay-chan-close:hover {
+  opacity: 1;
+}
+
+/* Links in output. With no colour to mark them, weight and underline do it. */
+.sigbay .xterm-link-layer a,
+.sigbay a {
+  color: #FFFFFF !important;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-decoration-color: rgba(255, 255, 255, 0.55);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.sigbay .xterm-link-layer a:hover,
+.sigbay a:hover {
+  text-decoration-color: #FFFFFF;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
 }
