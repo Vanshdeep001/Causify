@@ -41,6 +41,7 @@ const ChevronIcon = ({ open }) => (
 );
 
 const NotificationSystem = () => {
+  const activePath = useEditorStore((s) => s.activePath);
   const lastChange = useEditorStore((s) => s.lastChange);
   const revertNotification = useEditorStore((s) => s.revertNotification);
   const devServerNotification = useEditorStore((s) => s.devServerNotification);
@@ -52,17 +53,7 @@ const NotificationSystem = () => {
   const timerRef = useRef(null);
   const exitTimerRef = useRef(null);
 
-  // Show change notification
-  useEffect(() => {
-    if (!lastChange) return;
-    showToast({
-      title: `${lastChange.username} edited ${lastChange.path.split('/').pop()}`,
-      color: lastChange.color || '#4DD6FF',
-      kind: 'edit',
-      path: lastChange.path,
-      duration: 4000,
-    });
-  }, [lastChange]);
+
 
   // Show revert notification (higher priority, longer duration)
   useEffect(() => {

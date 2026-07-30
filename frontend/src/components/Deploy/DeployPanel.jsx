@@ -722,10 +722,14 @@ const DeployPanel = () => {
             />
           </div>
           <div>
+            {/* VT323, the terminal face. A pixel font renders small for its em
+                and has one weight, so the size goes up and 900 comes off;
+                tracking opens out rather than tightening, which is what a pixel
+                grid needs. */}
             <h1 className="logo-text" style={{
-              fontFamily: 'var(--font-header)', fontSize: '1.05rem', fontWeight: 900,
-              letterSpacing: '0.04em', margin: 0,
-              display: 'flex', alignItems: 'center', gap: '4px',
+              fontFamily: "'VT323', 'Silkscreen', monospace", fontSize: '1.6rem', fontWeight: 400,
+              letterSpacing: '0.06em', margin: 0,
+              display: 'flex', alignItems: 'center', gap: '6px',
             }}>
               <span style={{ color: 'var(--t1)' }}>DEPLOY</span>
               <span style={{

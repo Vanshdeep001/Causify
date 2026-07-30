@@ -88,6 +88,44 @@ function getLink(sessionId) {
   return readLinks()[sessionId] || null;
 }
 
+/**
+ * The origin remote recorded in a folder's own .git/config.
+ *
+ * Read directly rather than shelling out to git: this runs on the way into a
+ * panel, and spawning a process for one line would be the slowest part of it.
+ * The folder is only ever read.
+ */
+function readGitRemote(workspaceRoot) {
+  try {
+    const config = fs.readFileSync(path.join(workspaceRoot, '.git', 'config'), 'utf-8');
+    const section = config.split(/\[remote "origin"\]/)[1];
+    if (!section) return null;
+    const match = section.split(/\n\[/)[0].match(/^\s*url\s*=\s*(.+)$/m);
+    return match ? match[1].trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Reduce a repository URL to "host/owner/name" so the forms people actually
+ * have — https, ssh, with or without .git, with or without credentials — all
+ * compare equal. Without this, the same repository looks like several.
+ */
+function normalizeRepoUrl(url) {
+  if (!url) return null;
+  return String(url)
+    .trim()
+    .replace(/^git\+/, '')
+    .replace(/^ssh:\/\//, '')
+    .replace(/^git@([^:]+):/, '$1/')       // git@github.com:owner/repo
+    .replace(/^https?:\/\//, '')
+    .replace(/^[^@/]+@/, '')               // strip any embedded credentials
+    .replace(/\.git$/, '')
+    .replace(/\/+$/, '')
+    .toLowerCase() || null;
+}
+
 function setLink(sessionId, link) {
   if (!sessionId) throw new Error('sessionId is required to link a Render service');
   const links = readLinks();
@@ -712,7 +750,26 @@ function registerRenderDeployHandlers() {
     const key = retrieveApiKey();
     if (!key) return { exists: false };
 
-    const link = getLink(options.sessionId);
+    let link = getLink(options.sessionId);
+
+    /* No link yet, but the folder may already be deployed — someone can create
+     * a service on Render without Causify ever seeing it. Render ties a service
+     * to a Git repository, so the folder's own remote identifies it. Matching on
+     * that adopts the existing service instead of offering to create a second
+     * one for the same repository. */
+    if (!link?.serviceId && options.workspaceRoot) {
+      const remote = normalizeRepoUrl(readGitRemote(options.workspaceRoot));
+      if (remote) {
+        const listed = await listServices(key);
+        const match = (listed.services || []).find((s) => normalizeRepoUrl(s.repo) === remote);
+        if (match) {
+          link = { serviceId: match.id, serviceName: match.name, serviceUrl: match.url, serviceType: match.type };
+          setLink(options.sessionId, link);
+          console.log(`[Causify Render] Adopted existing service "${match.name}" for this repository`);
+        }
+      }
+    }
+
     if (!link?.serviceId) return { exists: false };
 
     try {

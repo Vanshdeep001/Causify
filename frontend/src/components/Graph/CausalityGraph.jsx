@@ -33,7 +33,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import useEditorStore from '../../store/useEditorStore';
 import { buildDependencyMap } from '../../utils/dependencyParser';
-import { buildLevel1, buildLevel2, buildLevel3, buildEgoGraph } from '../../utils/graphBuilder';
+import { buildLevel1, buildLevel2, buildLevel3, buildEgoGraph, buildFullGraph } from '../../utils/graphBuilder';
 
 // ═══════════════════════════════════════════════════════════
 //  MODE 1: Causality / Error-Flow Graph (original behavior)
@@ -261,7 +261,7 @@ const depNodeTypes = {
 // ═══════════════════════════════════════════════════════════
 
 const LayeredDepMode = ({ depMap, files, activePath }) => {
-  const [zoomLevel, setZoomLevel] = useState(0);
+  const [zoomLevel, setZoomLevel] = useState(4); // Default to Full Connectivity Graph
   const [focusFolder, setFocusFolder] = useState(null);
   const [focusFile, setFocusFile] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -273,11 +273,6 @@ const LayeredDepMode = ({ depMap, files, activePath }) => {
 
   /**
    * Zoom by a multiplier, animated.
-   *
-   * Multiplying rather than adding keeps each press feeling the same at any
-   * scale — a fixed step is huge when zoomed out and imperceptible when zoomed
-   * in. Clamped to the same bounds as the canvas so it stops cleanly at the
-   * ends instead of appearing to do nothing.
    */
   const stepZoom = useCallback((factor) => {
     const flow = graphInstanceRef.current;
@@ -290,12 +285,14 @@ const LayeredDepMode = ({ depMap, files, activePath }) => {
     if (!depMap) { setNodes([]); setEdges([]); return; }
 
     let result = { nodes: [], edges: [] };
-    if (zoomLevel === 0) {
+    if (zoomLevel === 4) {
+      result = buildFullGraph(depMap, files);
+    } else if (zoomLevel === 0) {
       const center = focusFile || activePath;
       if (center && depMap.nodes.has(center)) {
         result = buildEgoGraph(depMap, center);
       } else {
-        result = buildLevel1(depMap);
+        result = buildFullGraph(depMap, files);
       }
     } else if (zoomLevel === 1) {
       result = buildLevel1(depMap);
@@ -310,7 +307,7 @@ const LayeredDepMode = ({ depMap, files, activePath }) => {
     setTimeout(() => {
       if (graphInstanceRef.current) graphInstanceRef.current.fitView({ padding: 0.15, duration: 400 });
     }, 100);
-  }, [depMap, zoomLevel, focusFolder, focusFile, activePath]);
+  }, [depMap, zoomLevel, focusFolder, focusFile, activePath, files]);
 
   useEffect(() => {
     if (activePath !== prevActivePathRef.current) {
@@ -323,15 +320,17 @@ const LayeredDepMode = ({ depMap, files, activePath }) => {
     if (node.type === 'folderCluster') {
       setFocusFolder(node.data.fullPath);
       setZoomLevel(2);
-    } else if (node.type === 'fileNode' && !node.data.isCenter) {
+    } else if (node.type === 'fileNode') {
+      if (node.data?.fullPath) {
+        useEditorStore.getState().openFile(node.data.fullPath);
+      }
       if (zoomLevel === 0) { setFocusFile(node.data.fullPath); }
+      else if (zoomLevel === 4) { setFocusFile(node.data.fullPath); }
       else { setFocusFile(node.data.fullPath); setZoomLevel(3); }
-    } else if (node.type === 'fileNode' && node.data.isCenter && zoomLevel === 0) {
-      setFocusFile(node.data.fullPath);
-      setZoomLevel(3);
     }
   }, [zoomLevel]);
 
+  const goToFullGraph = () => { setZoomLevel(4); setFocusFolder(null); setFocusFile(null); };
   const goToOverview = () => { setZoomLevel(1); setFocusFolder(null); setFocusFile(null); };
   const goToEgo = () => { setZoomLevel(0); setFocusFile(activePath); setFocusFolder(null); };
   const goToFolder = (folder) => { setZoomLevel(2); setFocusFolder(folder); setFocusFile(null); };
@@ -355,15 +354,17 @@ const LayeredDepMode = ({ depMap, files, activePath }) => {
     setZoomLevel(0);
   };
 
-  const levelLabels = { 0: 'EGO GRAPH', 1: 'OVERVIEW', 2: 'MODULE', 3: 'FILE' };
+  const levelLabels = { 4: 'FULL GRAPH', 0: 'EGO GRAPH', 1: 'FOLDERS', 2: 'MODULE', 3: 'FILE' };
 
   return (
     <div className="dep-graph-container">
       <div className="dep-top-bar">
         <div className="dep-breadcrumb">
+          <button className={`dep-crumb ${zoomLevel === 4 ? 'dep-crumb-active' : ''}`} onClick={goToFullGraph} title="See all files & connections across the entire project at once">🌐 FULL GRAPH</button>
+          <span className="dep-crumb-sep">/</span>
           <button className={`dep-crumb ${zoomLevel === 0 ? 'dep-crumb-active' : ''}`} onClick={goToEgo} title="Ego-graph centered on active file">◎ EGO</button>
           <span className="dep-crumb-sep">/</span>
-          <button className={`dep-crumb ${zoomLevel === 1 ? 'dep-crumb-active' : ''}`} onClick={goToOverview}>PROJECT</button>
+          <button className={`dep-crumb ${zoomLevel === 1 ? 'dep-crumb-active' : ''}`} onClick={goToOverview} title="Folder clusters overview">📁 FOLDERS</button>
           {focusFolder && (
             <>
               <span className="dep-crumb-sep">/</span>

@@ -188,6 +188,23 @@ export function schedulePersist(path, text) {
  * the cursor/selection) and translates local Monaco edits into Y ops.
  * ───────────────────────────────────────────────────────── */
 
+/* Depth of in-flight remote applies.
+ *
+ * Monaco puts no "this came from the network" flag on its content-change
+ * events — IModelContentChange carries only range/offset/length/text. So
+ * anything that must tell a collaborator's edit apart from the user's own
+ * typing has to ask us. Follow mode is the main caller: it exits when you
+ * start editing, and without this it would read every incoming keystroke from
+ * the person you're following as your own and drop you out.
+ *
+ * A counter, not a boolean, so overlapping applies can't have the inner one
+ * clear the flag while the outer is still running.
+ */
+let remoteApplyDepth = 0;
+
+/** True while a remote edit is being written into a Monaco model. */
+export const isApplyingRemote = () => remoteApplyDepth > 0;
+
 /**
  * @returns {{destroy: () => void}}
  */
@@ -195,42 +212,54 @@ export function createBinding(ytext, model, monaco, { path, onLocalChange, onRem
   let applyingRemote = false;
   const bindingOrigin = { binding: true };
 
+  /* Wrap every write this binding makes into the model. The try/finally
+   * matters: a throw that left the flag raised would silently disable
+   * follow-mode's exit-on-typing for the rest of the session. */
+  const asRemoteApply = (fn) => {
+    applyingRemote = true;
+    remoteApplyDepth += 1;
+    try {
+      fn();
+    } finally {
+      remoteApplyDepth = Math.max(0, remoteApplyDepth - 1);
+      applyingRemote = false;
+    }
+  };
+
   // Initial content sync: make the model match the shared Y.Text. Seeding of a
   // fresh file happens in maybeSeed() (called before this), which is
   // collaboration-aware — so by now the Y.Text already holds the right content.
-  applyingRemote = true;
   const initial = ytext.toString();
-  if (model.getValue() !== initial) model.setValue(initial);
-  applyingRemote = false;
+  if (model.getValue() !== initial) asRemoteApply(() => model.setValue(initial));
 
   // Y.Text -> Monaco (remote edits arrive here)
   const yObserver = (event, transaction) => {
     // Our own local edits are already in the model — skip re-applying them.
     if (transaction.origin === bindingOrigin) return;
 
-    applyingRemote = true;
-    let index = 0;
-    event.delta.forEach((op) => {
-      if (op.retain != null) {
-        index += op.retain;
-      } else if (op.insert != null) {
-        const pos = model.getPositionAt(index);
-        model.applyEdits([{
-          range: new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column),
-          text: op.insert,
-          forceMoveMarkers: true,
-        }]);
-        index += op.insert.length;
-      } else if (op.delete != null) {
-        const from = model.getPositionAt(index);
-        const to = model.getPositionAt(index + op.delete);
-        model.applyEdits([{
-          range: new monaco.Range(from.lineNumber, from.column, to.lineNumber, to.column),
-          text: '',
-        }]);
-      }
+    asRemoteApply(() => {
+      let index = 0;
+      event.delta.forEach((op) => {
+        if (op.retain != null) {
+          index += op.retain;
+        } else if (op.insert != null) {
+          const pos = model.getPositionAt(index);
+          model.applyEdits([{
+            range: new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column),
+            text: op.insert,
+            forceMoveMarkers: true,
+          }]);
+          index += op.insert.length;
+        } else if (op.delete != null) {
+          const from = model.getPositionAt(index);
+          const to = model.getPositionAt(index + op.delete);
+          model.applyEdits([{
+            range: new monaco.Range(from.lineNumber, from.column, to.lineNumber, to.column),
+            text: '',
+          }]);
+        }
+      });
     });
-    applyingRemote = false;
 
     const text = ytext.toString();
     const remoteUid = transaction.origin && transaction.origin.remote ? transaction.origin.userId : null;

@@ -185,6 +185,30 @@ export const buildDependencyMap = (files) => {
 // ── Main impact analysis ────────────────────────────────
 
 /**
+ * Phrase a set of impacts as one line: "May cause 1 error and 2 warnings in app.js".
+ *
+ * Exported because callers narrow the impact list before showing it — a warning
+ * raised for one person lists only what broke in their file, and the headline
+ * has to count the same things the list beneath it shows.
+ *
+ * @param {Array} impacts - The impacts being described
+ * @returns {string} Summary line, or '' when there is nothing to report
+ */
+export const summarizeImpacts = (impacts) => {
+  if (!impacts || impacts.length === 0) return '';
+
+  const files = [...new Set(impacts.map(i => i.file.split('/').pop()))];
+  const errorCount = impacts.filter(i => i.severity === 'error').length;
+  const warningCount = impacts.filter(i => i.severity === 'warning').length;
+
+  const parts = [];
+  if (errorCount > 0) parts.push(`${errorCount} error${errorCount > 1 ? 's' : ''}`);
+  if (warningCount > 0) parts.push(`${warningCount} warning${warningCount > 1 ? 's' : ''}`);
+
+  return `May cause ${parts.join(' and ')} in ${files.join(', ')}`;
+};
+
+/**
  * Analyze the impact of a change in one file on all other files.
  *
  * @param {string} changedPath - Path of the file that changed
@@ -350,20 +374,9 @@ export const analyzeImpact = (changedPath, oldContent, newContent, allFiles) => 
     }
   }
 
-  // Build summary
   const affectedFiles = [...new Set(impacts.map(i => i.file.split('/').pop()))];
-  const errorCount = impacts.filter(i => i.severity === 'error').length;
-  const warningCount = impacts.filter(i => i.severity === 'warning').length;
 
-  let summary = '';
-  if (impacts.length > 0) {
-    const parts = [];
-    if (errorCount > 0) parts.push(`${errorCount} error${errorCount > 1 ? 's' : ''}`);
-    if (warningCount > 0) parts.push(`${warningCount} warning${warningCount > 1 ? 's' : ''}`);
-    summary = `May cause ${parts.join(' and ')} in ${affectedFiles.join(', ')}`;
-  }
-
-  return { impacts, summary, affectedFiles };
+  return { impacts, summary: summarizeImpacts(impacts), affectedFiles };
 };
 
 export default analyzeImpact;
