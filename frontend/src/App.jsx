@@ -11,7 +11,8 @@ import CodeShotModal from './components/CodeShot/CodeShotModal';
 import { parseCodeShotLink } from './utils/codeShotDeepLink';
 import useEditorStore from './store/useEditorStore';
 import { connectWebSocket, disconnectWebSocket } from './services/socket';
-import { getSessionFiles, saveFile, getSession, touchSession, leaveSession } from './services/api';
+import { buildCollabCallbacks, reconnectOnConnected } from './services/collabCallbacks';
+import { saveFile, getSession, touchSession, leaveSession } from './services/api';
 import MigrateWorkspaceModal from './components/Editor/MigrateWorkspaceModal';
 import causifyLogo from './assets/causify-logo.png';
 
@@ -202,134 +203,12 @@ const App = () => {
     reconnectedRef.current = true;
     console.log('[Causify] Reconnecting to session:', sessionId);
 
-    const store = useEditorStore.getState();
-
-    // Reconnect WebSocket
-    connectWebSocket(sessionId, currentUser, {
-      onCodeChange: (d) => {
-        const currentU = useEditorStore.getState().currentUser;
-        const isOwnChange = d.userId === currentU?.id;
-        useEditorStore.getState().updateRemoteFile(d.path, d.code, isOwnChange ? null : d.userId);
-      },
-      onUsersChange: (d) => useEditorStore.getState().setConnectedUsers(d.users || []),
-      onExecutionResult: (d) => useEditorStore.getState().handleExecutionResult(d),
-      onSnapshot: (d) => useEditorStore.getState().addSnapshot(d),
-      onCursorUpdate: (d) => {
-        const currentU = useEditorStore.getState().currentUser;
-        if (d.userId !== currentU?.id) {
-          if (d.onWhiteboard) {
-            if (window.onWhiteboardCursorMessage) window.onWhiteboardCursorMessage(d);
-          } else {
-            useEditorStore.getState().updateRemoteCursor(d.userId, d);
-          }
-        }
-      },
-      onPresenceUpdate: (d) => {
-        const currentU = useEditorStore.getState().currentUser;
-        if (d.userId !== currentU?.id) useEditorStore.getState().updateFilePresence(d.userId, d);
-      },
-      onFileDelete: (d) => {
-        const currentU = useEditorStore.getState().currentUser;
-        if (d.userId !== currentU?.id) useEditorStore.getState().removeFile(d.path);
-      },
-      // A peer uploaded a project into the session. The files arrived over REST,
-      // so there are no per-file events to apply — re-read the list instead.
-      onProjectSync: async (d) => {
-        const state = useEditorStore.getState();
-        if (d?.userId === state.currentUser?.id) return; // our own upload
-        if (!state.sessionId) return;
-        try {
-          const files = await getSessionFiles(state.sessionId);
-          useEditorStore.getState().mergeRemoteFiles(files);
-        } catch (err) {
-          console.warn('[Causify] Could not load the shared project:', err.message);
-        }
-      },
-      onWhiteboardChange: (d) => {
-        if (window.onWhiteboardSocketMessage) window.onWhiteboardSocketMessage(d);
-      },
-      onRevert: (d) => {
-        const currentU = useEditorStore.getState().currentUser;
-        if (d.revertedUser === currentU?.username || d.revertedUser === currentU?.id) {
-          useEditorStore.getState().setRevertNotification({
-            username: d.username,
-            path: d.path,
-            reason: 'cross-file impact',
-          });
-        }
-      },
-      onVoiceSignal: (d) => {
-        // Route to VoiceRoom component via global handler
-        if (window._onVoiceSignal) window._onVoiceSignal(d);
-      },
-      onUserKicked: (d) => {
-        const currentU = useEditorStore.getState().currentUser;
-        if (d.userId === currentU?.id) {
-          alert("You have been removed from the session by the owner.");
-          const store = useEditorStore.getState();
-          store.resetGit();
-          useEditorStore.setState({
-            sessionId: null,
-            sessionName: '',
-            currentUser: null,
-            userRole: null,
-            connectedUsers: [],
-          });
-          disconnectWebSocket();
-          window.location.reload();
-        }
-      },
-      onFollowUpdate: (d) => {
-        const store = useEditorStore.getState();
-        const currentU = store.currentUser;
-        if (!currentU) return;
-
-        if (d.type === 'follow-start') {
-          // Someone started following us
-          if (d.leaderId === currentU.id) {
-            store.addFollower(d.followerId);
-            const followerUser = store.connectedUsers.find(u => u.id === d.followerId);
-            store.setFollowToast(`${followerUser?.username || 'Someone'} is now following you`);
-          }
-        } else if (d.type === 'follow-stop') {
-          // Someone stopped following us
-          if (d.leaderId === currentU.id) {
-            store.removeFollower(d.followerId);
-          }
-          // If we were following them and they stopped (shouldn't happen, but guard)
-          if (d.followerId === currentU.id) {
-            store.stopFollowing();
-          }
-        } else if (d.type === 'follow-state') {
-          // Incoming leader editor state — only process if we're following this leader
-          if (store.followingUserId === d.leaderId) {
-            store.setFollowState(d);
-          }
-        }
-      },
-      onConnected: () => {
-        console.log('[Causify] Reconnected to Collab');
-        const currentState = useEditorStore.getState();
-        currentState.loadSessionHistory(sessionId);
-        // Fetch latest files from backend to ensure sync
-        getSessionFiles(sessionId).then((serverFiles) => {
-          if (serverFiles && serverFiles.length > 0) {
-            const fileMap = {};
-            serverFiles.forEach(f => { fileMap[f.path] = f.content; });
-            // Merge: use server files as base, keeping local activePath
-            useEditorStore.setState({
-              files: fileMap,
-              code: fileMap[currentState.activePath] || serverFiles[0].content || '',
-              activePath: fileMap[currentState.activePath] ? currentState.activePath : serverFiles[0].path,
-            });
-          }
-        }).catch((err) => {
-          // File fetch is best-effort — we already have files from localStorage.
-          // The WebSocket connected successfully, so the session IS alive.
-          console.warn('[Causify] Could not fetch files on reconnect, using cached files:', err.message);
-        });
-      },
-    });
+    // Reconnect WebSocket. Same handler set the create/join path uses — see
+    // collabCallbacks.js for why these two must not be spelled out separately.
+    connectWebSocket(sessionId, currentUser, buildCollabCallbacks({
+      sessionId,
+      onConnected: reconnectOnConnected(sessionId),
+    }));
   }, [bootstrapDone, sessionId, currentUser]);
 
   // Keyboard Shortcuts

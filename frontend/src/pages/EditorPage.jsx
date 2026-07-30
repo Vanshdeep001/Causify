@@ -788,9 +788,16 @@ const EditorPage = () => {
                 <CodeShotButton />
               </div>
             ) : (
+              /* Matches the filename that occupies this same slot — same face,
+                 weight and size, only dimmer. The row then reads identically
+                 whether a file is open or not, instead of the type changing
+                 shape as soon as one is. */
               <span style={{
-                fontFamily: 'var(--font-body)', fontSize: '0.76rem',
-                color: 'var(--t4)',
+                fontFamily: 'var(--font-header)',
+                fontWeight: 700,
+                fontSize: '0.78rem',
+                letterSpacing: '0.02em',
+                color: 'var(--t3)',
               }}>No file open</span>
             )}
 

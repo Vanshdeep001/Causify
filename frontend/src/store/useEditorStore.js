@@ -14,7 +14,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { executeCode, createSnapshot, getTimeline, getDeployments } from '../services/api';
-import { analyzeImpact } from '../utils/impactAnalyzer';
+import { analyzeImpact, summarizeImpacts } from '../utils/impactAnalyzer';
 import { sendCodeChange, sendRevert, sendFollowStart, sendFollowStop } from '../services/socket';
 
 const parseExecutionGraph = (code, language) => {
@@ -672,6 +672,24 @@ const useEditorStore = create(persist((set, get) => ({
       snapshots: [],
       currentSnapshotIndex: -1,
       isReplaying: false,
+
+      // Everything below described the folder that just closed. Left up, the
+      // terminal would keep showing that project's repository and dev servers
+      // over a welcome screen with nothing open — which is how a closed folder
+      // ended up still looking connected.
+      isTerminalOpen: false,
+      terminalLayoutMode: 'normal',
+      gitRepoConnected: false,
+      gitRepoUrl: '',
+      gitStatus: '',
+      gitLog: '',
+      gitLoading: false,
+      gitError: null,
+      commitSuggestion: null,
+      output: '',
+      error: '',
+      rootCause: null,
+      causalityGraph: null,
     });
   },
 
@@ -901,15 +919,88 @@ const useEditorStore = create(persist((set, get) => ({
     return 'plaintext';
   },
 
-  setCode: (code, remote = false) => {
-    const { activePath, language, isReplaying } = get();
-    if (isReplaying) {
-      set((s) => ({
-        code,
-        files: { ...s.files, [activePath]: code }
-      }));
-      return;
+  recordLineDiff: (path, oldContent, newContent, userId, username, color) => {
+    if (!path || oldContent === newContent) return;
+
+    const oldLines = (oldContent || '').split('\n');
+    const newLines = (newContent || '').split('\n');
+    const now = Date.now();
+    const existingPathChanges = { ...(get().remoteLineChanges[path] || {}) };
+
+    let top = 0;
+    while (top < oldLines.length && top < newLines.length && oldLines[top] === newLines[top]) {
+      top++;
     }
+
+    let bottomOld = oldLines.length - 1;
+    let bottomNew = newLines.length - 1;
+    while (bottomOld >= top && bottomNew >= top && oldLines[bottomOld] === newLines[bottomNew]) {
+      bottomOld--;
+      bottomNew--;
+    }
+
+    // Range [top, bottomNew] in the NEW file is what changed
+    for (let i = top; i <= bottomNew; i++) {
+      const lineNum = i + 1;
+      const prevRecord = existingPathChanges[lineNum];
+      const sameUser = prevRecord && prevRecord.userId === (userId || 'local');
+
+      // Preserve initial baseline oldLine if same user is continuing to edit this line
+      const rawOldLine = i <= bottomOld ? oldLines[i] : undefined;
+      const initialOldLine = sameUser ? prevRecord.oldLine : (rawOldLine ?? '(line added)');
+      const newLineVal = newLines[i] ?? '';
+
+      // Determine change type relative to original baseline line
+      let changeType = sameUser ? prevRecord.type : (rawOldLine === undefined ? 'added' : (i > bottomOld ? 'added' : 'modified'));
+      if (!sameUser && (rawOldLine === '' || rawOldLine === undefined)) {
+        changeType = 'added';
+      }
+
+      // If user reverted/cleared the line back to its original baseline content, clear change record
+      if (sameUser && (newLineVal === initialOldLine || (initialOldLine === '(line added)' && newLineVal === ''))) {
+        delete existingPathChanges[lineNum];
+        continue;
+      }
+
+      existingPathChanges[lineNum] = {
+        userId: userId || 'local',
+        username: username || 'You',
+        color: color || '#FFB224',
+        timestamp: now,
+        oldLine: initialOldLine,
+        newLine: newLineVal,
+        type: changeType,
+      };
+    }
+
+    // Cleanup logic for stale line numbers beyond current file length
+    Object.keys(existingPathChanges).forEach((ln) => {
+      if (parseInt(ln, 10) > newLines.length) {
+        delete existingPathChanges[ln];
+      }
+    });
+
+    set((s) => ({
+      remoteLineChanges: { ...s.remoteLineChanges, [path]: existingPathChanges }
+    }));
+  },
+
+  setCode: (code, remote = false) => {
+    const { activePath, language, isReplaying, files, currentUser } = get();
+    if (isReplaying || !activePath) return;
+
+    const oldContent = files[activePath] || '';
+    if (oldContent !== code) {
+      get().recordLineDiff(
+        activePath,
+        oldContent,
+        code,
+        currentUser?.id || 'local',
+        currentUser?.username || 'You',
+        currentUser?.color || '#FFB224'
+      );
+    }
+
     set((s) => ({
       code,
       files: { ...s.files, [activePath]: code },
@@ -918,8 +1009,6 @@ const useEditorStore = create(persist((set, get) => ({
       rootCause: null,
       causalityGraph: parseExecutionGraph(code, language)
     }));
-    // Impact warnings are only shown to REMOTE users (in updateRemoteFile),
-    // not to the user who is making the change.
   },
 
   setCollisionWarning: (warning) => set({ collisionWarning: warning }),
@@ -932,72 +1021,21 @@ const useEditorStore = create(persist((set, get) => ({
     // silently falls behind what everyone is looking at. Debounced, because this
     // fires per keystroke batch and a write per keystroke would hammer the disk.
     if (get().workspaceRoot) get().scheduleLocalPersist(path, content || '');
-    const { activePath, files, connectedUsers, remoteLineChanges } = get();
+    const { activePath, files, connectedUsers } = get();
     const oldContent = files[path] || '';
     const newContent = content || '';
 
     // ── Compute line-level diff (Anchor-based search) ──
-    if (userId && oldContent !== newContent) {
-      const oldLines = oldContent.split('\n');
-      const newLines = newContent.split('\n');
-      const now = Date.now();
-      const user = connectedUsers.find(u => u.id === userId);
-      const existingPathChanges = { ...(remoteLineChanges[path] || {}) };
-
-      let top = 0;
-      while (top < oldLines.length && top < newLines.length && oldLines[top] === newLines[top]) {
-        top++;
-      }
-
-      let bottomOld = oldLines.length - 1;
-      let bottomNew = newLines.length - 1;
-      while (bottomOld >= top && bottomNew >= top && oldLines[bottomOld] === newLines[bottomNew]) {
-        bottomOld--;
-        bottomNew--;
-      }
-
-      // Range [top, bottomNew] in the NEW file is what changed
-      for (let i = top; i <= bottomNew; i++) {
-        const oldLine = i <= bottomOld ? oldLines[i] : undefined;
-        const newLine = newLines[i];
-
-        existingPathChanges[i + 1] = {
-          userId,
-          username: user?.username || userId,
-          color: user?.color || '#6366f1',
-          timestamp: now,
-          oldLine: oldLine ?? '(line added)',
-          newLine: newLine ?? '(line removed)',
-          type: oldLine === undefined ? 'added' : (i > bottomOld ? 'added' : 'modified'),
-        };
-      }
-
-      // Cleanup logic still required to remove stale high line numbers
-      Object.keys(existingPathChanges).forEach(ln => {
-        if (parseInt(ln, 10) > newLines.length) {
-          delete existingPathChanges[ln];
-        }
-      });
-
-      set((s) => ({
-        remoteLineChanges: { ...s.remoteLineChanges, [path]: existingPathChanges }
-      }));
-
-      // Auto-fade changes after 30s
-      setTimeout(() => {
-        const current = get().remoteLineChanges[path];
-        if (!current) return;
-        const cleaned = { ...current };
-        Object.keys(cleaned).forEach(ln => {
-          if (cleaned[ln].timestamp === now) delete cleaned[ln];
-        });
-        set((s) => ({
-          remoteLineChanges: {
-            ...s.remoteLineChanges,
-            [path]: Object.keys(cleaned).length > 0 ? cleaned : undefined
-          }
-        }));
-      }, 30000);
+    if (oldContent !== newContent) {
+      const user = connectedUsers.find((u) => u.id === userId);
+      get().recordLineDiff(
+        path,
+        oldContent,
+        newContent,
+        userId,
+        user?.username || userId,
+        user?.color || '#6366f1'
+      );
     }
 
     set((s) => ({
@@ -1008,16 +1046,34 @@ const useEditorStore = create(persist((set, get) => ({
     if (userId) {
       get().registerRemoteChange(userId, path);
 
-      // Run cross-file impact analysis on remote changes
+      /* Cross-file impact analysis on remote changes.
+       *
+       * Every client receives the change and reaches the same conclusion, so
+       * without a check the whole room gets the same red banner — including
+       * people working in files that were not touched. An alarm that fires for
+       * everyone is one nobody reads.
+       *
+       * It is raised for the person whose work actually broke: the file open in
+       * front of them is one the change affects. Everyone else is left alone,
+       * and they are the one placed to tell the author what happened.
+       */
       const updatedFiles = get().files;
       const result = analyzeImpact(path, oldContent, newContent, updatedFiles);
-      if (result.impacts.length > 0) {
+      const myFile = get().activePath;
+      const affectsMyWork = Boolean(myFile) && result.affectedFiles.includes(myFile);
+
+      if (result.impacts.length > 0 && affectsMyWork) {
         const user = connectedUsers.find(u => u.id === userId);
+        // Narrowed to this file: the banner speaks to what broke in front of
+        // you, not to every consequence the change had elsewhere. The headline
+        // is rebuilt from the same narrowed list so it cannot claim more than
+        // the rows beneath it show.
+        const mine = result.impacts.filter((i) => i.file === myFile);
         get().addImpactWarning({
           changedBy: user?.username || userId,
           changedPath: path,
-          impacts: result.impacts,
-          summary: result.summary,
+          impacts: mine,
+          summary: summarizeImpacts(mine),
           affectedFiles: result.affectedFiles,
           oldContent: oldContent,
         });

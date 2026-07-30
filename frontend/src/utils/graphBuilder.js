@@ -589,4 +589,87 @@ export const buildEgoGraph = (depMap, centerPath) => {
   return { nodes: egoNodes, edges: egoEdges };
 };
 
-export default { buildLevel1, buildLevel2, buildLevel3, buildEgoGraph };
+// ── FULL PROJECT GRAPH: All files & all connections ─────
+
+export const buildFullGraph = (depMap, files) => {
+  const { nodes: nodeMap, edges: rawEdges } = depMap;
+  if (!nodeMap || nodeMap.size === 0) return { nodes: [], edges: [] };
+
+  const allFiles = [...nodeMap.keys()];
+  const fileNodes = [];
+  const fileEdges = [];
+
+  let maxInDegree = 0;
+  for (const fp of allFiles) {
+    const n = nodeMap.get(fp);
+    if (n && n.inDegree > maxInDegree) maxInDegree = n.inDegree;
+  }
+
+  const COLS = Math.min(4, Math.ceil(Math.sqrt(allFiles.length)));
+  const X_GAP = 300;
+  const Y_GAP = 180;
+
+  allFiles.forEach((fp, i) => {
+    const n = nodeMap.get(fp);
+    if (!n) return;
+
+    const row = Math.floor(i / COLS);
+    const col = i % COLS;
+    const risk = getRiskLevel(n.inDegree, maxInDegree);
+
+    fileNodes.push({
+      id: `file:${fp}`,
+      type: 'fileNode',
+      position: { x: col * X_GAP + 60, y: row * Y_GAP + 60 },
+      data: {
+        label: n.fileName,
+        fullPath: fp,
+        fileType: n.fileType,
+        icon: FILE_TYPE_ICONS[n.fileType] || '📁',
+        inDegree: n.inDegree,
+        outDegree: n.imports.size,
+        risk,
+        riskStyle: RISK_COLORS[risk],
+        isEntryPoint: n.isEntryPoint,
+        isExternal: false,
+        folder: n.folder === '/' ? '(root)' : n.folder.split('/').pop(),
+      },
+    });
+  });
+
+  const edgeSet = new Set();
+  for (const edge of rawEdges) {
+    const key = `${edge.source}->${edge.target}`;
+    if (edgeSet.has(key)) continue;
+    edgeSet.add(key);
+
+    const srcNode = nodeMap.get(edge.source);
+    const tgtNode = nodeMap.get(edge.target);
+    const srcType = srcNode?.fileType;
+    const tgtType = tgtNode?.fileType;
+
+    let strokeColor = '#3DD68C'; // default green
+    if (edge.type === 'html-script' || srcType === 'html') strokeColor = '#F06529';
+    else if (edge.type === 'html-link' || tgtType === 'css') strokeColor = '#2965F1';
+    else if (srcType === 'js') strokeColor = '#F7DF1E';
+
+    fileEdges.push({
+      id: `full:${key}`,
+      source: `file:${edge.source}`,
+      target: `file:${edge.target}`,
+      type: 'smoothstep',
+      animated: true,
+      label: edge.type?.replace('html-', '') || 'imports',
+      style: { stroke: strokeColor, strokeWidth: 2 },
+      labelStyle: { fill: strokeColor, fontWeight: 700, fontSize: 9, fontFamily: 'JetBrains Mono, monospace' },
+      labelBgPadding: [4, 2],
+      labelBgBorderRadius: 4,
+      labelBgStyle: { fill: '#121212', fillOpacity: 0.95, stroke: strokeColor, strokeWidth: 1 },
+      markerEnd: { type: 'arrowclosed', color: strokeColor },
+    });
+  }
+
+  return { nodes: fileNodes, edges: fileEdges };
+};
+
+export default { buildLevel1, buildLevel2, buildLevel3, buildEgoGraph, buildFullGraph };

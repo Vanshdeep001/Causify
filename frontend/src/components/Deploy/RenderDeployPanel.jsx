@@ -199,7 +199,13 @@ const RenderDeployPanel = () => {
       if (!targetSessionId || !window.electronAPI?.checkExistingRenderDeploy) return;
 
       try {
-        const result = await window.electronAPI.checkExistingRenderDeploy({ sessionId: targetSessionId });
+        // workspaceRoot lets the main process match this folder's git remote
+        // against an existing Render service, so a project already deployed
+        // outside Causify is adopted rather than duplicated.
+        const result = await window.electronAPI.checkExistingRenderDeploy({
+          sessionId: targetSessionId,
+          workspaceRoot: useEditorStore.getState().workspaceRoot || undefined,
+        });
         if (result?.exists) {
           // Service confirmed on Render — ensure the panel shows success
           if (deployStatus === 'idle') {
@@ -579,10 +585,14 @@ const RenderDeployPanel = () => {
             />
           </div>
           <div>
+            {/* VT323, the terminal face. A pixel font renders small for its em
+                and has one weight, so the size goes up and 900 comes off;
+                tracking opens out rather than tightening, which is what a pixel
+                grid needs. */}
             <h1 className="logo-text" style={{
-              fontFamily: 'var(--font-header)', fontSize: '1.05rem', fontWeight: 900,
-              letterSpacing: '0.04em', margin: 0,
-              display: 'flex', alignItems: 'center', gap: '4px',
+              fontFamily: "'VT323', 'Silkscreen', monospace", fontSize: '1.6rem', fontWeight: 400,
+              letterSpacing: '0.06em', margin: 0,
+              display: 'flex', alignItems: 'center', gap: '6px',
             }}>
               <span style={{ color: 'var(--t1)' }}>DEPLOY</span>
               <span style={{

@@ -9,7 +9,12 @@ import React, { useRef, useCallback, useEffect, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import useEditorStore from '../../store/useEditorStore';
 import { sendCursorPosition, sendFollowState, sendFilePresence } from '../../services/socket';
-import { getFileText, createBinding, maybeSeed, schedulePersist, isCollabActive } from '../../services/collabDoc';
+import { getFileText, createBinding, maybeSeed, schedulePersist, isCollabActive, isApplyingRemote } from '../../services/collabDoc';
+
+/* How soon after a keypress, click or paste an edit must land to count as the
+ * user's own. Generous enough to cover a slow frame, far shorter than the gap
+ * before any unrelated programmatic rewrite. */
+const USER_EDIT_WINDOW_MS = 500;
 
 const MonacoEditor = () => {
   const editorRef = useRef(null);
@@ -25,8 +30,9 @@ const MonacoEditor = () => {
   const [editorReady, setEditorReady] = useState(false);
   const collabReady = useEditorStore((s) => s.collabReady);
 
-  // Hover card state
-  const [hoverInfo, setHoverInfo] = useState(null); // { x, y, change, line }
+  // Hover card state & Line inspector
+  const [hoverInfo, setHoverInfo] = useState(null); // { path, change, line, pinned }
+  const [inspectorOpen, setInspectorOpen] = useState(false);
 
   const code = useEditorStore((s) => s.code);
   const setCode = useEditorStore((s) => s.setCode);
@@ -47,7 +53,9 @@ const MonacoEditor = () => {
   const stopFollowing = useEditorStore((s) => s.stopFollowing);
   const connectedUsers = useEditorStore((s) => s.connectedUsers);
   const followDecorationsRef = useRef([]);
-  const isFollowScrollingRef = useRef(false);
+  // When the user last did something with their own hands, used to tell an
+  // edit they made from one the app made on their behalf.
+  const lastUserInputRef = useRef(0);
 
   // Owner-controlled access: viewers get a read-only editor.
   const canEdit = userRole === 'owner'
@@ -294,111 +302,86 @@ const MonacoEditor = () => {
         });
       }
 
-      // Auto-exit follow mode on local scroll (not triggered by follow sync)
-      if (store.followingUserId && !isFollowScrollingRef.current) {
-        store.stopFollowing();
-        store.setFollowToast('Follow mode exited — you scrolled');
-      }
     });
 
-    // Auto-exit follow mode on local typing
-    editor.onDidChangeModelContent((e) => {
+    /* ── Follow Mode: release when YOU take over ──
+     *
+     * Whether the user took over cannot be judged from the editor's derived
+     * state. Following someone into their file rewrites the whole model and
+     * resets the scroll position — through the editor's own change and scroll
+     * events that is indistinguishable from a person typing and scrolling, so
+     * watching those drops you out of follow at the exact moment it starts
+     * working.
+     *
+     * Real input events are unambiguous: they fire only for a human at this
+     * keyboard, never for anything the app does to the editor.
+     */
+    const releaseFollow = (reason) => {
       const store = useEditorStore.getState();
-      if (store.followingUserId && e.changes.length > 0) {
-        // Only exit if the change is local (not from follow state sync)
-        const isLocal = e.changes.some(c => !c.forceMoveMarkers);
-        if (isLocal) {
-          store.stopFollowing();
-          store.setFollowToast('Follow mode exited — you started editing');
-        }
-      }
+      if (!store.followingUserId) return;
+      store.stopFollowing();
+      store.setFollowToast(`Follow mode exited — ${reason}`);
+    };
+
+    const noteUserInput = () => { lastUserInputRef.current = Date.now(); };
+    editor.onKeyDown(noteUserInput);
+    editor.onMouseDown(noteUserInput);
+    editor.onDidPaste(noteUserInput);
+
+    const dom = editor.getDomNode();
+    if (dom) {
+      // Wheel is not on Monaco's public event surface, and it also covers
+      // dragging the scrollbar, which onMouseDown does not reach.
+      dom.addEventListener('wheel', () => {
+        noteUserInput();
+        releaseFollow('you scrolled');
+      }, { passive: true });
+      dom.addEventListener('mousedown', noteUserInput, { passive: true });
+    }
+
+    editor.onDidChangeModelContent((e) => {
+      if (e.changes.length === 0) return;
+      // A collaborator's edit arriving over the CRDT is not you taking over.
+      if (isApplyingRemote()) return;
+      // Nor is the full-model rewrite the editor performs when we switch to
+      // the leader's file. An edit you actually made always lands within a few
+      // milliseconds of the keypress, click or paste that caused it.
+      if (Date.now() - lastUserInputRef.current > USER_EDIT_WINDOW_MS) return;
+      releaseFollow('you started editing');
     });
 
-    // ── Mouse move: show/hide custom hover card ──
-    editor.onMouseMove((e) => {
-      const hideHover = () => {
-        if (hoverTimeoutRef.current) {
-          clearTimeout(hoverTimeoutRef.current);
-          hoverTimeoutRef.current = null;
-        }
-        setHoverInfo(null);
-      };
-
-      if (!e.target || !e.target.position) {
-        hideHover();
-        return;
-      }
-
-      const line = e.target.position.lineNumber;
-      const currentPathNow = useEditorStore.getState().activePath;
-      const changesNow = useEditorStore.getState().remoteLineChanges[currentPathNow];
-
-      if (changesNow && changesNow[line]) {
-        // Line has a remote change
-        if (hoverInfo && hoverInfo.line === line) {
-          // Already showing this line, do nothing
-          return;
-        }
-
-        // Moving to a new changed line or first time seeing a change
-        // Clear any pending timeout for a previous line
-        if (hoverTimeoutRef.current) {
-          clearTimeout(hoverTimeoutRef.current);
-        }
-
-        hoverTimeoutRef.current = setTimeout(() => {
-          const change = changesNow[line];
-          setHoverInfo({
-            x: e.event.posx,
-            y: e.event.posy,
-            change,
-            line,
-          });
-          hoverTimeoutRef.current = null;
-        }, 150); // Small intentional delay before showing
-      } else {
-        hideHover();
-      }
-    });
-
-    // Monaco onMouseLeave — hide card
-    editor.onMouseLeave(() => {
-      if (hoverTimeoutRef.current) {
-        clearTimeout(hoverTimeoutRef.current);
-        hoverTimeoutRef.current = null;
-      }
-      setHoverInfo(null);
-    });
-
-    // Click outside colored lines → clear all highlights
+    // ── Click line number in gutter to view edit card ──
     editor.onMouseDown((e) => {
       if (!e.target || !e.target.position) return;
       const line = e.target.position.lineNumber;
       const currentPathNow = useEditorStore.getState().activePath;
       const changesNow = useEditorStore.getState().remoteLineChanges[currentPathNow];
-      
-      // If clicked on a non-highlighted line, clear ALL remote highlights for this file
-      // Also clear if clicking while NO hover card is active (intentional dismissal)
-      if (!changesNow || !changesNow[line] || !hoverInfo) {
-        useEditorStore.getState().clearRemoteLineChanges(currentPathNow);
-        setHoverInfo(null);
+
+      const targetType = e.target.type;
+      const monacoTarget = monacoRef.current?.editor?.MouseTargetType;
+      const isGutterClick = !monacoTarget || (
+        targetType === monacoTarget.GUTTER_LINE_NUMBERS ||
+        targetType === monacoTarget.GUTTER_LINE_DECORATIONS ||
+        targetType === monacoTarget.GUTTER_GLYPH_MARGIN
+      );
+
+      if (changesNow && changesNow[line] && isGutterClick) {
+        setHoverInfo((prev) => {
+          if (prev?.pinned && prev.line === line && prev.path === currentPathNow) {
+            return null; // Toggle off if clicking the same line number again
+          }
+          return {
+            path: currentPathNow,
+            change: changesNow[line],
+            line,
+            pinned: true,
+          };
+        });
       }
     });
 
-    // Dismiss the hover card on any content change.
-    // NOTE: The old "line collision lock" (which reverted your edit if a remote
-    // cursor was on the same line) has been removed. With the Yjs CRDT, multiple
-    // users can safely edit the same line simultaneously — both edits merge — so
-    // blocking/reverting is no longer needed and would only get in the way.
-    editor.onDidChangeModelContent(() => {
-      setHoverInfo(null);
-    });
-
-    // Dismiss hover card on cursor movement (keyboard nav)
-    // Also track selection state for the toolbar CodeShot button
+    // Track selection state for the toolbar CodeShot button
     editor.onDidChangeCursorSelection((e) => {
-      setHoverInfo(null);
-
       const selection = editor.getSelection();
       const model = editor.getModel();
       if (selection && !selection.isEmpty() && model) {
@@ -490,65 +473,29 @@ const MonacoEditor = () => {
     );
   }, [remoteCursors]);
 
-  /* ── Remote line-change decorations (dark blue bg + white text) ── */
+  /* ── Line-change decorations for line numbers ── */
   useEffect(() => {
     const editor = editorRef.current;
     const monaco = monacoRef.current;
     if (!editor || !monaco) return;
 
     const currentPath = useEditorStore.getState().activePath;
-    const pathChanges = remoteLineChanges[currentPath];
+    const pathChanges = remoteLineChanges[currentPath] || {};
     const newDecorations = [];
 
-    // Clean up old dynamic styles
-    document.querySelectorAll('[id^="rc-style-"]').forEach(el => el.remove());
-
-    if (pathChanges && Object.keys(pathChanges).length > 0) {
-      const styleEl = document.createElement('style');
-      styleEl.id = 'rc-style-all';
-
-      let cssText = `
-        .rc-line-bg {
-          background-color: rgba(179, 179, 179, 0.12) !important;
-        }
-        .rc-line-white-text {
-          color: #ffffff !important;
-        }
-      `;
-
-      const model = editor.getModel();
-      const lineCount = model ? model.getLineCount() : 0;
-
-      Object.entries(pathChanges).forEach(([lineStr, change]) => {
-        const line = parseInt(lineStr, 10);
-        if (isNaN(line) || !change) return;
-
-        // Guard: skip lines that exceed the current model's line count
-        if (line < 1 || line > lineCount) return;
-
-        const maxCol = model.getLineMaxColumn(line);
-
-        // Decoration 1: whole-line dark blue background
+    Object.keys(pathChanges).forEach((lineStr) => {
+      const lineNum = parseInt(lineStr, 10);
+      if (!isNaN(lineNum) && pathChanges[lineStr]) {
         newDecorations.push({
-          range: new monaco.Range(line, 1, line, maxCol),
+          range: new monaco.Range(lineNum, 1, lineNum, 1),
           options: {
-            isWholeLine: true,
-            className: 'rc-line-bg',
+            isWholeLine: false,
+            marginClassName: 'has-line-edit',
+            linesDecorationsClassName: 'has-line-edit',
           },
         });
-
-        // Decoration 2: inline white text covering the full line content
-        newDecorations.push({
-          range: new monaco.Range(line, 1, line, maxCol),
-          options: {
-            inlineClassName: 'rc-line-white-text',
-          },
-        });
-      });
-
-      styleEl.textContent = cssText;
-      document.head.appendChild(styleEl);
-    }
+      }
+    });
 
     changeDecorationsRef.current = editor.deltaDecorations(
       changeDecorationsRef.current,
@@ -572,20 +519,30 @@ const MonacoEditor = () => {
     const monaco = monacoRef.current;
     if (!editor || !monaco) return;
 
-    // 1. Switch to the leader's file if different
+    // 1. Switch to the leader's file if different.
+    //
+    // Test for the path being part of the project, not for its content being
+    // truthy. A local-mode workspace lists every file up front with a null
+    // placeholder and reads contents only on open, so a truthiness check
+    // refuses to follow into anything the follower has not already opened
+    // themselves — and an empty file would be refused in any mode. openFile
+    // handles the lazy read.
+    //
+    // A path that is not in the map yet is genuinely unknown here (the leader
+    // just created it and the sync has not landed). Skipping is right; the
+    // leader's next cursor move re-runs this with the file present.
     if (followState.file && followState.file !== activePath) {
       const store = useEditorStore.getState();
-      if (store.files[followState.file]) {
+      if (Object.prototype.hasOwnProperty.call(store.files, followState.file)) {
         store.openFile(followState.file);
       }
     }
 
-    // 2. Sync scroll position (prevent auto-exit by marking it)
+    // 2. Sync scroll position. No flag needed to stop this from reading as a
+    //    local scroll — releasing follow keys off the wheel event, and this
+    //    does not produce one.
     if (followState.scrollTop !== undefined) {
-      isFollowScrollingRef.current = true;
       editor.setScrollTop(followState.scrollTop);
-      // Reset flag after a small delay
-      setTimeout(() => { isFollowScrollingRef.current = false; }, 200);
     }
 
     // 3. Show leader cursor + selection as decorations
@@ -741,159 +698,256 @@ const MonacoEditor = () => {
     runCode();
   }, [runCode]);
 
-  /* ── Custom Hover Card — Intelligence Card ── */
+  /* ── Line Audit Card (Minimalist Architecture) ── */
   const renderHoverCard = () => {
     if (!hoverInfo) return null;
-    const { x, y, change, line } = hoverInfo;
+    if (hoverInfo.path && hoverInfo.path !== activePath) return null; // File-scoped
+
+    const { change, line } = hoverInfo;
     const timeAgo = formatTimeAgo(change.timestamp);
-    const timeStr = new Date(change.timestamp).toLocaleTimeString();
+    const timeStr = new Date(change.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    const cardW = 340;
-    const cardH = 320;
-    const showAbove = y + cardH + 20 > window.innerHeight;
+    const isAdded = change.type === 'added';
+    const isRemoved = change.type === 'removed';
+    const isModified = change.type === 'modified';
 
-    // Type-specific accent color
-    const typeAccent =
-      change.type === 'added' ? '#FFFFFF' :
-      change.type === 'removed' ? '#E5484D' : '#B3B3B3';
+    const typeTag = isAdded ? '+ ADDED' : isRemoved ? '- REMOVED' : '~ MODIFIED';
+
+    // Calculate dynamic vertical Y position aligned with selected line
+    let calculatedTop = 16;
+    if (editorRef.current && wrapperRef.current) {
+      const lineTop = editorRef.current.getTopForLineNumber(line);
+      const scrollTop = editorRef.current.getScrollTop();
+      const relativeLineTop = lineTop - scrollTop;
+
+      const containerHeight = wrapperRef.current.clientHeight || 500;
+      const estimatedCardHeight = 180;
+      const maxTop = Math.max(12, containerHeight - estimatedCardHeight - 12);
+      calculatedTop = Math.min(Math.max(12, relativeLineTop), maxTop);
+    }
 
     const cardStyle = {
-      position: 'fixed',
-      left: Math.max(8, Math.min(x + 16, window.innerWidth - cardW - 16)),
-      top: showAbove
-        ? Math.max(8, y - cardH - 10)
-        : Math.min(y + 20, window.innerHeight - cardH - 8),
-      zIndex: 99999,
-      width: `${cardW}px`,
-      background: '#0F0F0F',
+      position: 'absolute',
+      top: `${calculatedTop}px`,
+      right: '24px',
+      zIndex: 99,
+      width: '360px',
+      background: 'rgba(14, 14, 14, 0.96)',
+      backdropFilter: 'blur(16px)',
+      WebkitBackdropFilter: 'blur(16px)',
       color: '#EDEDED',
-      border: '1px dotted #484848',
-      borderRadius: '3px',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+      border: '1px dotted #444444',
+      borderRadius: '4px',
+      boxShadow: '0 12px 32px rgba(0, 0, 0, 0.65)',
       fontFamily: "var(--font-body)",
       fontSize: '11px',
-      pointerEvents: 'none',
+      pointerEvents: 'auto',
       overflow: 'hidden',
-      maxHeight: '90vh',
+      maxHeight: 'calc(100% - 24px)',
+      transition: 'top 0.15s cubic-bezier(0.16, 1, 0.3, 1)',
+      animation: 'toast-slide-in 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+    };
+
+    const copyToClipboard = (text) => {
+      if (navigator.clipboard && text) {
+        navigator.clipboard.writeText(text);
+      }
     };
 
     return (
       <div style={cardStyle}>
-        {/* Header */}
+        {/* Header Rail */}
         <div style={{
-          padding: '8px 12px',
+          padding: '10px 12px',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px',
+          justifyContent: 'space-between',
           borderBottom: '1px dotted #2E2E2E',
+          background: 'rgba(255, 255, 255, 0.015)'
         }}>
-          <div style={{
-            width: '24px', height: '24px',
-            border: '1px dotted #6E6E6E',
-            borderRadius: '2px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '10px', fontWeight: 600, color: '#EDEDED', flexShrink: 0,
-            fontFamily: "'Space Grotesk', sans-serif",
-          }}>
-            {(change.username || '?')[0].toUpperCase()}
-          </div>
-          <div style={{ flex: 1 }}>
+          {/* Identity & Location */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '9px', minWidth: 0 }}>
+            {/* Square Mono Avatar */}
             <div style={{
-              fontFamily: "'Space Grotesk', sans-serif",
-              fontWeight: 600, fontSize: '12px', color: '#EDEDED',
+              width: '26px', height: '26px',
+              borderRadius: '2px',
+              border: '1px dotted #555555',
+              background: 'rgba(255, 255, 255, 0.03)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '10.5px', fontWeight: 700, color: '#EDEDED', flexShrink: 0,
+              fontFamily: "'Space Grotesk', sans-serif"
             }}>
-              {change.username}
+              {(change.username || '?')[0].toUpperCase()}
             </div>
-            <div style={{
+
+            <div style={{ minWidth: 0 }}>
+              <div style={{
+                fontFamily: "'Space Grotesk', sans-serif",
+                fontWeight: 700, fontSize: '0.8rem', color: '#EDEDED',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                lineHeight: 1.2
+              }}>
+                {change.username}
+              </div>
+              <div style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '0.54rem', color: '#8A8A8A',
+                letterSpacing: '0.08em', marginTop: '2px'
+              }}>
+                LINE {line}  ·  {timeAgo.toUpperCase()}
+              </div>
+            </div>
+          </div>
+
+          {/* Type Badge & Actions */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            <span style={{
               fontFamily: "'JetBrains Mono', monospace",
-              fontSize: '8px', color: '#6E6E6E', marginTop: '1px',
-              letterSpacing: '0.04em',
+              fontSize: '0.54rem', fontWeight: 700, letterSpacing: '0.08em',
+              padding: '2px 7px', borderRadius: '2px',
+              border: '1px dotted #555555',
+              background: 'rgba(255, 255, 255, 0.03)',
+              color: '#D4D4D4'
             }}>
-              LINE {line} · {timeAgo.toUpperCase()}
-            </div>
-          </div>
-          <div style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            padding: '1px 6px', fontSize: '8px',
-            fontWeight: 600, letterSpacing: '0.04em',
-            color: '#A0A0A0',
-            border: '1px dotted #484848',
-            borderRadius: '2px',
-          }}>
-            {change.type.toUpperCase()}
+              {typeTag}
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setHoverInfo(null)}
+              title="Close inspector"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#8A8A8A',
+                cursor: 'pointer',
+                padding: '2px 4px',
+                fontSize: '11px',
+                lineHeight: 1,
+                transition: 'color 0.15s ease'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = '#FFFFFF'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = '#8A8A8A'; }}
+            >
+              ✕
+            </button>
           </div>
         </div>
 
-        {/* Before / After diffs */}
-        {change.type !== 'added' && (
-          <div style={{ padding: '8px 12px 2px' }}>
+        {/* Code Diff Structural Rail */}
+        <div style={{ padding: '10px 12px 12px' }}>
+          <div style={{
+            borderRadius: '3px',
+            border: '1px dotted #2E2E2E',
+            background: 'rgba(0,0,0,0.2)',
+            overflow: 'hidden'
+          }}>
+            {/* Header label inside diff container */}
             <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '4px 8px',
+              borderBottom: '1px dotted #2A2A2A',
+              background: 'rgba(255,255,255,0.015)',
               fontFamily: "'JetBrains Mono', monospace",
-              fontSize: '8px', fontWeight: 600, color: '#888888',
-              letterSpacing: '0.05em', marginBottom: '2px',
-            }}>BEFORE</div>
-            <div style={{
-              background: '#070707',
-              border: '1px dotted #2E2E2E',
-              borderRadius: '2px',
-              padding: '5px 8px', fontSize: '10px',
-              fontFamily: "'JetBrains Mono', monospace",
-              color: '#A0A0A0',
-              whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-              maxHeight: '44px', overflow: 'auto',
+              fontSize: '0.5rem', letterSpacing: '0.1em',
+              color: '#737373', textTransform: 'uppercase'
             }}>
-              {change.oldLine}
+              <span>LINE {line} AUDIT</span>
+              {!isRemoved && change.newLine && (
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(change.newLine)}
+                  style={{
+                    background: 'transparent', border: 'none',
+                    color: '#8A8A8A', cursor: 'pointer',
+                    fontSize: '0.5rem', fontFamily: "'JetBrains Mono', monospace",
+                    letterSpacing: '0.08em', padding: 0
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = '#EDEDED'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = '#8A8A8A'; }}
+                >
+                  COPY
+                </button>
+              )}
             </div>
-          </div>
-        )}
-        {change.type !== 'removed' && (
-          <div style={{ padding: '4px 12px 8px' }}>
-            <div style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: '8px', fontWeight: 600, color: '#888888',
-              letterSpacing: '0.05em', marginBottom: '2px',
-            }}>AFTER</div>
-            <div style={{
-              background: '#070707',
-              border: '1px dotted #2E2E2E',
-              borderRadius: '2px',
-              padding: '5px 8px', fontSize: '10px',
-              fontFamily: "'JetBrains Mono', monospace",
-              color: '#EDEDED',
-              whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-              maxHeight: '44px', overflow: 'auto',
-            }}>
-              {change.newLine}
-            </div>
-          </div>
-        )}
 
-        {/* Root Analysis */}
+            {/* BEFORE Line Row */}
+            {!isAdded && (
+              <div style={{
+                display: 'flex', alignItems: 'flex-start',
+                padding: '4px 0',
+                borderBottom: isRemoved ? 'none' : '1px dotted #242424',
+                background: 'rgba(0, 0, 0, 0.15)'
+              }}>
+                <span style={{
+                  width: '28px', flexShrink: 0, textAlign: 'right', paddingRight: '8px',
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: '0.56rem', color: '#666666',
+                  lineHeight: '1.6', userSelect: 'none'
+                }}>
+                  L{line}
+                </span>
+                <span style={{
+                  width: '16px', flexShrink: 0, textAlign: 'center', color: '#8A8A8A',
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: '0.64rem', lineHeight: '1.6'
+                }}>
+                  −
+                </span>
+                <code style={{
+                  flex: 1, minWidth: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: '0.64rem',
+                  lineHeight: '1.6', color: '#8A8A8A', opacity: 0.85,
+                  wordBreak: 'break-all', whiteSpace: 'pre-wrap', paddingRight: '8px'
+                }}>
+                  {change.oldLine || '(empty)'}
+                </code>
+              </div>
+            )}
+
+            {/* AFTER Line Row */}
+            {!isRemoved && (
+              <div style={{
+                display: 'flex', alignItems: 'flex-start',
+                padding: '4px 0',
+                background: 'rgba(255, 255, 255, 0.015)'
+              }}>
+                <span style={{
+                  width: '28px', flexShrink: 0, textAlign: 'right', paddingRight: '8px',
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: '0.56rem', color: '#666666',
+                  lineHeight: '1.6', userSelect: 'none'
+                }}>
+                  L{line}
+                </span>
+                <span style={{
+                  width: '16px', flexShrink: 0, textAlign: 'center', color: '#EDEDED',
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: '0.64rem', lineHeight: '1.6'
+                }}>
+                  +
+                </span>
+                <code style={{
+                  flex: 1, minWidth: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: '0.64rem',
+                  lineHeight: '1.6', color: '#EDEDED', fontWeight: 500,
+                  wordBreak: 'break-all', whiteSpace: 'pre-wrap', paddingRight: '8px'
+                }}>
+                  {change.newLine || '(empty)'}
+                </code>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer Meta Bar */}
         <div style={{
-          margin: '2px 12px 10px',
-          background: '#070707',
-          border: '1px dotted #2E2E2E',
-          borderRadius: '2px',
-          padding: '6px 8px',
-          fontSize: '10px',
-          lineHeight: '1.4',
-          color: '#888888',
-          fontFamily: "var(--font-body)",
+          padding: '7px 12px 9px',
+          borderTop: '1px dotted #2E2E2E',
+          background: 'rgba(255, 255, 255, 0.01)',
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: '0.52rem',
+          color: '#737373',
+          letterSpacing: '0.06em',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
         }}>
-          <span style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontWeight: 600, fontSize: '8px',
-            color: '#A0A0A0', letterSpacing: '0.06em',
-          }}>ANALYSIS //</span>{' '}
-          {change.type === 'modified' && (
-            <>Line {line} modified by <strong>{change.username}</strong> at {timeStr}.</>
-          )}
-          {change.type === 'added' && (
-            <>Line {line} inserted by <strong>{change.username}</strong> at {timeStr}.</>
-          )}
-          {change.type === 'removed' && (
-            <>Line {line} deleted by <strong>{change.username}</strong> at {timeStr}.</>
-          )}
+          <span>AUDIT  ·  {isModified ? `MODIFIED BY ${change.username.toUpperCase()}` : isAdded ? `INSERTED BY ${change.username.toUpperCase()}` : `DELETED BY ${change.username.toUpperCase()}`} AT {timeStr}</span>
         </div>
       </div>
     );
@@ -904,11 +958,6 @@ const MonacoEditor = () => {
       className="monaco-wrapper"
       ref={wrapperRef}
       style={{ height: '100%', position: 'relative' }}
-      onMouseLeave={() => {
-        // Failsafe: if mouse leaves the entire editor wrapper, always hide
-        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-        setHoverInfo(null);
-      }}
     >
       {isReplaying && (
         <div className="editor-actions">
@@ -1048,6 +1097,36 @@ const MonacoEditor = () => {
       })()}
 
       <style>{`
+        .margin-view-overlays > div:has(.has-line-edit) .line-numbers {
+          color: #FFB224 !important;
+          font-weight: 700;
+          cursor: pointer !important;
+          transition: color 0.15s ease;
+        }
+        .margin-view-overlays > div:has(.has-line-edit):hover .line-numbers {
+          color: transparent !important;
+          position: relative;
+        }
+        .margin-view-overlays > div:has(.has-line-edit):hover .line-numbers::after {
+          content: '⚡';
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: 0;
+          bottom: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #FFB224;
+          font-size: 13px;
+          font-weight: bold;
+          pointer-events: none;
+          animation: lightning-pop 0.15s ease-out;
+        }
+        @keyframes lightning-pop {
+          from { transform: scale(0.6); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
         .remote-cursor-glyph {
           background: #6366f1;
           width: 2px !important;

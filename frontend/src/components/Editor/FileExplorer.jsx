@@ -2,12 +2,14 @@
  * FileExplorer.jsx — Sidebar with Session + File Management
  * ------------------------------------------------------- */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import useEditorStore from '../../store/useEditorStore';
-import { createSession, joinSession, leaveSession, uploadProject, saveFile, deleteFile, getSessionFiles } from '../../services/api';
+import { createSession, joinSession, leaveSession, uploadProject, saveFile, deleteFile, gitStatus } from '../../services/api';
 import { connectWebSocket, sendCodeChange, sendFileDelete, sendProjectSync } from '../../services/socket';
+import { buildCollabCallbacks } from '../../services/collabCallbacks';
 import { detectProject } from '../../services/devserver';
 import { isBinaryAssetPath, isSkippedAssetPath } from '../../utils/binaryAssets';
+import { decorationFor, parseGitStatus } from '../../utils/gitStatusMap';
 import MarioLoader from '../common/MarioLoader';
 
 /* Shown while a project is being read in. Defined at module scope: inside the
@@ -115,10 +117,6 @@ const FileExplorer = ({ onToggle }) => {
   const setCurrentUser = useEditorStore((s) => s.setCurrentUser);
   const setUserRole = useEditorStore((s) => s.setUserRole);
   const setProject = useEditorStore((s) => s.setProject);
-  const setConnectedUsers = useEditorStore((s) => s.setConnectedUsers);
-  const addSnapshot = useEditorStore((s) => s.addSnapshot);
-  const handleExecutionResult = useEditorStore((s) => s.handleExecutionResult);
-  const updateRemoteFile = useEditorStore((s) => s.updateRemoteFile);
   const fileActivity = useEditorStore((s) => s.fileActivity);
   const filePresence = useEditorStore((s) => s.filePresence);
   const resetSession = useEditorStore((s) => s.resetSession);
@@ -137,6 +135,36 @@ const FileExplorer = ({ onToggle }) => {
   const closeLocalWorkspace = useEditorStore((s) => s.closeLocalWorkspace);
   const absolutePathFor = useEditorStore((s) => s.absolutePathFor);
   const canOpenLocalFolder = typeof window !== 'undefined' && Boolean(window.electronAPI?.workspace);
+
+  /* ── Git decorations in the tree ──
+   * Polled here rather than read from the git panel, because the panel is
+   * usually closed and the decorations still have to be right. Parsed once per
+   * fetch and shared by every row.
+   */
+  const gitStatusText = useEditorStore((s) => s.gitStatus);
+  const gitRepoConnected = useEditorStore((s) => s.gitRepoConnected);
+  const setGitStatus = useEditorStore((s) => s.setGitStatus);
+  const gitScope = workspaceRoot || sessionId;
+
+  const gitFileStatus = React.useMemo(() => parseGitStatus(gitStatusText), [gitStatusText]);
+
+  useEffect(() => {
+    if (!gitScope || !gitRepoConnected) return;
+
+    let cancelled = false;
+    const pull = async () => {
+      try {
+        const res = await gitStatus(gitScope);
+        if (!cancelled && res?.success !== false) setGitStatus(res.output || '');
+      } catch { /* the panel surfaces git errors; decorations just go quiet */ }
+    };
+
+    pull();
+    // Slow on purpose: this is ambient information, and the working tree is
+    // re-read from disk on every poll.
+    const interval = setInterval(pull, 8000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [gitScope, gitRepoConnected, setGitStatus]);
 
   const pendingExplorerAction = useEditorStore((s) => s.pendingExplorerAction);
   const clearPendingExplorerAction = useEditorStore((s) => s.clearPendingExplorerAction);
@@ -177,15 +205,21 @@ const FileExplorer = ({ onToggle }) => {
   const [joinUsername, setJoinUsername] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [errorMsg, rawSetErrorMsg] = useState('');
+  const errorTimerRef = useRef(null);
+
+  const setErrorMsg = useCallback((msg, duration = 5000) => {
+    rawSetErrorMsg(msg);
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    if (msg) {
+      errorTimerRef.current = setTimeout(() => {
+        rawSetErrorMsg('');
+      }, duration);
+    }
+  }, []);
   const [newItem, setNewItem] = useState(null); // { type: 'file'|'folder', parent: '', name: '' }
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
-  const [modifier, setModifier] = useState('Alt+');
-  useEffect(() => {
-    const isMac = typeof window !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent || '');
-    setModifier(isMac ? '⌥' : 'Alt+');
-  }, []);
 
   useEffect(() => {
     const handleExplorerShortcuts = (e) => {
@@ -216,64 +250,13 @@ const FileExplorer = ({ onToggle }) => {
 
 
   const initSocket = (sessId, user) => {
-    connectWebSocket(sessId, user, {
-      onCodeChange: (d) => {
-        const currentU = useEditorStore.getState().currentUser;
-        const isOwnChange = d.userId === currentU?.id;
-        updateRemoteFile(d.path, d.code, isOwnChange ? null : d.userId);
-      },
-      onUsersChange: (d) => setConnectedUsers(d.users || []),
-      onExecutionResult: (d) => handleExecutionResult(d),
-      onSnapshot: (d) => addSnapshot(d),
-      onCursorUpdate: (d) => {
-        const currentU = useEditorStore.getState().currentUser;
-        if (d.userId !== currentU?.id) {
-          if (d.onWhiteboard) {
-            if (window.onWhiteboardCursorMessage) window.onWhiteboardCursorMessage(d);
-          } else {
-            useEditorStore.getState().updateRemoteCursor(d.userId, d);
-          }
-        }
-      },
-      onPresenceUpdate: (d) => {
-        const currentU = useEditorStore.getState().currentUser;
-        if (d.userId !== currentU?.id) useEditorStore.getState().updateFilePresence(d.userId, d);
-      },
-      onFileDelete: (d) => {
-        const currentU = useEditorStore.getState().currentUser;
-        if (d.userId !== currentU?.id) useEditorStore.getState().removeFile(d.path);
-      },
-      // A peer uploaded a project into the session. The files arrived over REST,
-      // so there are no per-file events to apply — re-read the list instead.
-      onProjectSync: async (d) => {
-        const state = useEditorStore.getState();
-        if (d?.userId === state.currentUser?.id) return; // our own upload
-        if (!state.sessionId) return;
-        try {
-          const files = await getSessionFiles(state.sessionId);
-          useEditorStore.getState().mergeRemoteFiles(files);
-        } catch (err) {
-          console.warn('[Causify] Could not load the shared project:', err.message);
-        }
-      },
-      onWhiteboardChange: (d) => {
-        if (window.onWhiteboardSocketMessage) window.onWhiteboardSocketMessage(d);
-      },
-      onRevert: (d) => {
-        const currentU = useEditorStore.getState().currentUser;
-        if (d.revertedUser === currentU?.username || d.revertedUser === currentU?.id) {
-          useEditorStore.getState().setRevertNotification({
-            username: d.username,
-            path: d.path,
-            reason: 'cross-file impact',
-          });
-        }
-      },
+    connectWebSocket(sessId, user, buildCollabCallbacks({
+      sessionId: sessId,
       onConnected: () => {
         console.log('[Causify] Connected to Collab');
         useEditorStore.getState().loadSessionHistory(sessId);
       },
-    });
+    }));
   };
 
   const handleCreate = async (uploadedFiles = []) => {
@@ -310,7 +293,8 @@ const FileExplorer = ({ onToggle }) => {
       setPanel(null);
       return session.id;
     } catch (err) {
-      setErrorMsg(err.message || 'Creation failed');
+      const msg = err.response?.data?.message || err.response?.data?.error;
+      setErrorMsg(msg || err.message || 'Creation failed');
       return null;
     } finally {
       setIsLoading(false);
@@ -351,7 +335,14 @@ const FileExplorer = ({ onToggle }) => {
       initSocket(session.id, session.user);
       setPanel(null);
     } catch (err) {
-      setErrorMsg(err.message || 'Join failed');
+      const msg = err.response?.data?.message || err.response?.data?.error;
+      if (err.response?.status === 404) {
+        setErrorMsg('SESSION NOT FOUND: This session ID does not exist or has expired.');
+      } else if (err.response?.status === 401) {
+        setErrorMsg('INVALID PASSWORD: Incorrect password for this session.');
+      } else {
+        setErrorMsg(msg || err.message || 'Join failed');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -589,8 +580,39 @@ const FileExplorer = ({ onToggle }) => {
     else folderInputRef.current?.click();
   };
 
-  /** "New file", from wherever it is triggered — name it inline, as before. */
-  const startNewFile = () => setNewItem({ type: 'file', parent: '', name: '' });
+  const primaryFolder = React.useMemo(() => {
+    const fileKeys = Object.keys(files);
+    if (fileKeys.length === 0) return '';
+    const topFolders = Array.from(new Set(
+      fileKeys
+        .map(p => p.split('/')[0])
+        .filter(firstPart => fileKeys.some(p => p.startsWith(firstPart + '/')))
+    ));
+    return topFolders.length > 0 ? topFolders[0] : '';
+  }, [files]);
+
+  const getSmartParentPath = () => {
+    if (activePath) {
+      const parts = activePath.split('/');
+      if (parts.length > 1) {
+        return parts.slice(0, -1).join('/');
+      }
+    }
+    return primaryFolder || '';
+  };
+
+  /** "New file" / "New folder": lands inside active/primary folder or root. */
+  const startNewFile = (type = 'file', targetParent = null) => {
+    const parent = targetParent !== null ? targetParent : getSmartParentPath();
+    if (parent) {
+      setExpandedPaths((prev) => new Set(prev).add(parent));
+    }
+    setNewItem({ type, parent, name: '' });
+  };
+
+  const startNewFolder = (targetParent = null) => {
+    startNewFile('folder', targetParent);
+  };
 
   const handleCreateNew = async (e) => {
     if (e.key === 'Escape') { setNewItem(null); return; }
@@ -612,6 +634,12 @@ const FileExplorer = ({ onToggle }) => {
           // For a folder this registers its .keep placeholder, which is what
           // keeps an otherwise empty directory visible in the tree.
           addFile(pathToSave, '');
+          if (sessionId) {
+            try {
+              await saveFile(sessionId, pathToSave, '');
+              if (currentUser) sendCodeChange(sessionId, currentUser.id, pathToSave, '');
+            } catch { /* session sync best-effort */ }
+          }
           setNewItem(null);
           setErrorMsg('');
         } catch (err) {
@@ -709,6 +737,24 @@ const FileExplorer = ({ onToggle }) => {
       else next.add(path);
       return next;
     });
+  };
+
+  /**
+   * "New file/folder" from a folder row: lands inside that folder.
+   *
+   * The toolbar buttons can only ever mean "at the top of the tree", which
+   * leaves no way to put anything inside a project folder — the common case
+   * once a folder is open. renderTree already knows how to show the name box
+   * under a folder; it just needs to be told which one.
+   *
+   * Lives below expandedPaths deliberately: it reads that state, and declaring
+   * it above would leave a hook one refactor away from a temporal-dead-zone
+   * crash if it were ever called during render rather than from a click.
+   */
+  const startNewItemIn = (type, parentPath) => {
+    // A collapsed folder would hide the name box we are about to show.
+    setExpandedPaths((prev) => new Set(prev).add(parentPath));
+    setNewItem({ type, parent: parentPath, name: '' });
   };
 
   // ── Minimal technical line-art icons ──
@@ -871,6 +917,14 @@ const FileExplorer = ({ onToggle }) => {
 
   const tree = buildTree(files);
 
+  /* Shared by the hover-revealed row actions so they line up with delete. */
+  const rowActionStyle = {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: '18px', height: '18px', flexShrink: 0,
+    background: 'transparent', border: 'none', borderRadius: '3px',
+    color: 'var(--t3)', cursor: 'pointer', padding: 0,
+  };
+
   const FileItem = ({ name, path, isFolder }) => {
     const isActive = activePath === path;
     const activeEditor = fileActivity[path];
@@ -884,6 +938,10 @@ const FileExplorer = ({ onToggle }) => {
 
     const extension = name.includes('.') ? name.split('.').pop().toUpperCase() : '';
     const nameOnly = name.includes('.') ? name.substring(0, name.lastIndexOf('.')) : name;
+
+    // Git state for this entry. Folders take the most urgent state inside them,
+    // so a change is visible without expanding the tree to find it.
+    const gitDecoration = decorationFor(path, gitFileStatus, isFolder);
 
     return (
       <div
@@ -936,7 +994,8 @@ const FileExplorer = ({ onToggle }) => {
                 fontFamily: 'var(--font-header)',
                 fontWeight: 800,
                 fontSize: '0.64rem',
-                color: isActive ? '#FFFFFF' : isHovered ? 'var(--t1)' : 'var(--t2)',
+                color: gitDecoration ? gitDecoration.color
+                  : isActive ? '#FFFFFF' : isHovered ? 'var(--t1)' : 'var(--t2)',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -953,7 +1012,8 @@ const FileExplorer = ({ onToggle }) => {
                 fontFamily: 'var(--font-header)',
                 fontWeight: 800,
                 fontSize: '0.64rem',
-                color: isActive ? '#FFFFFF' : isHovered ? 'var(--t1)' : 'var(--t2)',
+                color: gitDecoration ? gitDecoration.color
+                  : isActive ? '#FFFFFF' : isHovered ? 'var(--t1)' : 'var(--t2)',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -985,6 +1045,24 @@ const FileExplorer = ({ onToggle }) => {
         )}
 
         {/* Presence: who is currently working in this file */}
+        {/* Git state letter — M, U, D, A, R. The colour alone would not survive
+            a colour-blind reader or a glance, so the letter carries it too. */}
+        {gitDecoration && (
+          <span
+            title={`${gitDecoration.label}${isFolder ? ' (inside this folder)' : ''}`}
+            style={{
+              fontFamily: 'var(--font-number)',
+              fontSize: '0.5rem',
+              fontWeight: 800,
+              color: gitDecoration.color,
+              flexShrink: 0,
+              lineHeight: 1,
+            }}
+          >
+            {gitDecoration.letter}
+          </span>
+        )}
+
         {presentUsers.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}
             title={`${presentUsers.map((u) => u.username).join(', ')} working here`}>
@@ -1022,6 +1100,46 @@ const FileExplorer = ({ onToggle }) => {
           </div>
         )}
 
+        {/* Create inside this folder. Without these the toolbar's only meaning
+            is "at the top of the tree", so there is no way to put a file where
+            it belongs once a project folder is open. Same hover reveal as
+            delete. */}
+        {canEdit && isFolder && (
+          <>
+            <button
+              className="fx-file-del"
+              onClick={(e) => { e.stopPropagation(); startNewItemIn('file', path); }}
+              title={`New file in ${name}`}
+              style={rowActionStyle}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--lime)'; e.currentTarget.style.background = 'var(--lime-dim)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--t3)'; e.currentTarget.style.background = 'transparent'; }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="12" y1="18" x2="12" y2="12" />
+                <line x1="9" y1="15" x2="15" y2="15" />
+              </svg>
+            </button>
+            <button
+              className="fx-file-del"
+              onClick={(e) => { e.stopPropagation(); startNewItemIn('folder', path); }}
+              title={`New folder in ${name}`}
+              style={rowActionStyle}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--lime)'; e.currentTarget.style.background = 'var(--lime-dim)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--t3)'; e.currentTarget.style.background = 'transparent'; }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                <line x1="12" y1="11" x2="12" y2="17" />
+                <line x1="9" y1="14" x2="15" y2="14" />
+              </svg>
+            </button>
+          </>
+        )}
+
         {/* Delete — owner & editor collaborators only. Visibility is CSS-driven
             (revealed on row :hover) so it survives parent re-renders. */}
         {canEdit && (
@@ -1047,6 +1165,102 @@ const FileExplorer = ({ onToggle }) => {
             </svg>
           </button>
         )}
+      </div>
+    );
+  };
+
+  const NewItemForm = ({ isInline = false }) => {
+    if (!newItem) return null;
+    const isFolder = newItem.type === 'folder';
+    const isRoot = !newItem.parent;
+
+    const toggleLocation = () => {
+      if (isRoot) {
+        const target = primaryFolder || getSmartParentPath() || '';
+        if (target) {
+          setExpandedPaths((prev) => new Set(prev).add(target));
+          setNewItem((prev) => ({ ...prev, parent: target }));
+        }
+      } else {
+        setNewItem((prev) => ({ ...prev, parent: '' }));
+      }
+    };
+
+    return (
+      <div className="fx-new-item-form" style={{
+        padding: '6px 10px',
+        margin: isInline ? '4px 0' : '6px 14px',
+        background: 'var(--s0)',
+        border: '1px solid var(--line-strong)',
+        borderRadius: '6px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px'
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '0.52rem',
+          fontFamily: 'var(--font-number)',
+          fontWeight: 700,
+          letterSpacing: '0.04em'
+        }}>
+          <span style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            color: isRoot ? 'var(--amber)' : 'var(--lime)'
+          }}>
+            {isRoot ? '🌐 Target: Root (Outside Project)' : `📁 Target: ${newItem.parent}/`}
+          </span>
+          {primaryFolder && (
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); toggleLocation(); }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleLocation(); }}
+              title={isRoot ? `Create inside ${primaryFolder}/` : 'Create outside (at root level)'}
+              style={{
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid var(--line)',
+                borderRadius: '3px',
+                color: 'var(--t1)',
+                fontSize: '0.5rem',
+                fontWeight: 800,
+                padding: '2px 6px',
+                cursor: 'pointer',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em'
+              }}
+            >
+              {isRoot ? `Switch to ${primaryFolder}/` : 'Switch to Root'}
+            </button>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <FileIcon name={newItem.name || 'new'} isFolder={isFolder} />
+          <input
+            autoFocus
+            onKeyDown={handleCreateNew}
+            onBlur={(e) => {
+              if (e.relatedTarget && e.currentTarget.closest('.fx-new-item-form')?.contains(e.relatedTarget)) {
+                return;
+              }
+              setNewItem(null);
+            }}
+            style={{
+              ...inputStyle,
+              marginBottom: 0,
+              height: '24px',
+              flex: 1,
+              border: 'none',
+              background: 'transparent',
+              outline: 'none'
+            }}
+            placeholder={isFolder ? 'Folder name...' : 'File name...'}
+          />
+        </div>
       </div>
     );
   };
@@ -1110,10 +1324,7 @@ const FileExplorer = ({ onToggle }) => {
             {isExpanded && (
               <div style={{ marginLeft: name ? '4px' : '0' }}>
                 {newItem && newItem.parent === path && name && (
-                  <div style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '5px' }}>
-                    <FileIcon name={newItem.name || 'new'} isFolder={newItem.type === 'folder'} />
-                    <input autoFocus onKeyDown={handleCreateNew} onBlur={() => setNewItem(null)} style={{ ...inputStyle, marginBottom: 0, height: '24px', flex: 1, border: 'none', background: 'transparent' }} placeholder={newItem.type === 'folder' ? 'DIR' : 'FILE'} />
-                  </div>
+                  <NewItemForm isInline={true} />
                 )}
                 {Object.entries(node)
                   .sort(([aName, aNode], [bName, bNode]) => {
@@ -1423,23 +1634,6 @@ const FileExplorer = ({ onToggle }) => {
                           </span>
                         </div>
 
-                        {/* Keyboard shortcut badge */}
-                        <span style={{
-                          fontFamily: 'var(--font-number)',
-                          fontSize: '0.48rem',
-                          fontWeight: 600,
-                          color: isHovered ? 'var(--lime)' : 'var(--t4)',
-                          background: isHovered ? 'rgba(255,255,255,0.06)' : 'transparent',
-                          border: `1px solid ${isHovered ? 'var(--lime-line)' : 'transparent'}`,
-                          padding: '2px 6px',
-                          borderRadius: '3px',
-                          textTransform: 'uppercase',
-                          transition: 'all 0.2s ease',
-                          flexShrink: 0,
-                          marginLeft: '10px'
-                        }}>
-                          {modifier}{a.shortcut}
-                        </span>
                       </div>
                     );
                   })}
@@ -1448,10 +1642,7 @@ const FileExplorer = ({ onToggle }) => {
             )}
 
             {newItem && newItem.parent === '' && (
-              <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: '8px', border: '2px solid var(--line-strong)', background: 'var(--s0)', marginTop: '4px', borderRadius: '8px' }}>
-                <FileIcon name={newItem.name || 'new'} isFolder={newItem.type === 'folder'} />
-                <input autoFocus onKeyDown={handleCreateNew} onBlur={() => setNewItem(null)} style={{ ...inputStyle, marginBottom: 0, height: '24px', flex: 1, border: 'none', background: 'transparent' }} placeholder={newItem.type === 'folder' ? 'Folder name...' : 'File name...'} />
-              </div>
+              <NewItemForm isInline={false} />
             )}
 
             {panel === 'create' && (
@@ -1496,8 +1687,49 @@ const FileExplorer = ({ onToggle }) => {
 
 
         {errorMsg && (
-          <div style={{ color: 'var(--crimson)', fontSize: '0.66rem', margin: '10px 14px', padding: '9px 11px', background: 'var(--crimson-dim)', border: '1px solid rgba(229,72,77,0.3)', borderRadius: '6px', fontFamily: 'var(--font-body)', fontWeight: 500, lineHeight: 1.5 }}>
-            ⚠ {errorMsg}
+          <div style={{
+            color: 'var(--crimson)',
+            fontSize: '0.66rem',
+            margin: '10px 14px',
+            padding: '9px 12px',
+            background: 'var(--crimson-dim)',
+            border: '1px solid rgba(229,72,77,0.4)',
+            borderRadius: '6px',
+            fontFamily: 'var(--font-body)',
+            fontWeight: 500,
+            lineHeight: 1.5,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+            boxShadow: '0 4px 12px rgba(229, 72, 77, 0.15)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: '0.75rem', flexShrink: 0 }}>⚠</span>
+              <span style={{ wordBreak: 'break-word' }}>{errorMsg}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setErrorMsg('')}
+              title="Dismiss notification"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--crimson)',
+                cursor: 'pointer',
+                padding: '2px 4px',
+                fontSize: '0.7rem',
+                fontWeight: 700,
+                opacity: 0.8,
+                borderRadius: '3px',
+                lineHeight: 1,
+                flexShrink: 0
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.background = 'rgba(229, 72, 77, 0.15)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.8'; e.currentTarget.style.background = 'transparent'; }}
+            >
+              ✕
+            </button>
           </div>
         )}
 
@@ -1522,13 +1754,14 @@ const FileExplorer = ({ onToggle }) => {
               }}>
                 {(!sessionId || canEdit) && (
                   <>
-                    <ActionButton onClick={() => startNewFile()} title="New File">
+                    <ActionButton onClick={() => startNewFile()} title="New file (smart placement inside folder or root)">
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="13 2 13 9 20 9" /><line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" /></svg>
                     </ActionButton>
                     <div style={{ width: '1px', height: '14px', background: 'var(--line)' }} />
-                    <ActionButton onClick={() => setNewItem({ type: 'folder', parent: '', name: '' })} title="New Folder">
+                    <ActionButton onClick={() => startNewFolder()} title="New folder (smart placement inside folder or root)">
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /><line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" /></svg>
                     </ActionButton>
+
                     <div style={{ width: '1px', height: '14px', background: 'var(--line)' }} />
                     <ActionButton onClick={() => openProjectFolder()} title="Upload Folder">
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
@@ -1559,10 +1792,7 @@ const FileExplorer = ({ onToggle }) => {
               </div>
             </div>
             {newItem && newItem.parent === '' && (
-              <div style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FileIcon name={newItem.name || 'new'} isFolder={newItem.type === 'folder'} />
-                <input autoFocus onKeyDown={handleCreateNew} onBlur={() => setNewItem(null)} style={{ ...inputStyle, marginBottom: 0, height: '24px', flex: 1, border: 'none', background: 'transparent' }} placeholder={newItem.type === 'folder' ? 'Folder name...' : 'File name...'} />
-              </div>
+              <NewItemForm isInline={false} />
             )}
             {Object.keys(files).length === 0 ? (
               userRole === 'owner' ? (
@@ -1580,23 +1810,6 @@ const FileExplorer = ({ onToggle }) => {
                     alignItems: 'flex-start',
                     gap: '12px'
                   }}>
-                    <div style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '4px',
-                      background: 'var(--s2)',
-                      border: '1px solid var(--line)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'var(--t3)'
-                    }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                        <polyline points="17 8 12 3 7 8" />
-                        <line x1="12" y1="3" x2="12" y2="15" />
-                      </svg>
-                    </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                       <div style={{
                         fontFamily: 'var(--font-header)',

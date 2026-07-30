@@ -92,15 +92,28 @@ const resolveByTail = (target, allPaths) => {
 };
 
 const resolveImport = (specifier, importerPath, allPaths) => {
-  const spec = specifier.replace(/\\/g, '/');
+  if (!specifier) return null;
+  const spec = specifier.replace(/\\/g, '/').trim();
+  const importerDir = getFolder(importerPath);
 
-  // Relative and absolute imports resolve against the importing file.
+  // 1. Direct relative match in importer directory (e.g. "script.js", "style.css", "./script.js")
+  let cleanSpec = spec.startsWith('./') ? spec.slice(2) : spec;
+  if (importerDir && importerDir !== '/') {
+    const candidate = importerDir + '/' + cleanSpec;
+    const directRel = matchPath(candidate, allPaths);
+    if (directRel) return directRel;
+  }
+
+  // 2. Direct match against project root
+  const directRoot = matchPath(cleanSpec, allPaths);
+  if (directRoot) return directRoot;
+
+  // 3. Relative & absolute navigation paths (e.g. "../utils/helper", "/src/main.js")
   if (spec.startsWith('.') || spec.startsWith('/')) {
-    const importerDir = getFolder(importerPath);
     let resolved = spec;
 
     if (resolved.startsWith('.')) {
-      const parts = importerDir ? importerDir.split('/') : [];
+      const parts = importerDir && importerDir !== '/' ? importerDir.split('/') : [];
       for (const seg of resolved.split('/')) {
         if (seg === '.') continue;
         if (seg === '..') parts.pop();
@@ -114,29 +127,24 @@ const resolveImport = (specifier, importerPath, allPaths) => {
     const direct = matchPath(resolved, allPaths);
     if (direct) return direct;
 
-    // A leading-slash import is root-relative to the project, not to the
-    // uploaded folder, so fall through to tail matching.
     return resolveByTail(resolved, allPaths);
   }
 
   /* Path aliases — `@/x`, `~/x`, `#/x` — and root-relative specifiers like
-   * `src/components/Button`. These were previously discarded along with real
-   * package imports, which is why projects using aliases showed almost no
-   * dependencies: every internal import looked like a node_modules package. */
-  // The slash must come immediately after the sigil. `@/utils` is an alias;
-  // `@babel/parser` and `@xterm/addon-fit` are scoped npm packages and must
-  // keep being skipped.
+   * `src/components/Button`. */
   const aliased = spec.match(/^[@~#]\/(.+)$/);
   if (aliased) return resolveByTail(aliased[1], allPaths);
 
-  // A bare specifier that names a real folder in this project (`src/...`,
-  // `app/...`) rather than a package.
+  // A bare specifier that names a real folder in this project (`src/...`, `app/...`)
   if (spec.includes('/')) {
     const asRoot = matchPath(spec, allPaths) || resolveByTail(spec, allPaths);
     if (asRoot) return asRoot;
   }
 
-  // Anything left is a genuine package — react, express, lodash.
+  // Tail match for any local project file name match
+  const tail = resolveByTail(spec, allPaths);
+  if (tail) return tail;
+
   return null;
 };
 

@@ -75,6 +75,39 @@ function writeDeployFile(target, content) {
   fs.writeFileSync(target, content == null ? '' : String(content), 'utf-8');
 }
 
+/**
+ * Carry a project's existing Vercel link into the deploy workspace.
+ *
+ * If the user has ever run `vercel` in this folder themselves, .vercel/project.json
+ * records exactly which project and which scope it belongs to. That is a far
+ * better answer than any name Causify could infer, so it is copied across and
+ * the deploy targets the site they already have.
+ *
+ * The user's own folder is only ever read here, never written.
+ */
+function adoptExistingVercelLink(workspaceRoot, deployCwd) {
+  try {
+    const source = path.join(workspaceRoot, '.vercel', 'project.json');
+    if (!fs.existsSync(source)) return false;
+
+    const link = JSON.parse(fs.readFileSync(source, 'utf-8'));
+    if (!link?.projectId) return false;
+
+    const target = path.join(deployCwd, '.vercel');
+    fs.mkdirSync(target, { recursive: true });
+    fs.writeFileSync(path.join(target, 'project.json'), JSON.stringify(link, null, 2), 'utf-8');
+
+    console.log(`[Causify Deploy] Adopted the folder's existing Vercel link `
+      + `(${link.projectName || link.projectId})`);
+    return true;
+  } catch (err) {
+    // A malformed link is not worth failing a deploy over; the normal path
+    // still applies.
+    console.warn('[Causify Deploy] Could not read the existing Vercel link:', err.message);
+    return false;
+  }
+}
+
 function resolveWorkspaceCwd(options) {
   if (!options) return process.cwd();
   if (typeof options === 'string') return options;
@@ -1369,6 +1402,17 @@ function registerDeployHandlers() {
         : files;
 
       const result = prepareWorkspace(sessionId, source, webRoot ?? null);
+
+      // A folder already deployed with the Vercel CLI carries its own
+      // .vercel/project.json. Adopting it means Causify's first deploy updates
+      // that existing site instead of guessing a name and creating a duplicate.
+      // Done explicitly rather than relying on the file walk happening to
+      // include it — this is the guarantee that a known project is never
+      // deployed twice under two identities.
+      if (workspaceRoot && !result.needsChoice) {
+        adoptExistingVercelLink(workspaceRoot, result.cwd);
+      }
+
       if (result.needsChoice) {
         console.log(
           `[Causify Deploy] Multiple web roots detected for ${String(sessionId).substring(0, 8)}: ` +
@@ -1485,19 +1529,43 @@ function registerDeployHandlers() {
 
     const framework = detectFramework(cwd);
 
-    // Target project name: reuse the linked project (so updates are pushed to
-    // the same deployment), else the user-chosen name, else a session fallback.
+    /* Which Vercel project this deploy lands in.
+     *
+     * A stored link wins outright: that is what makes a redeploy update the
+     * same site instead of making another one.
+     *
+     * Without a link the name has to come from somewhere, and the fallback
+     * matters more than it looks — Vercel creates-or-updates *by name* within a
+     * scope, so two unlinked projects sharing a fallback name would deploy over
+     * each other. The folder name is used because it is specific to the project
+     * and is what the user would have called it anyway. 'causify-app' remains
+     * only as a last resort for a project with no folder and no name.
+     */
     const linked = getLinkedProjectInfo(cwd);
+    const folderName = options.workspaceRoot ? path.basename(String(options.workspaceRoot)) : null;
     const projectName =
       linked?.projectName
-      || sanitizeProjectName(options.projectName || options.sessionId || 'causify-app');
+      || sanitizeProjectName(options.projectName || folderName || options.sessionId || 'causify-app');
 
     const session = { api: true, cancelled: false, token };
     deploySessions.set(deployId, session);
     console.log(`[Causify Deploy] Started API deploy ${deployId.substring(0, 8)} (${projectName}) in ${cwd}`);
 
+    /* Scope: an existing project's own owner wins over the currently selected
+     * one. Vercel identifies a project by name *within* a scope, so deploying a
+     * linked project under a different scope would not update it — it would
+     * create a second project of the same name somewhere else, and the user
+     * would have two sites diverging under one name. The link records where the
+     * project actually lives, so that is the answer. The selector still governs
+     * anything new. */
+    const targetTeamId = linked?.orgId || getTeamId();
+    if (linked?.orgId && getTeamId() && linked.orgId !== getTeamId()) {
+      console.log(`[Causify Deploy] Scope selector differs from the linked project's owner — `
+        + `deploying to the project's own scope (${linked.orgId}) so the existing site is updated`);
+    }
+
     // Fire the deployment asynchronously; progress streams over IPC channels.
-    deployViaApi(token, cwd, { projectName, teamId: getTeamId() }, deployId, event, () => deploySessions.get(deployId))
+    deployViaApi(token, cwd, { projectName, teamId: targetTeamId }, deployId, event, () => deploySessions.get(deployId))
       .catch((err) => {
         console.error('[Causify Deploy] API deploy crashed:', err.message);
       });
