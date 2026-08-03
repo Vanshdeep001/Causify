@@ -305,4 +305,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(channel, handler);
     return () => ipcRenderer.removeListener(channel, handler);
   },
+
+  /* ── Tunnel ──
+   * Makes a hosted session reachable from outside this network, so a
+   * collaborator in another city can join with nothing but the code and
+   * password the owner already shares. */
+  tunnel: {
+    start: (port) => ipcRenderer.invoke('tunnel:start', port),
+    stop: () => ipcRenderer.invoke('tunnel:stop'),
+    status: () => ipcRenderer.invoke('tunnel:status'),
+  },
 });

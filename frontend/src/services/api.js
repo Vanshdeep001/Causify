@@ -3,20 +3,24 @@
  * ------------------------------------------------------- */
 
 import axios from 'axios';
-
-// In production Electron the app is loaded via file:// protocol,
-// so relative URLs don't work — point directly at the local backend.
-const isElectronProd =
-  typeof window !== 'undefined' &&
-  (window.location.protocol === 'file:' || window.electronAPI);
-
-const BACKEND_ORIGIN = isElectronProd ? 'http://127.0.0.1:8080' : '';
+import { getApiBase } from './backendHost';
 
 // Create an Axios instance with defaults
 const api = axios.create({
-  baseURL: `${BACKEND_ORIGIN}/api`,
   headers: { 'Content-Type': 'application/json' },
   timeout: 30000, // default: fine for quick CRUD (save, status, lookups)
+});
+
+// Where the backend lives is resolved per request, not once at import.
+//
+// It used to be a module constant pinned to 127.0.0.1, which meant a joiner's
+// app could only ever reach the backend on the joiner's own machine — the
+// reason two people on two laptops could never share a session. Setting it
+// here keeps every call site untouched while letting the origin change when
+// someone joins a session hosted elsewhere.
+api.interceptors.request.use((config) => {
+  config.baseURL = getApiBase();
+  return config;
 });
 
 // Some operations are inherently slow and must not share the 30s CRUD deadline,

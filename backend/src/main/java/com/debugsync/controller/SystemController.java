@@ -8,6 +8,7 @@
  */
 package com.debugsync.controller;
 
+import com.debugsync.config.RemoteAccessGuardFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,16 +18,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
-import java.util.Set;
 
 @RestController
 @RequestMapping("/api/system")
 public class SystemController {
 
     private static final Logger log = LoggerFactory.getLogger(SystemController.class);
-
-    /** Only the machine running the backend may shut it down. */
-    private static final Set<String> LOOPBACK = Set.of("127.0.0.1", "::1", "0:0:0:0:0:0:0:1");
 
     private final ApplicationContext context;
 
@@ -51,9 +48,13 @@ public class SystemController {
      */
     @PostMapping("/shutdown")
     public ResponseEntity<Map<String, String>> shutdown(HttpServletRequest request) {
-        String remote = request.getRemoteAddr();
-        if (!LOOPBACK.contains(remote)) {
-            log.warn("[System] Rejected shutdown request from non-loopback address {}", remote);
+        // A loopback check on its own is not enough once the backend can be
+        // published through a tunnel: cloudflared runs on this machine and
+        // forwards to 127.0.0.1, so a request from the far side of the world
+        // arrives with a loopback address. The shared check also reads the
+        // proxy headers, which is what actually gives a tunnelled request away.
+        if (RemoteAccessGuardFilter.isRemote(request)) {
+            log.warn("[System] Rejected shutdown request from remote caller {}", request.getRemoteAddr());
             return ResponseEntity.status(403).body(Map.of("message", "Shutdown is only permitted from localhost"));
         }
 

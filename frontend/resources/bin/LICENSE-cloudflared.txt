@@ -1,0 +1,8 @@
+cloudflared is bundled with this application under the Apache License 2.0.
+
+Source:  https://github.com/cloudflare/cloudflared
+License: https://github.com/cloudflare/cloudflared/blob/master/LICENSE
+
+It is used only to expose this machine's local backend so invited
+collaborators can reach a session hosted here. It is started on request
+and stopped when the session ends or the app quits.

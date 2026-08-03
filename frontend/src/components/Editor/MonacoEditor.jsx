@@ -9,12 +9,19 @@ import React, { useRef, useCallback, useEffect, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import useEditorStore from '../../store/useEditorStore';
 import { sendCursorPosition, sendFollowState, sendFilePresence } from '../../services/socket';
-import { getFileText, createBinding, maybeSeed, schedulePersist, isCollabActive, isApplyingRemote } from '../../services/collabDoc';
+import { getFileText, createBinding, maybeSeed, schedulePersist, isCollabActive, isApplyingRemote, encodeCursor, decodeCursor } from '../../services/collabDoc';
 
 /* How soon after a keypress, click or paste an edit must land to count as the
  * user's own. Generous enough to cover a slow frame, far shorter than the gap
  * before any unrelated programmatic rewrite. */
 const USER_EDIT_WINDOW_MS = 500;
+
+/** Tint a collaborator's colour for selection and active-line backgrounds. */
+const hexToRgba = (hex, alpha) => {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(String(hex).trim());
+  if (!m) return `rgba(99,102,241,${alpha})`;
+  return `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${alpha})`;
+};
 
 const MonacoEditor = () => {
   const editorRef = useRef(null);
@@ -43,6 +50,7 @@ const MonacoEditor = () => {
   const activePath = useEditorStore((s) => s.activePath);
   const runCode = useEditorStore((s) => s.runCode);
   const remoteCursors = useEditorStore((s) => s.remoteCursors);
+  const remoteTyping = useEditorStore((s) => s.remoteTyping);
   const remoteLineChanges = useEditorStore((s) => s.remoteLineChanges);
   const userRole = useEditorStore((s) => s.userRole);
 
@@ -268,18 +276,42 @@ const MonacoEditor = () => {
       },
     });
 
-    // Send cursor position
-    editor.onDidChangeCursorPosition((e) => {
-      if (sessionId && currentUser) {
-        sendCursorPosition(sessionId, currentUser.id, {
-          line: e.position.lineNumber,
-          column: e.position.column,
-          path: useEditorStore.getState().activePath,
-          username: currentUser.username,
-          color: currentUser.color || '#6366f1',
-        });
-      }
-    });
+    /* Send cursor position + selection.
+     *
+     * Line/column is still sent so a peer with no CRDT document (a plain
+     * local session) keeps working, but the anchors are what peers prefer:
+     * a coordinate describes a document that has already moved on by the time
+     * it is drawn, whereas an anchor names the character it sits beside and
+     * stays correct through every edit around it.
+     *
+     * Selection travels too — seeing what someone has highlighted is what
+     * stops two people reaching for the same expression in the first place. */
+    const publishCursor = () => {
+      if (!sessionId || !currentUser) return;
+      const model = editor.getModel();
+      const position = editor.getPosition();
+      if (!model || !position) return;
+
+      const path = useEditorStore.getState().activePath;
+      const selection = editor.getSelection();
+      const hasSelection = selection && !selection.isEmpty();
+
+      sendCursorPosition(sessionId, currentUser.id, {
+        line: position.lineNumber,
+        column: position.column,
+        path,
+        username: currentUser.username,
+        color: currentUser.color || '#6366f1',
+        anchor: encodeCursor(path, model.getOffsetAt(position)),
+        selection: hasSelection ? {
+          start: encodeCursor(path, model.getOffsetAt(selection.getStartPosition())),
+          end: encodeCursor(path, model.getOffsetAt(selection.getEndPosition())),
+        } : null,
+      });
+    };
+
+    editor.onDidChangeCursorPosition(publishCursor);
+    editor.onDidChangeCursorSelection(publishCursor);
 
     // ── Follow Mode: broadcast editor state when we have followers ──
     editor.onDidScrollChange((e) => {
@@ -398,7 +430,28 @@ const MonacoEditor = () => {
 
   }, [sessionId, currentUser]);
 
-  /* ── Remote cursor decorations ── */
+  /* ── Remote cursor + selection decorations ──
+   *
+   * Redrawn on document change as well as on cursor messages. A peer sends a
+   * position once and then stops talking; every edit anyone makes afterwards
+   * moves the text under that marker. Without redrawing here, their cursor
+   * silently slid out of place — and the only thing that ever corrected it was
+   * that peer happening to move.
+   *
+   * Positions come from the CRDT anchor where there is one: it names the
+   * character the cursor sits beside, so resolving it now yields the right
+   * spot no matter what has changed since it was sent. Line/column is the
+   * fallback for sessions with no shared document. */
+  const [docVersion, setDocVersion] = useState(0);
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const model = editor.getModel();
+    if (!model) return;
+    const sub = model.onDidChangeContent(() => setDocVersion((v) => v + 1));
+    return () => sub.dispose();
+  }, [editorReady, activePath]);
+
   useEffect(() => {
     const editor = editorRef.current;
     const monaco = monacoRef.current;
@@ -417,22 +470,44 @@ const MonacoEditor = () => {
     styleEl.id = 'rc-cursor-style-all';
     let cssText = '';
 
+    /** Anchor first, coordinates only if there is no anchor to resolve. */
+    const resolve = (anchor, fallbackLine, fallbackColumn) => {
+      if (model && anchor) {
+        const offset = decodeCursor(anchor);
+        if (offset != null) return model.getPositionAt(offset);
+      }
+      if (!fallbackLine) return null;
+      return {
+        lineNumber: Math.max(1, Math.min(fallbackLine, lineCount)),
+        column: Math.max(1, fallbackColumn || 1),
+      };
+    };
+
     Object.entries(remoteCursors).forEach(([userId, cursor]) => {
       if (cursor.path !== currentPath) return;
-      const line = Math.max(1, Math.min(cursor.line || 1, lineCount));
       if (lineCount === 0) return;
+
+      const position = resolve(cursor.anchor, cursor.line, cursor.column);
+      if (!position) return;
+      const line = Math.max(1, Math.min(position.lineNumber, lineCount));
 
       const cleanUserId = userId.replace(/[^a-zA-Z0-9]/g, '');
       const rawColor = cursor.color || '#6366f1';
-      
+
       let userColor = rawColor;
       if (rawColor.toLowerCase() === '#c7ff5e' || rawColor.toLowerCase() === '#3dd68c' || rawColor.toLowerCase() === '#00ff00' || rawColor.toLowerCase() === 'var(--lime)') {
         userColor = '#FF2E93'; // Map owner green to neon pink/magenta
       }
 
+      // Someone mid-keystroke reads differently from someone parked in the
+      // file, and that difference is the whole point of showing this: it is
+      // what stops two people reaching for the same line at the same moment.
+      const isTyping = Boolean(remoteTyping[userId]);
+
       cssText += `
         .remote-cursor-line-${cleanUserId} {
           border-left: 2px solid ${userColor} !important;
+          ${isTyping ? `background: ${hexToRgba(userColor, 0.10)} !important;` : ''}
         }
         .remote-cursor-glyph-${cleanUserId} {
           background-color: ${userColor} !important;
@@ -441,6 +516,10 @@ const MonacoEditor = () => {
         }
         .remote-cursor-label-${cleanUserId} {
           background-color: ${userColor} !important;
+        }
+        .remote-selection-${cleanUserId} {
+          background: ${hexToRgba(userColor, 0.22)} !important;
+          border-radius: 2px;
         }
       `;
 
@@ -455,11 +534,23 @@ const MonacoEditor = () => {
             position: monaco.editor.OverviewRulerLane.Full,
           },
           after: {
-            content: ` ◄ ${cursor.username || userId}`,
+            content: `${isTyping ? ' ✎' : ' ◄'} ${cursor.username || userId}`,
             inlineClassName: `remote-cursor-label remote-cursor-label-${cleanUserId}`,
           },
         },
       });
+
+      // What they have highlighted, drawn in their own colour.
+      if (cursor.selection?.start && cursor.selection?.end) {
+        const from = resolve(cursor.selection.start);
+        const to = resolve(cursor.selection.end);
+        if (from && to) {
+          newDecorations.push({
+            range: new monaco.Range(from.lineNumber, from.column, to.lineNumber, to.column),
+            options: { className: `remote-selection-${cleanUserId}` },
+          });
+        }
+      }
     });
 
     if (cssText) {
@@ -471,7 +562,7 @@ const MonacoEditor = () => {
       cursorDecorationsRef.current,
       newDecorations
     );
-  }, [remoteCursors]);
+  }, [remoteCursors, remoteTyping, docVersion, activePath]);
 
   /* ── Line-change decorations for line numbers ── */
   useEffect(() => {

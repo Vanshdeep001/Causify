@@ -15,6 +15,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { executeCode, createSnapshot, getTimeline, getDeployments } from '../services/api';
 import { analyzeImpact, summarizeImpacts } from '../utils/impactAnalyzer';
+import { clearSymbolCache } from '../utils/impact/symbols';
 import { sendCodeChange, sendRevert, sendFollowStart, sendFollowStop } from '../services/socket';
 
 const parseExecutionGraph = (code, language) => {
@@ -382,6 +383,17 @@ const useEditorStore = create(persist((set, get) => ({
 
   // ---- Actions: Session ----
   setSession: (sessionId, sessionName) => set({ sessionId, sessionName }),
+
+  /* The single code the owner shares. Identical to the session id for a
+   * session nobody outside this machine can reach; carries the host address
+   * as a suffix once a tunnel is open, so a joiner needs nothing extra. */
+  joinCode: '',
+  setJoinCode: (joinCode) => set({ joinCode }),
+
+  // Reachability of a hosted session from outside this network.
+  tunnelState: 'off',        // 'off' | 'starting' | 'on' | 'error'
+  tunnelError: null,
+  setTunnel: (tunnelState, tunnelError = null) => set({ tunnelState, tunnelError }),
   setProjectRootPath: (path) => set({ projectRootPath: path }),
   setCurrentUser: (user) => set({ currentUser: user }),
   setUserRole: (role) => set({ userRole: role }),
@@ -1081,6 +1093,48 @@ const useEditorStore = create(persist((set, get) => ({
     }
   },
 
+  /* Who is mid-edit right now, so their cursor can be drawn as active work
+   * rather than a parked marker. Keyed by user, cleared on a short timer. */
+  remoteTyping: {},
+  markRemoteTyping: (userId) => {
+    if (!userId) return;
+    const now = Date.now();
+    set((s) => ({ remoteTyping: { ...s.remoteTyping, [userId]: now } }));
+    setTimeout(() => {
+      if (get().remoteTyping[userId] !== now) return; // superseded by a newer edit
+      set((s) => {
+        const next = { ...s.remoteTyping };
+        delete next[userId];
+        return { remoteTyping: next };
+      });
+    }, 1800);
+  },
+
+  /**
+   * Remote edits, wherever they landed.
+   *
+   * The Monaco binding only ever reported changes to the file on screen, so
+   * edits to any other file updated the shared document and nothing else: this
+   * client kept stale text for them, cross-file impact analysis compared
+   * against content that was no longer true, and in a local workspace they
+   * never reached disk. Everything downstream of a change now runs for every
+   * file, not just the visible one.
+   *
+   * @param {{path: string, text: string}[]} edits
+   * @param {string|null} userId author of the change
+   */
+  applyRemoteFileEdits: (edits, userId) => {
+    const { activePath } = get();
+    edits.forEach(({ path, text }) => {
+      // The open file is already mirrored by the binding's own observer;
+      // repeating it here would raise a second impact warning for one change.
+      if (path === activePath) return;
+      if (get().files[path] === text) return;
+      get().updateRemoteFile(path, text, userId);
+    });
+    get().markRemoteTyping(userId);
+  },
+
   // Clear remote line changes for a specific path
   clearRemoteLineChanges: (path) => {
     set((s) => {
@@ -1709,6 +1763,10 @@ const useEditorStore = create(persist((set, get) => ({
 
   // Reset entire session state
   resetSession: () => {
+    // Symbol extraction is cached per file path; the next project would
+    // otherwise inherit entries belonging to this one.
+    clearSymbolCache();
+
     // Leaving a session must not take the user's folder with it. When a local
     // workspace is open the files belong to the disk, not the session, so the
     // tree and the open file stay exactly as they are — only the collaboration
@@ -1737,10 +1795,14 @@ const useEditorStore = create(persist((set, get) => ({
     set({
       sessionId: null,
       sessionName: '',
+      joinCode: '',
+      tunnelState: 'off',
+      tunnelError: null,
       currentUser: null,
       userRole: null,
       connectedUsers: [],
       remoteCursors: {},
+      remoteTyping: {},
       changeNotifications: [],
       remoteLineChanges: {},
       filePresence: {},

@@ -2,16 +2,24 @@
  * impactAnalyzer.js — Cross-File Impact Detection Engine
  *
  * Detects when a change in one file breaks references in
- * other files (HTML ↔ CSS ↔ JS dependency analysis).
- * Uses simple regex pattern matching — NOT a full parser.
+ * other files. Two independent passes:
+ *
+ *   DOM     HTML ↔ CSS ↔ JS — ids and class names (below)
+ *   SYMBOL  functions, classes and constants across files, for every
+ *           language with a provider (./impact/symbols.js)
+ *
+ * Uses regex pattern matching — NOT a full parser. See the note in
+ * impact/languages.js for why that is the right trade here.
  * ------------------------------------------------------- */
+
+import { analyzeSymbolImpact } from './impact/symbols';
 
 // ── File-type detection ──────────────────────────────────
 const getFileType = (path) => {
   if (!path) return 'unknown';
   if (path.endsWith('.html') || path.endsWith('.htm')) return 'html';
   if (path.endsWith('.css')) return 'css';
-  if (path.endsWith('.js') || path.endsWith('.jsx') || path.endsWith('.ts')) return 'js';
+  if (/\.(jsx?|tsx?|mjs|cjs)$/i.test(path)) return 'js';
   return 'unknown';
 };
 
@@ -25,16 +33,22 @@ const extractHtmlIdentifiers = (content) => {
   const ids = new Set();
   const classes = new Set();
 
+  /* Commented-out markup is not on the page. Counting it kept deleted
+   * elements looking alive — delete a tag but leave it commented above, and
+   * the id still appeared to exist, so nothing downstream was ever reported
+   * as broken. The CSS pass has always stripped its comments; this did not. */
+  const cleaned = String(content || '').replace(/<!--[\s\S]*?-->/g, ' ');
+
   // Match id="..." or id='...'
   const idRegex = /\bid\s*=\s*["']([^"']+)["']/gi;
   let m;
-  while ((m = idRegex.exec(content)) !== null) {
+  while ((m = idRegex.exec(cleaned)) !== null) {
     ids.add(m[1]);
   }
 
   // Match class="..." or class='...' (space-separated)
   const classRegex = /\bclass\s*=\s*["']([^"']+)["']/gi;
-  while ((m = classRegex.exec(content)) !== null) {
+  while ((m = classRegex.exec(cleaned)) !== null) {
     m[1].split(/\s+/).forEach(c => { if (c) classes.add(c); });
   }
 
@@ -218,13 +232,28 @@ export const summarizeImpacts = (impacts) => {
  * @returns {{ impacts: Array, summary: string }}
  */
 export const analyzeImpact = (changedPath, oldContent, newContent, allFiles) => {
-  const type = getFileType(changedPath);
-  if (type === 'unknown') return { impacts: [], summary: '' };
-
   // Don't analyze if content is the same
   if (oldContent === newContent) return { impacts: [], summary: '' };
 
-  const impacts = [];
+  /* Symbol breakage runs for every language we have a provider for, and is
+   * independent of the DOM passes below — a Python or Java file has no HTML
+   * relationship to report, but it can absolutely break someone's import. */
+  const impacts = analyzeSymbolImpact(changedPath, oldContent, newContent, allFiles);
+
+  /* affectedFiles carries FULL paths, because that is what it is compared
+   * against: the caller checks `affectedFiles.includes(activePath)` to decide
+   * whether the person looking at this screen is the one affected. Reducing
+   * these to basenames — as this did — silently matched nothing for any file
+   * in a subfolder, so warnings only ever appeared in flat projects.
+   * summarizeImpacts still shortens them for display, which is separate. */
+  const finish = () => ({
+    impacts,
+    summary: summarizeImpacts(impacts),
+    affectedFiles: [...new Set(impacts.map((i) => i.file))],
+  });
+
+  const type = getFileType(changedPath);
+  if (type === 'unknown') return finish();
 
   if (type === 'html') {
     // Extract IDs and classes before and after
@@ -234,6 +263,11 @@ export const analyzeImpact = (changedPath, oldContent, newContent, allFiles) => 
     // Find removed or renamed IDs
     const removedIds = [...oldIds.ids].filter(id => !newIds.ids.has(id));
     const removedClasses = [...oldIds.classes].filter(cls => !newIds.classes.has(cls));
+
+    // Nothing left this file, so nothing downstream can have broken.
+    // Without this the whole project is walked on every keystroke that
+    // merely edits inside a rule or a tag.
+    if (removedIds.length === 0 && removedClasses.length === 0) return finish();
 
     // Check which other files reference these removed IDs/classes
     for (const [path, content] of Object.entries(allFiles)) {
@@ -311,6 +345,11 @@ export const analyzeImpact = (changedPath, oldContent, newContent, allFiles) => 
     const removedIds = [...oldSel.idSelectors].filter(s => !newSel.idSelectors.has(s));
     const removedClasses = [...oldSel.classSelectors].filter(s => !newSel.classSelectors.has(s));
 
+    // Nothing left this file, so nothing downstream can have broken.
+    // Without this the whole project is walked on every keystroke that
+    // merely edits inside a rule or a tag.
+    if (removedIds.length === 0 && removedClasses.length === 0) return finish();
+
     for (const [path, content] of Object.entries(allFiles)) {
       if (path === changedPath || !content) continue;
       if (getFileType(path) !== 'html') continue;
@@ -353,6 +392,11 @@ export const analyzeImpact = (changedPath, oldContent, newContent, allFiles) => 
     // Find newly added selectors that don't match any HTML
     const addedIds = [...newSel.idRefs].filter(s => !oldSel.idRefs.has(s));
 
+    // Nothing left this file, so nothing downstream can have broken.
+    // Without this the whole project is walked on every keystroke that
+    // merely edits inside a rule or a tag.
+    if (addedIds.length === 0) return finish();
+
     for (const [path, content] of Object.entries(allFiles)) {
       if (path === changedPath || !content) continue;
       if (getFileType(path) !== 'html') continue;
@@ -372,11 +416,10 @@ export const analyzeImpact = (changedPath, oldContent, newContent, allFiles) => 
         }
       }
     }
+
   }
 
-  const affectedFiles = [...new Set(impacts.map(i => i.file.split('/').pop()))];
-
-  return { impacts, summary: summarizeImpacts(impacts), affectedFiles };
+  return finish();
 };
 
 export default analyzeImpact;
