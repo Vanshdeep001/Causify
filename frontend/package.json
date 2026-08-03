@@ -9,8 +9,10 @@
     "preview": "vite preview",
     "electron:dev": "node scripts/electron-dev.js",
     "electron:dev:nobackend": "node scripts/electron-dev.js --no-backend",
-    "electron:build": "npx vite build && npx electron-builder",
-    "electron:preview": "npx vite build && npx electron ."
+    "electron:build": "node scripts/fetch-cloudflared.js && npx vite build && npx electron-builder",
+    "electron:preview": "npx vite build && npx electron .",
+    "fetch-cloudflared": "node scripts/fetch-cloudflared.js",
+    "fetch-cloudflared:all": "node scripts/fetch-cloudflared.js --all"
   },
   "keywords": [],
   "author": "",
@@ -70,15 +72,57 @@
     "win": {
       "target": "nsis",
       "icon": "public/icon.ico",
-      "signAndEditExecutable": false
+      "signAndEditExecutable": false,
+      "extraResources": [
+        {
+          "from": "resources/backend",
+          "to": "backend"
+        },
+        {
+          "from": "resources/bin/win",
+          "to": "bin"
+        },
+        {
+          "from": "resources/bin/LICENSE-cloudflared.txt",
+          "to": "bin/LICENSE-cloudflared.txt"
+        }
+      ]
     },
     "forceCodeSigning": false,
     "mac": {
       "target": "dmg",
-      "icon": "public/icon.icns"
+      "icon": "public/icon.icns",
+      "extraResources": [
+        {
+          "from": "resources/backend",
+          "to": "backend"
+        },
+        {
+          "from": "resources/bin/mac",
+          "to": "bin"
+        },
+        {
+          "from": "resources/bin/LICENSE-cloudflared.txt",
+          "to": "bin/LICENSE-cloudflared.txt"
+        }
+      ]
     },
     "linux": {
-      "target": "AppImage"
+      "target": "AppImage",
+      "extraResources": [
+        {
+          "from": "resources/backend",
+          "to": "backend"
+        },
+        {
+          "from": "resources/bin/linux",
+          "to": "bin"
+        },
+        {
+          "from": "resources/bin/LICENSE-cloudflared.txt",
+          "to": "bin/LICENSE-cloudflared.txt"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

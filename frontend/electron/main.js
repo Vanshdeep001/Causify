@@ -24,6 +24,7 @@ const { registerDeployHandlers, killAllDeploySessions } = require('./ipc/deploy'
 const { registerRenderDeployHandlers, killAllRenderDeploySessions } = require('./ipc/renderDeploy');
 const { registerCaptureHandlers } = require('./ipc/capture');
 const { registerWorkspaceHandlers } = require('./ipc/workspace');
+const { registerTunnelHandlers, stopTunnel } = require('./ipc/tunnel');
 
 
 /* ── Constants ── */
@@ -204,6 +205,7 @@ app.whenReady().then(async () => {
   registerRenderDeployHandlers();
   registerCaptureHandlers();
   registerWorkspaceHandlers();
+  registerTunnelHandlers();
 
 
   // Allow renderer getDisplayMedia() to record the screen without a picker.
@@ -269,6 +271,9 @@ app.on('window-all-closed', () => {
   killAllPtySessions();
   killAllDeploySessions();
   killAllRenderDeploySessions();
+  // Close the public route too. Leaving it open would keep advertising an
+  // address that no longer reaches a running session.
+  stopTunnel();
 
   if (process.platform !== 'darwin') {
     // The backend is stopped by the before-quit handler below, which shuts it
@@ -303,6 +308,9 @@ app.on('before-quit', (event) => {
   killAllPtySessions();
   killAllDeploySessions();
   killAllRenderDeploySessions();
+  // Close the public route too. Leaving it open would keep advertising an
+  // address that no longer reaches a running session.
+  stopTunnel();
 
   const forceExit = setTimeout(() => app.exit(0), 8000);
   Promise.resolve(shutdownBackend())

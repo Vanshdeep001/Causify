@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cart — impact demo</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <main id="app-root" class="panel">
+    <h1 class="panel-title">Shopping cart</h1>
+
+    <ul id="item-list">
+      <!-- TRIGGER 2 lives on the two <li> tags below: remove their class
+           attribute (both of them) and the CSS rule for it goes dead. -->
+      <li class="cart-item">Keyboard — 3 x 45.00</li>
+      <li class="cart-item">Mouse — 1 x 25.00</li>
+    </ul>
+
+    <!-- TRIGGER 1 lives on the <strong> tag below: delete its id attribute.
+         app.js looks that element up and will get null. -->
+    <p>Total: <strong id="total-display">0.00</strong></p>
+
+    <button id="recalc-btn" class="action">Recalculate</button>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

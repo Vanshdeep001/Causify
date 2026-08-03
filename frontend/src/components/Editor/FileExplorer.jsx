@@ -7,6 +7,7 @@ import useEditorStore from '../../store/useEditorStore';
 import { createSession, joinSession, leaveSession, uploadProject, saveFile, deleteFile, gitStatus } from '../../services/api';
 import { connectWebSocket, sendCodeChange, sendFileDelete, sendProjectSync } from '../../services/socket';
 import { buildCollabCallbacks } from '../../services/collabCallbacks';
+import { setOrigin, resetOrigin, buildJoinCode, parseJoinCode, getOrigin } from '../../services/backendHost';
 import { detectProject } from '../../services/devserver';
 import { isBinaryAssetPath, isSkippedAssetPath } from '../../utils/binaryAssets';
 import { decorationFor, parseGitStatus } from '../../utils/gitStatusMap';
@@ -99,12 +100,107 @@ const ActionButton = ({ onClick, title, children }) => {
   );
 };
 
+/**
+ * The invitation an owner hands out.
+ *
+ * Sharing is one code and one password, the way it has always been — the host
+ * address is folded into the code rather than added beside it, because a
+ * second field is a second thing to explain and a second thing to get wrong.
+ *
+ * While the tunnel is opening the code still works for anyone on this machine
+ * or this network, so it is shown immediately rather than held back behind a
+ * spinner; the status line underneath says how far the reach currently
+ * extends.
+ */
+const ShareStrip = ({ code, state, error }) => {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* Clipboard blocked — the code is on screen and can be selected. */
+    }
+  };
+
+  const status = {
+    starting: { text: 'Opening internet access…', color: 'var(--t3)' },
+    on: { text: 'Anyone with this code can join, from anywhere', color: 'var(--mint, #4ADE80)' },
+    error: { text: error || 'Internet access unavailable — this network only', color: 'var(--amber, #FBBF24)' },
+    off: { text: 'This network only', color: 'var(--t3)' },
+  }[state] || { text: '', color: 'var(--t3)' };
+
+  return (
+    <div style={{
+      margin: '8px 14px 4px',
+      padding: '9px 10px',
+      background: 'rgba(255,255,255,0.03)',
+      border: '1px solid var(--line)',
+      borderRadius: '6px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '6px',
+    }}>
+      <div style={{
+        fontSize: '0.58rem',
+        letterSpacing: '0.08em',
+        color: 'var(--t3)',
+        fontWeight: 600,
+      }}>
+        SHARE THIS CODE
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <code style={{
+          flex: 1,
+          minWidth: 0,
+          fontSize: '0.68rem',
+          fontFamily: 'var(--font-mono, monospace)',
+          color: 'var(--t1, #FFF)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }} title={code}>
+          {code}
+        </code>
+        <button
+          onClick={copy}
+          title="Copy the join code"
+          style={{
+            background: copied ? 'rgba(74,222,128,0.15)' : 'rgba(255,255,255,0.06)',
+            border: '1px solid var(--line)',
+            borderRadius: '4px',
+            color: copied ? 'var(--mint, #4ADE80)' : 'var(--t2, #CCC)',
+            cursor: 'pointer',
+            fontSize: '0.6rem',
+            padding: '4px 8px',
+            flexShrink: 0,
+            transition: 'all 0.12s ease',
+          }}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+
+      <div style={{ fontSize: '0.58rem', color: status.color, lineHeight: 1.4 }}>
+        {state === 'starting' && <span style={{ marginRight: '4px' }}>◌</span>}
+        {status.text}
+      </div>
+    </div>
+  );
+};
+
 const FileExplorer = ({ onToggle }) => {
   const files = useEditorStore((s) => s.files);
   const activePath = useEditorStore((s) => s.activePath);
   const openFile = useEditorStore((s) => s.openFile);
   const sessionId = useEditorStore((s) => s.sessionId);
   const sessionName = useEditorStore((s) => s.sessionName);
+  const joinCode = useEditorStore((s) => s.joinCode);
+  const tunnelState = useEditorStore((s) => s.tunnelState);
+  const tunnelError = useEditorStore((s) => s.tunnelError);
   const currentUser = useEditorStore((s) => s.currentUser);
   const userRole = useEditorStore((s) => s.userRole);
   const connectedUsers = useEditorStore((s) => s.connectedUsers);
@@ -259,10 +355,53 @@ const FileExplorer = ({ onToggle }) => {
     }));
   };
 
+  /**
+   * Publish this machine's backend so invited people can reach the session
+   * from anywhere, and fold the resulting address into the code the owner
+   * shares.
+   *
+   * Deliberately not awaited by handleCreate. Opening a tunnel takes several
+   * seconds, and blocking session creation on it would make starting a session
+   * feel slower for the common case where everyone is already on this machine
+   * or this network. The session is usable immediately with its plain id; the
+   * code upgrades itself the moment the tunnel answers.
+   */
+  const beginSharing = (sessionIdValue) => {
+    const store = useEditorStore.getState();
+    store.setJoinCode(sessionIdValue);
+
+    if (!window.electronAPI?.tunnel) {
+      store.setTunnel('off');
+      return;
+    }
+
+    store.setTunnel('starting');
+    window.electronAPI.tunnel.start(8080)
+      .then((res) => {
+        // The session may already have been left while we were waiting.
+        if (useEditorStore.getState().sessionId !== sessionIdValue) return;
+        if (res?.ok && res.url) {
+          useEditorStore.getState().setJoinCode(buildJoinCode(sessionIdValue, res.url));
+          useEditorStore.getState().setTunnel('on');
+        } else {
+          useEditorStore.getState().setTunnel('error', res?.error || 'Tunnel failed to start');
+        }
+      })
+      .catch((err) => {
+        if (useEditorStore.getState().sessionId !== sessionIdValue) return;
+        useEditorStore.getState().setTunnel('error', err.message);
+      });
+  };
+
   const handleCreate = async (uploadedFiles = []) => {
     setIsLoading(true);
     setErrorMsg('');
     try {
+      // Hosting always means hosting here. A previous session joined on
+      // someone else's machine would otherwise leave the origin pointed at
+      // them, and this session would be created on their backend.
+      resetOrigin();
+
       // Starting a session from an open folder means "share what I'm working
       // on": read the project off disk so peers receive the real contents. The
       // folder stays the source of truth — the session is only the transport.
@@ -286,6 +425,7 @@ const FileExplorer = ({ onToggle }) => {
       setSession(session.id, session.name);
       setCurrentUser(session.user);
       setUserRole('owner');
+      beginSharing(session.id);
       // Keep a local workspace as it is: the files are already on disk and the
       // tree is already correct. Replacing it would drop the disk connection.
       if (!workspaceRoot) setProject(filesToShare);
@@ -305,7 +445,15 @@ const FileExplorer = ({ onToggle }) => {
     setIsLoading(true);
     setErrorMsg('');
     try {
-      const session = await joinSession(joinId, joinPwd, joinUsername);
+      // The code carries the host address when the session lives on another
+      // machine, so it is resolved before the first request goes out. A plain
+      // id has no host part and leaves the origin alone — which is what keeps
+      // same-machine and browser sessions working exactly as they did.
+      const { sessionId: parsedId, origin: parsedOrigin } = parseJoinCode(joinId);
+      if (parsedOrigin) setOrigin(parsedOrigin);
+      else resetOrigin();
+
+      const session = await joinSession(parsedId, joinPwd, joinUsername);
       try { localStorage.setItem('causify-last-username', joinUsername); } catch { /* best effort */ }
 
       // On the desktop, put the shared project on the joiner's own disk and work
@@ -329,17 +477,26 @@ const FileExplorer = ({ onToggle }) => {
       setSession(session.id, session.name);
       setCurrentUser(session.user);
       setUserRole('collaborator');
+      // Keep the code that got us here, so a joiner can pass the invitation on
+      // without the host having to re-send it.
+      useEditorStore.getState().setJoinCode(buildJoinCode(session.id, getOrigin()));
       // If the files went to disk the tree already reflects them; loading the
       // in-memory copy over the top would sever the disk connection.
       if (!landedOnDisk) setProject(incoming);
       initSocket(session.id, session.user);
       setPanel(null);
     } catch (err) {
+      // A failed join must not leave the app pointed at someone else's
+      // machine, or every later request would go to a host we never reached.
+      resetOrigin();
+
       const msg = err.response?.data?.message || err.response?.data?.error;
       if (err.response?.status === 404) {
         setErrorMsg('SESSION NOT FOUND: This session ID does not exist or has expired.');
       } else if (err.response?.status === 401) {
         setErrorMsg('INVALID PASSWORD: Incorrect password for this session.');
+      } else if (err.code === 'ERR_NETWORK' || !err.response) {
+        setErrorMsg('CANNOT REACH HOST: The session owner may be offline, or their share link has expired.');
       } else {
         setErrorMsg(msg || err.message || 'Join failed');
       }
@@ -560,6 +717,11 @@ const FileExplorer = ({ onToggle }) => {
         // Best effort — the backend's sweep collects anything left behind.
         console.warn('[Causify] Could not notify the backend on leave:', err.message);
       }
+      // Close the public route and point back at this machine. Both must
+      // happen after the leave call above, which still needs the old origin
+      // to reach the host we are leaving.
+      try { await window.electronAPI?.tunnel?.stop(); } catch { /* best effort */ }
+      resetOrigin();
       resetSession();
       return;
     }
@@ -1671,8 +1833,8 @@ const FileExplorer = ({ onToggle }) => {
                   <input style={inputStyle} value={joinUsername} onChange={e => setJoinUsername(e.target.value)} placeholder="Enter your name" />
                 </div>
                 <div>
-                  <label style={labelStyle}>Session ID</label>
-                  <input style={inputStyle} value={joinId} onChange={e => setJoinId(e.target.value)} placeholder="XYZ..." />
+                  <label style={labelStyle}>Session code</label>
+                  <input style={inputStyle} value={joinId} onChange={e => setJoinId(e.target.value)} placeholder="Paste the code you were sent" />
                 </div>
                 <div>
                   <label style={labelStyle}>Password</label>
@@ -1791,6 +1953,24 @@ const FileExplorer = ({ onToggle }) => {
                 </ActionButton>
               </div>
             </div>
+
+            {/* The one thing an owner has to hand out. It is the session id
+                until the tunnel answers, then the same id with the host
+                address folded in — so there is never a second field to copy
+                and never a second instruction to give.
+
+                Shown only while nobody else has arrived. Once someone has,
+                the invitation has served its purpose and the code is still
+                in the header beside RUN — leaving this here would keep a
+                permanent panel of setup instructions above the file tree. */}
+            {sessionId && joinCode && connectedUsers.length <= 1 && (
+              <ShareStrip
+                code={joinCode}
+                state={tunnelState}
+                error={tunnelError}
+              />
+            )}
+
             {newItem && newItem.parent === '' && (
               <NewItemForm isInline={false} />
             )}

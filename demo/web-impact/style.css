@@ -1,0 +1,56 @@
+/* TRIGGER 3 — find the rule that styles the list rows (further down,
+   the one with padding and a bottom border) and delete it entirely.
+   Whoever has index.html open gets a WARNING: those rows lose styling. */
+
+body {
+  font-family: system-ui, sans-serif;
+  background: #14151a;
+  color: #e6e6e6;
+  padding: 32px;
+}
+
+#app-root {
+  max-width: 420px;
+  margin: 0 auto;
+  background: #1c1e25;
+  border: 1px solid #2b2e37;
+  border-radius: 10px;
+  padding: 20px 24px;
+}
+
+.panel-title {
+  margin: 0 0 16px;
+  font-size: 1.1rem;
+  letter-spacing: 0.01em;
+}
+
+#item-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px;
+}
+
+.cart-item {
+  padding: 8px 10px;
+  border-bottom: 1px solid #2b2e37;
+  font-size: 0.9rem;
+}
+
+#total-display {
+  color: #4ade80;
+  font-variant-numeric: tabular-nums;
+}
+
+.action {
+  margin-top: 16px;
+  padding: 8px 14px;
+  border: 1px solid #3a3f4b;
+  border-radius: 6px;
+  background: #262a33;
+  color: #e6e6e6;
+  cursor: pointer;
+}
+
+.action:hover {
+  background: #2f3540;
+}

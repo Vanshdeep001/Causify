@@ -80,6 +80,9 @@ export function initCollab(sid, uid, send) {
     sendFn({ kind: 'update', senderId: userId, payload: toB64(update) });
   });
 
+  // Report remote edits wherever they land, not only in the open file.
+  doc.on('afterTransaction', handleAfterTransaction);
+
   useEditorStore.setState({ collabReady: true });
 
   // Ask peers for the current document state.
@@ -92,6 +95,7 @@ export function destroyCollab() {
   for (const k in persistTimers) delete persistTimers[k];
   seededPaths.clear();
   if (doc) {
+    try { doc.off('afterTransaction', handleAfterTransaction); } catch (e) { /* ignore */ }
     try { doc.destroy(); } catch (e) { /* ignore */ }
   }
   doc = null;
@@ -107,6 +111,108 @@ export const isCollabActive = () => !!doc;
 export function getFileText(path) {
   if (!doc || !path) return null;
   return doc.getText(textKey(path));
+}
+
+/* ─────────────────────────────────────────────────────────
+ * Cursor anchoring
+ *
+ * A cursor sent as "line 12, column 4" is a claim about a document that is
+ * still moving. By the time it is drawn, an edit above it may have shifted
+ * everything down, and the marker ends up pointing at the wrong text — the
+ * further someone is from you in the file, the more wrong it looks.
+ *
+ * A Yjs relative position names the character it sits beside rather than a
+ * coordinate, so it survives every insert and delete around it. Peers resolve
+ * it against their own copy at the moment they draw, and it lands in the right
+ * place regardless of what has happened in between.
+ * ───────────────────────────────────────────────────────── */
+
+/** Anchor an offset in `path` to the character there. Returns base64 or null. */
+export function encodeCursor(path, index) {
+  const ytext = getFileText(path);
+  if (!ytext) return null;
+  try {
+    const rel = Y.createRelativePositionFromTypeIndex(ytext, index);
+    return toB64(Y.encodeRelativePosition(rel));
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Resolve an anchor against the current document. Returns an offset or null. */
+export function decodeCursor(encoded) {
+  if (!doc || !encoded) return null;
+  try {
+    const rel = Y.decodeRelativePosition(fromB64(encoded));
+    const abs = Y.createAbsolutePositionFromRelativePosition(rel, doc);
+    return abs ? abs.index : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+ * Remote edit notifications
+ *
+ * Only the file on screen carries a Monaco binding, so its observer is the
+ * only thing that ever reported a remote change. Edits to every other file
+ * still reached the shared document but were invisible to the rest of the app:
+ * the store kept stale text for them, and in a local workspace they never
+ * reached disk at all.
+ *
+ * This watches the document itself, so a change is reported wherever it lands.
+ * ───────────────────────────────────────────────────────── */
+
+/** Root types are registered by name on the doc, so the name is a lookup. */
+function pathOfType(type) {
+  if (!doc) return null;
+  for (const [name, shared] of doc.share.entries()) {
+    if (shared === type && name.startsWith('file:')) return name.slice(5);
+  }
+  return null;
+}
+
+/*
+ * The resolved text travels with the notification rather than the receiver
+ * reading it back out of the document. The store would otherwise have to
+ * import this module, which already imports the store.
+ */
+function handleAfterTransaction(transaction) {
+  const origin = transaction.origin;
+  if (!origin || !origin.remote) return;
+
+  /* transaction.changed, NOT changedParentTypes.
+   *
+   * changedParentTypes is built from observer events, and Yjs only produces
+   * those for root types this client has declared by calling getText(). A file
+   * nobody here has opened is a bare AbstractType with no observer, so it
+   * contributes no event and the whole set comes back empty — which is exactly
+   * the case this listener exists for: somebody edits a file you do not have
+   * open, and it breaks the one you do. transaction.changed is populated
+   * whenever items are added or removed, declared or not. */
+  const paths = [];
+  transaction.changed.forEach((_subs, type) => {
+    const path = pathOfType(type);
+    if (path) paths.push(path);
+  });
+  if (paths.length === 0) return;
+
+  const author = origin.userId || null;
+
+  /* Reading the text means calling getText(), which upgrades a placeholder
+   * root type in place — not something to do while the transaction that
+   * produced it is still being cleaned up. */
+  queueMicrotask(() => {
+    if (!doc) return;
+    const edits = [];
+    paths.forEach((path) => {
+      const ytext = getFileText(path);
+      if (ytext) edits.push({ path, text: ytext.toString() });
+    });
+    if (edits.length > 0) {
+      useEditorStore.getState().applyRemoteFileEdits(edits, author);
+    }
+  });
 }
 
 /* ─────────────────────────────────────────────────────────

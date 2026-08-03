@@ -13,14 +13,7 @@
 import { Client } from '@stomp/stompjs';
 import SockJS from 'sockjs-client/dist/sockjs';
 import { initCollab, destroyCollab, handleYjsMessage } from './collabDoc';
-
-// In production Electron the app is loaded via file:// protocol,
-// so relative URLs don't work — point directly at the local backend.
-const isElectronProd =
-  typeof window !== 'undefined' &&
-  (window.location.protocol === 'file:' || window.electronAPI);
-
-const WS_URL = isElectronProd ? 'http://127.0.0.1:8080/ws' : '/ws';
+import { getWsUrl } from './backendHost';
 
 let stompClient = null;
 let subscriptions = {};
@@ -44,9 +37,11 @@ export const connectWebSocket = (sessionId, userInfo, callbacks = {}) => {
     stompClient = null;
   }
 
-  // Create a STOMP client over SockJS
+  // Create a STOMP client over SockJS.
+  // The URL is resolved at connect time (and again on every auto-reconnect),
+  // so a session joined on another machine keeps pointing at that machine.
   stompClient = new Client({
-    webSocketFactory: () => new SockJS(WS_URL),
+    webSocketFactory: () => new SockJS(getWsUrl()),
 
     onConnect: () => {
       console.log('[WS] Connected to Causify server');
