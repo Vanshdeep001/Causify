@@ -2,7 +2,7 @@
  * SetupWizard.jsx — First-Launch Setup Wizard
  *
  * Shows on first Electron launch to collect:
- *   Step 1: OpenRouter API key (with validation)
+ *   Step 1: Google Gemini API key (with validation)
  *   Step 2: Backend connectivity check
  *
  * After completion, calls electronAPI.completeSetup()
@@ -10,6 +10,7 @@
  * ------------------------------------------------------- */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { saveAiKey } from '../../services/api';
 
 const STEPS = ['api-key', 'backend', 'complete'];
 
@@ -47,15 +48,16 @@ const SetupWizard = ({ onComplete }) => {
           await window.electronAPI.clearApiKey();
         }
       } else {
-        // In browser dev mode: simulate validation via direct fetch
-        const res = await fetch('https://openrouter.ai/api/v1/models', {
-          headers: { 'Authorization': `Bearer ${apiKey.trim()}` },
-        });
-        if (res.ok) {
+        // In browser dev mode there is no secure IPC, so the backend validates
+        // instead. It uses the same region and model the real calls will use,
+        // which a direct fetch from here could not guarantee — and it keeps the
+        // key off the renderer's network stack.
+        const res = await saveAiKey(apiKey.trim());
+        if (res && res.success) {
           setKeyStatus('success');
         } else {
           setKeyStatus('error');
-          setKeyError(`API returned status ${res.status}. Check your key.`);
+          setKeyError(res?.error || 'Google rejected this key.');
         }
       }
     } catch (err) {
@@ -146,17 +148,17 @@ const SetupWizard = ({ onComplete }) => {
         {currentStep === 0 && (
           <div className="setup-step" style={{ animation: 'setup-fade-in 0.4s ease' }}>
             <div className="setup-step-icon">🔑</div>
-            <h2 className="setup-title">OpenRouter API Key</h2>
+            <h2 className="setup-title">Gemini API Key</h2>
             <p className="setup-subtitle">
-              Causify uses OpenRouter for AI-powered root cause analysis.
+              Causify uses Google Gemini for AI root cause analysis and auto-fix.
               <br />
               <a
-                href="https://openrouter.ai/keys"
+                href="https://aistudio.google.com/apikey"
                 target="_blank"
                 rel="noreferrer"
                 className="setup-link"
               >
-                Get your API key →
+                Get a free key at aistudio.google.com →
               </a>
             </p>
 
@@ -169,7 +171,7 @@ const SetupWizard = ({ onComplete }) => {
                   setKeyStatus(null);
                   setKeyError('');
                 }}
-                placeholder="sk-or-v1-..."
+                placeholder="Gemini API key…"
                 className="setup-input"
                 spellCheck={false}
                 autoFocus
@@ -275,7 +277,7 @@ const SetupWizard = ({ onComplete }) => {
             <div className="setup-checklist">
               <div className="setup-checklist-item">
                 <span className="setup-check">✓</span>
-                OpenRouter API connected
+                Gemini API connected
               </div>
               <div className="setup-checklist-item">
                 <span className="setup-check">✓</span>

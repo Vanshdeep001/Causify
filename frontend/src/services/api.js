@@ -114,13 +114,13 @@ export const executeCode = async (sessionId, code, language = 'javascript') => {
 
 /* ---- AI Diagnosis Configuration APIs ---- */
 
-// Whether the backend has an OpenRouter key (env var, yml, or set at runtime)
+// Whether the backend has a Gemini key (env var, yml, or set at runtime)
 export const getAiStatus = async () => {
   const response = await api.get('/ai/status');
   return response.data;
 };
 
-// Verify a key with OpenRouter and activate it on the backend (no restart needed)
+// Verify a key against Gemini and activate it on the backend (no restart needed)
 export const saveAiKey = async (key) => {
   const response = await api.post('/ai/key', { key }, { timeout: TIMEOUT.AI });
   return response.data;
@@ -163,6 +163,18 @@ export const analyzeRootCause = async (sessionId, error, code) => {
     error,
     code,
   }, { timeout: TIMEOUT.AI });
+  return response.data;
+};
+
+/* ---- Auto-Fix Agent APIs ----
+ * The agent may run several propose → patch → execute cycles before it answers,
+ * so this shares the long AI deadline rather than the 30s CRUD one.
+ */
+
+export const requestAutoFix = async (payload) => {
+  // payload: { sessionId, code, language, filePath, errorType, errorMessage,
+  //            errorLine, suspectedVariable, semanticContext }
+  const response = await api.post('/auto-fix', payload, { timeout: TIMEOUT.AI });
   return response.data;
 };
 

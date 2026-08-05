@@ -1,10 +1,13 @@
 /*
  * AiConfigController.java — Runtime configuration of the AI diagnosis engine
  *
- * Lets the frontend check whether an OpenRouter key is configured and
- * supply one at runtime (verified against OpenRouter before activation),
- * so users can enable AI diagnosis directly from the terminal panel
+ * Lets the frontend check whether a Gemini key is configured and supply one at
+ * runtime (verified with a real generation call before activation), so AI
+ * diagnosis and the auto-fix agent can be enabled from the terminal panel
  * without restarting the backend.
+ *
+ * This is the primary way a key gets set, not a convenience — it keeps the key
+ * out of application.yml, and therefore out of git.
  */
 package com.debugsync.controller;
 

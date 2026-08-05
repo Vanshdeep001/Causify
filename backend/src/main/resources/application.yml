@@ -49,7 +49,12 @@ spring:
 # Custom DebugSync configuration
 debugsync:
   ai:
-    openrouter-api-key: ${OPENROUTER_API_KEY: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}
+    # Google Gemini. Left blank on purpose — paste the key into the UI instead,
+    # which activates it live and keeps it out of this file and out of git.
+    gemini-api-key: ${GEMINI_API_KEY:}
+    # gemini-2.5-flash is the default because free-tier keys commonly have
+    # gemini-2.5-pro capped at zero requests (429 with "limit: 0").
+    gemini-model: ${GEMINI_MODEL:gemini-2.5-flash}
   cors:
     allowed-origins: http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000,http://localhost:3001
   git:

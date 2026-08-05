@@ -1901,8 +1901,12 @@ const FileExplorer = ({ onToggle }) => {
               .fx-file-del { opacity: 0; pointer-events: none; transition: opacity 0.12s ease; }
               .fx-file-item:hover .fx-file-del { opacity: 1; pointer-events: auto; }
             `}</style>
-            <div style={{ padding: '8px 14px', ...sectionLabelSty, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>Project Files</span>
+            <div style={{ padding: '8px 14px', ...sectionLabelSty, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+              {/* The label yields first: it truncates so the actions keep their
+                  full width instead of being pushed off the panel's edge. */}
+              <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                Project Files
+              </span>
               {/* Creating and uploading are edit actions, so viewers do not get
                   them. Taking a copy of the project and viewing history are
                   read-only, and a viewer has every reason to want both. */}
@@ -1912,7 +1916,8 @@ const FileExplorer = ({ onToggle }) => {
                 background: 'var(--s0)',
                 border: '1px solid var(--line-strong)',
                 borderRadius: '6px',
-                overflow: 'hidden'
+                overflow: 'hidden',
+                flexShrink: 0
               }}>
                 {(!sessionId || canEdit) && (
                   <>
@@ -2153,17 +2158,25 @@ const FileExplorer = ({ onToggle }) => {
               alignItems: 'flex-start',
               gap: '4px'
             }}>
-              <div style={{
-                fontFamily: 'var(--font-header)',
-                fontSize: '0.9rem',
-                fontWeight: 900,
-                color: '#FFFFFF',
-                letterSpacing: '-0.02em',
-                textTransform: 'uppercase',
-                lineHeight: 1.2,
-                wordBreak: 'break-all',
-                width: '100%'
-              }}>
+              <div
+                title={workspaceRoot ? (workspaceName || 'Local Folder') : (sessionName || 'Local Session')}
+                style={{
+                  fontFamily: 'var(--font-header)',
+                  fontSize: '0.9rem',
+                  fontWeight: 900,
+                  color: '#FFFFFF',
+                  letterSpacing: '-0.02em',
+                  textTransform: 'uppercase',
+                  lineHeight: 1.2,
+                  /* Wrap at spaces first and only split a word when it genuinely
+                     cannot fit. `break-all` split on whatever character happened
+                     to land at the edge, which is what turned "LOCAL SESSION"
+                     into "LOCAL SESSIO / N" in a narrow sidebar. */
+                  wordBreak: 'normal',
+                  overflowWrap: 'anywhere',
+                  width: '100%'
+                }}
+              >
                 {workspaceRoot ? (workspaceName || 'Local Folder') : (sessionName || 'Local Session')}
               </div>
 

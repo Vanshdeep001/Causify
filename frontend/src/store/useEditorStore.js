@@ -13,7 +13,9 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { executeCode, createSnapshot, getTimeline, getDeployments } from '../services/api';
+// Aliased: the store exposes its own requestAutoFix action, and an identical
+// name here would read like recursion even though it is not.
+import { executeCode, createSnapshot, getTimeline, getDeployments, requestAutoFix as fetchAutoFix } from '../services/api';
 import { analyzeImpact, summarizeImpacts } from '../utils/impactAnalyzer';
 import { clearSymbolCache } from '../utils/impact/symbols';
 import { sendCodeChange, sendRevert, sendFollowStart, sendFollowStop } from '../services/socket';
@@ -286,6 +288,27 @@ const useEditorStore = create(persist((set, get) => ({
     confidence: 0.85
   } */
 
+  // ---- Auto-Fix Agent State ----
+  /* The agent proposes; the user disposes. `autoFix` holds a proposal that has
+   * NOT been written to the file yet, plus enough context to apply it safely:
+   *
+   *   targetPath    which file it was generated for
+   *   basedOnCode   the exact content it patched — checked again at apply time,
+   *                 because line-numbered edits are meaningless against code
+   *                 that has moved on since
+   *   previousCode  set on apply, so the change can be undone in one click
+   *
+   * Shape: {
+   *   status: 'VERIFIED' | 'UNVERIFIED' | 'NO_FIX' | 'NO_AI_KEY' | 'ERROR',
+   *   summary, explanation, confidence, fixedCode, message,
+   *   edits: [{ startLine, endLine, oldText, newText }],
+   *   attempts: [{ number, summary, verified, rejectedBecause }],
+   *   verifiedOutput, remainingError, verificationSupported,
+   *   targetPath, basedOnCode, applied, previousCode
+   * } */
+  autoFix: null,
+  autoFixState: 'idle',   // 'idle' | 'working' | 'ready' | 'failed'
+
   // ---- Causality Graph State ----
   causalityGraph: null,
   /* Shape: {
@@ -544,6 +567,8 @@ const useEditorStore = create(persist((set, get) => ({
       output: '',
       error: '',
       rootCause: null,
+      autoFix: null,
+      autoFixState: 'idle',
       causalityGraph: parseExecutionGraph(code, language)
     });
 
@@ -637,6 +662,9 @@ const useEditorStore = create(persist((set, get) => ({
       detectedProjects: [],
       devServers: {},
       projectDetected: false,
+      // Attribution from a session that was open beforehand would otherwise
+      // linger in this folder's gutter, pointing at lines it never described.
+      remoteLineChanges: {},
       // Cleared here and repopulated below if this folder has been opened before.
       snapshots: [],
       currentSnapshotIndex: -1,
@@ -934,6 +962,17 @@ const useEditorStore = create(persist((set, get) => ({
   recordLineDiff: (path, oldContent, newContent, userId, username, color) => {
     if (!path || oldContent === newContent) return;
 
+    /* Line attribution answers "who changed this line", which is only a
+     * question when more than one person can. A folder opened from disk has a
+     * single author, so every marker read "You" — a gutter full of icons and a
+     * hover card describing the line you had just finished typing.
+     *
+     * Guarded here rather than at the call sites so no future caller can
+     * reintroduce it. Sessions are untouched: they always carry a sessionId,
+     * and both callers (local typing via setCode, collaborators via
+     * updateRemoteFile) behave exactly as before inside one. */
+    if (!get().sessionId) return;
+
     const oldLines = (oldContent || '').split('\n');
     const newLines = (newContent || '').split('\n');
     const now = Date.now();
@@ -1019,6 +1058,11 @@ const useEditorStore = create(persist((set, get) => ({
       output: '',
       error: '',
       rootCause: null,
+      // A proposal is a set of line edits against the text as it was. Once that
+      // text changes the proposal is scrap. applyAutoFix re-sets it when the
+      // change was the fix itself being applied.
+      autoFix: null,
+      autoFixState: 'idle',
       causalityGraph: parseExecutionGraph(code, language)
     }));
   },
@@ -1420,6 +1464,128 @@ const useEditorStore = create(persist((set, get) => ({
   setRootCause: (rootCause) => set({ rootCause }),
   clearRootCause: () => set({ rootCause: null }),
 
+  /* ---- Actions: Auto-Fix Agent ----
+   *
+   * Three steps, deliberately separate: ask, apply, undo. The agent never
+   * reaches the file on its own — requestAutoFix only fetches a proposal, and
+   * applyAutoFix is the one place a fix becomes real.
+   */
+
+  /** Ask the agent to repair the current error. Leaves the file untouched. */
+  requestAutoFix: async () => {
+    const { code, language, sessionId, activePath, rootCause, autoFixState } = get();
+    if (autoFixState === 'working') return;
+    if (!code || !rootCause) return;
+
+    set({ autoFixState: 'working', autoFix: null });
+
+    try {
+      const result = await fetchAutoFix({
+        sessionId: sessionId || '',
+        code,
+        language,
+        filePath: activePath || '',
+        errorType: rootCause.errorType,
+        errorMessage: rootCause.errorMessage,
+        errorLine: rootCause.errorLine,
+        suspectedVariable: rootCause.suspectedVariable,
+        semanticContext: rootCause.semanticContext || null,
+      });
+
+      set({
+        autoFix: {
+          ...result,
+          // Pin the proposal to what it was generated against. Without this a
+          // fix could be applied minutes later onto edited code, and its line
+          // numbers would land somewhere else entirely.
+          targetPath: activePath,
+          basedOnCode: code,
+          applied: false,
+          previousCode: null,
+        },
+        autoFixState: result && result.fixedCode ? 'ready' : 'failed',
+      });
+    } catch (err) {
+      set({
+        autoFix: {
+          status: 'ERROR',
+          message: err.request?.status === 0
+            ? 'Backend server unavailable.'
+            : (err.response?.data?.message || err.message || 'The auto-fix agent failed.'),
+        },
+        autoFixState: 'failed',
+      });
+    }
+  },
+
+  /**
+   * Write the proposed fix into the file.
+   *
+   * Goes through setCode so the change travels the same road a human edit does:
+   * into Monaco, out through the CRDT binding to every collaborator, and onto
+   * the debounced save. Anything that bypassed that would leave the agent's fix
+   * visible on one screen only.
+   *
+   * @returns {{ok: boolean, reason?: string}}
+   */
+  applyAutoFix: () => {
+    const { autoFix, files, activePath, userRole, connectedUsers, currentUser, isReplaying } = get();
+
+    if (!autoFix || !autoFix.fixedCode) return { ok: false, reason: 'There is no fix to apply.' };
+    if (autoFix.applied) return { ok: false, reason: 'This fix has already been applied.' };
+    if (isReplaying) return { ok: false, reason: 'Exit replay mode before applying a fix.' };
+
+    // Viewers get a read-only editor; the agent must not be a way around that.
+    const canEdit = userRole === 'owner'
+      || connectedUsers.find((u) => u.id === currentUser?.id)?.permission !== 'viewer';
+    if (!canEdit) return { ok: false, reason: 'You have view-only access to this session.' };
+
+    // setCode is a no-op without an active file, which would leave us reporting
+    // a success that never touched anything.
+    if (!activePath) return { ok: false, reason: 'Open the file before applying a fix.' };
+
+    if (autoFix.targetPath && autoFix.targetPath !== activePath) {
+      return { ok: false, reason: `This fix was written for ${autoFix.targetPath}. Open that file to apply it.` };
+    }
+
+    const current = files[activePath] ?? '';
+    if (autoFix.basedOnCode != null && current !== autoFix.basedOnCode) {
+      return { ok: false, reason: 'The file changed after this fix was generated. Run again for a fresh fix.' };
+    }
+
+    const previousCode = current;
+    get().setCode(autoFix.fixedCode);
+
+    // setCode clears rootCause — the old diagnosis describes code that no longer
+    // exists. The proposal is re-set afterwards so the panel can still show what
+    // was applied and offer the undo.
+    set({
+      autoFix: { ...autoFix, applied: true, previousCode },
+      autoFixState: 'ready',
+    });
+
+    return { ok: true };
+  },
+
+  /** Put the file back the way it was before the agent touched it. */
+  undoAutoFix: () => {
+    const { autoFix, files, activePath } = get();
+    if (!autoFix || !autoFix.applied || autoFix.previousCode == null) return { ok: false };
+
+    // Only revert what the agent actually wrote. If the user has typed since,
+    // their work outranks the undo.
+    const current = files[activePath] ?? '';
+    if (current !== autoFix.fixedCode) {
+      return { ok: false, reason: 'You have edited the file since the fix was applied.' };
+    }
+
+    get().setCode(autoFix.previousCode);
+    set({ autoFix: null, autoFixState: 'idle' });
+    return { ok: true };
+  },
+
+  clearAutoFix: () => set({ autoFix: null, autoFixState: 'idle' }),
+
   // ---- Actions: Causality Graph ----
   setCausalityGraph: (causalityGraph) => set({ causalityGraph }),
   clearCausalityGraph: () => set({ causalityGraph: null }),
@@ -1615,6 +1781,9 @@ const useEditorStore = create(persist((set, get) => ({
       error: finalError,
       isRunning: false,
       rootCause: finalRootCause,
+      // A new run supersedes any fix the agent was offering for the old one.
+      autoFix: null,
+      autoFixState: 'idle',
       causalityGraph: finalGraph,
       commitSuggestion: result.commitSuggestion || null,
       // Auto-open terminal on result
