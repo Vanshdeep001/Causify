@@ -1,134 +1,149 @@
 /*
- * AiAnalysisService.java — AI-Powered Root Cause Analysis via Google Gemini
+ * AiAnalysisService.java — AI-Powered Root Cause Analysis
  *
- * Calls the Gemini generateContent API to produce:
- *   - A clear, creative explanation of WHY the error happened
- *   - A detailed breakdown of the root cause chain
- *   - Actionable suggested fixes with code examples
+ * Produces, for a failing program:
+ *   - A clear explanation of WHY the error happened
+ *   - A breakdown of the root cause chain
+ *   - An actionable suggested fix
  *
- * Also the single LLM transport for the auto-fix agent (see AutoFixService),
+ * Also the single LLM entry point for the auto-fix agent (see AutoFixService),
  * which calls complete() directly.
  *
- * Auth is a Gemini API key sent in the x-goog-api-key header rather than the
- * ?key= query parameter Google also accepts — a key in a URL leaks into access
- * logs, proxies and crash reports; a header does not.
+ * WHICH VENDOR ANSWERS IS NOT THIS CLASS'S BUSINESS. It owns the prompts and
+ * the parsing of replies; the transport lives behind LlmProvider, so a user can
+ * bring a key from OpenRouter, Groq, Gemini, Bedrock, OpenAI or any
+ * OpenAI-compatible endpoint without a line of this file changing.
  *
- * The model id is configuration, not a constant: free-tier keys differ in what
- * they may call (gemini-2.5-pro is capped at zero requests on some, while
- * gemini-2.5-flash works), so switching must not need a rebuild.
+ * The key, provider and model are all mutable at runtime: they arrive from
+ * POST /api/ai/key and take effect on the next call, with no restart. That
+ * matters because some keys expire within a day.
  *
- * NOTE ON TOKEN BUDGETS — Gemini 2.5 models think before answering, and those
- * thinking tokens are drawn from the SAME maxOutputTokens allowance as the
- * reply. Measured here: ~700 thinking tokens before a ~120 token answer. A
- * budget sized only for the answer therefore returns finishReason=MAX_TOKENS
- * with no text at all, which would look like the model refusing rather than
- * running out of room. Every budget below is sized for thinking + answer.
+ * NOTE ON TOKEN BUDGETS — reasoning models spend part of the output allowance
+ * thinking before they write anything. Measured on Gemini 2.5 Flash: ~700
+ * tokens of reasoning before a ~120 token answer. Budgets below are therefore
+ * sized for thinking + answer; one sized for the answer alone comes back empty.
  */
 package com.debugsync.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.debugsync.ai.LlmProvider;
+import com.debugsync.ai.ProviderRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 
 @Service
 public class AiAnalysisService {
 
     private static final Logger log = LoggerFactory.getLogger(AiAnalysisService.class);
 
-    private static final String GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
+    private final ProviderRegistry registry;
 
-    // Primary: GEMINI_API_KEY env var. Fallback: debugsync.ai.gemini-api-key in application.yml.
-    // Can also be set at runtime via POST /api/ai/key (see AiConfigController).
-    @Value("${GEMINI_API_KEY:${debugsync.ai.gemini-api-key:}}")
+    /* All three are volatile and settable at runtime — see updateConfig(). The
+     * @Value defaults only seed the initial state from env or application.yml. */
+    @Value("${AI_API_KEY:${debugsync.ai.api-key:}}")
     private volatile String apiKey;
 
-    @Value("${GEMINI_MODEL:${debugsync.ai.gemini-model:gemini-2.5-flash}}")
-    private String modelId;
+    @Value("${AI_PROVIDER:${debugsync.ai.provider:}}")
+    private volatile String providerId;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(15))
-            .build();
+    @Value("${AI_MODEL:${debugsync.ai.model:}}")
+    private volatile String model;
 
-    /** Whether a Gemini key is currently available (env, yml, or set at runtime). */
+    /** Only meaningful for the custom OpenAI-compatible provider. */
+    @Value("${AI_BASE_URL:${debugsync.ai.base-url:}}")
+    private volatile String baseUrl;
+
+    public AiAnalysisService(ProviderRegistry registry) {
+        this.registry = registry;
+    }
+
+    /* ─────────────────────────────────────────────────────────
+     * Configuration
+     * ───────────────────────────────────────────────────────── */
+
+    /** Whether a key is currently available (env, yml, or set at runtime). */
     public boolean isConfigured() {
         return apiKey != null && !apiKey.isBlank();
     }
 
-    /** Replaces the active Gemini key at runtime (no restart needed). */
-    public void updateApiKey(String key) {
+    /**
+     * Swap the active credentials at runtime. A blank provider is detected from
+     * the key's own shape, so the common case needs no choice from the user.
+     */
+    public void updateConfig(String key, String provider, String model, String baseUrl) {
         this.apiKey = key;
-        log.info("Gemini API key updated at runtime (model={})", modelId);
-    }
-
-    /** The generateContent endpoint for the configured model. */
-    private URI endpointUri() {
-        return URI.create(GEMINI_BASE + modelId + ":generateContent");
+        this.providerId = (provider == null || provider.isBlank())
+                ? providerIdFor(key)
+                : provider;
+        this.model = model;
+        this.baseUrl = baseUrl;
+        log.info("AI provider set to {} (model={})", this.providerId, (model == null || model.isBlank()) ? "default" : model);
     }
 
     /**
-     * Verifies a key by making a real generation call.
+     * Forget the active credentials.
      *
-     * Deliberately NOT a call to the models-list endpoint. Listing is free and
-     * succeeds on keys that cannot generate at all — the exact trap that made a
-     * previously configured key look healthy while every real request failed.
-     * Only generating proves the key can do the thing the app needs.
-     *
-     * The budget is generous because thinking tokens come out of it; too small
-     * a value returns MAX_TOKENS with no text and would read as a broken key.
-     *
-     * @return null when the key works, otherwise a short description of why not
+     * Clears the model and base URL too, not just the key: leaving them behind
+     * would silently apply one provider's model to the next key pasted in.
      */
-    public String testApiKey(String key) {
+    public void clearConfig() {
+        this.apiKey = "";
+        this.providerId = "";
+        this.model = "";
+        this.baseUrl = "";
+        log.info("AI credentials cleared");
+    }
+
+    private String providerIdFor(String key) {
+        LlmProvider detected = registry.detect(key);
+        return detected != null ? detected.id() : "";
+    }
+
+    /** The provider currently in use, or null when none is configured. */
+    public LlmProvider activeProvider() {
+        if (!isConfigured()) return null;
         try {
-            HttpResponse<String> response = send(key, buildRequestBody("Reply with exactly: OK", 1000, 0.0));
-            int status = response.statusCode();
-            if (status == 200) return null;
-            return describeFailure(status, response.body());
+            return registry.resolve(providerId, apiKey, baseUrl);
         } catch (Exception e) {
-            return "Could not reach Gemini: " + e.getMessage();
+            return null;
         }
+    }
+
+    /** Model actually in effect, resolving the provider default when unset. */
+    public String activeModel() {
+        LlmProvider p = activeProvider();
+        if (p == null) return model;
+        return (model == null || model.isBlank()) ? p.defaultModel() : model;
     }
 
     /**
-     * Turns a Gemini error into something a user can act on.
+     * Verify a candidate configuration without storing it.
      *
-     * A 429 is the one worth spelling out: on a free-tier key it usually means
-     * the model is capped at zero requests rather than that the user is going
-     * too fast, and the remedy is a different model, not waiting.
+     * @return null when it works, otherwise a short reason it does not
      */
-    private String describeFailure(int status, String body) {
-        String detail = body == null ? "" : body;
-        if (status == 400 && detail.contains("API_KEY_INVALID")) {
-            return "Google rejected this key as invalid. Check it was copied in full.";
+    public String testConfig(String key, String provider, String model, String baseUrl) {
+        try {
+            LlmProvider p = registry.resolve(provider, key, baseUrl);
+            return p.testKey(key, model);
+        } catch (Exception e) {
+            return e.getMessage();
         }
-        if (status == 401 || status == 403) {
-            return "Google rejected this key (" + status + "). Make sure the Gemini API is enabled for it.";
-        }
-        if (status == 404) {
-            return "No model named '" + modelId + "'. Check the model id.";
-        }
-        if (status == 429) {
-            return "Quota exhausted for '" + modelId + "'. Some models are capped at zero on free-tier keys "
-                    + "(gemini-2.5-pro often is) — switch to gemini-2.5-flash, or wait for the quota to reset.";
-        }
-        return "Gemini returned status " + status + (detail.isBlank() ? "." : ": " + trimForMessage(detail));
     }
 
-    private String trimForMessage(String s) {
-        String t = s.trim().replaceAll("\\s+", " ");
-        return t.length() <= 300 ? t : t.substring(0, 300) + "…";
+    /* ─────────────────────────────────────────────────────────
+     * The one call everything else goes through
+     * ───────────────────────────────────────────────────────── */
+
+    /**
+     * Send a prompt to whichever provider is configured and return its reply.
+     *
+     * @return the reply, or null when the model returned nothing usable
+     */
+    public String complete(String prompt, int maxTokens, double temperature) throws Exception {
+        if (!isConfigured()) throw new IllegalStateException("No AI provider is configured.");
+        LlmProvider provider = registry.resolve(providerId, apiKey, baseUrl);
+        return provider.complete(apiKey, model, prompt, maxTokens, temperature);
     }
 
     /**
@@ -138,16 +153,15 @@ public class AiAnalysisService {
     public AiAnalysisResult analyze(String errorType, String errorMessage, int errorLine,
                                      String suspectedVariable, String code, String language,
                                      java.util.Map<String, String> semContext) {
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("Gemini API key not configured — skipping AI analysis");
+        if (!isConfigured()) {
+            log.warn("No AI provider configured — skipping AI analysis");
             return null;
         }
 
         try {
             String prompt = buildPrompt(errorType, errorMessage, errorLine, suspectedVariable, code, language, semContext);
-            // 3500, not 800: ~700 of it goes on thinking before a word is written.
-            String response = callGemini(prompt, 3500, 0.4);
-            return parseResponse(response);
+            // 3500, not 800: a large part of it goes on reasoning before a word is written.
+            return parseResponse(complete(prompt, 3500, 0.4));
         } catch (Exception e) {
             log.error("AI analysis failed: {}", e.getMessage());
             return null;
@@ -209,124 +223,8 @@ public class AiAnalysisService {
         return sb.toString();
     }
 
-    /**
-     * Sends a prompt to Gemini and returns the model's reply text.
-     *
-     * Exposed so other AI features (the auto-fix agent) share this one client
-     * rather than standing up a second one. That matters because the key is
-     * mutable at runtime — a second copy would keep serving the stale one after
-     * the user activates a key from the UI.
-     *
-     * @return the reply, or null when the model returned no choices
-     */
-    public String complete(String prompt, int maxTokens, double temperature) throws Exception {
-        return extractContent(callGemini(prompt, maxTokens, temperature));
-    }
-
-    /** Builds a generateContent request body: one user turn plus generation settings. */
-    private String buildRequestBody(String prompt, int maxTokens, double temperature)
-            throws com.fasterxml.jackson.core.JsonProcessingException {
-        ObjectNode requestBody = objectMapper.createObjectNode();
-
-        ObjectNode part = objectMapper.createObjectNode();
-        part.put("text", prompt);
-        ArrayNode parts = objectMapper.createArrayNode();
-        parts.add(part);
-
-        ObjectNode turn = objectMapper.createObjectNode();
-        turn.set("parts", parts);
-
-        ArrayNode contents = objectMapper.createArrayNode();
-        contents.add(turn);
-        requestBody.set("contents", contents);
-
-        ObjectNode generationConfig = objectMapper.createObjectNode();
-        generationConfig.put("maxOutputTokens", maxTokens);
-        generationConfig.put("temperature", temperature);
-        requestBody.set("generationConfig", generationConfig);
-
-        return objectMapper.writeValueAsString(requestBody);
-    }
-
-    private HttpResponse<String> send(String key, String body) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(endpointUri())
-                .header("Content-Type", "application/json")
-                // Header rather than ?key= — a key in a URL leaks into logs.
-                .header("x-goog-api-key", key)
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .timeout(Duration.ofSeconds(90))
-                .build();
-        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-    }
-
-    private String callGemini(String prompt, int maxTokens, double temperature) throws Exception {
-        HttpResponse<String> response = send(apiKey, buildRequestBody(prompt, maxTokens, temperature));
-
-        if (response.statusCode() != 200) {
-            String reason = describeFailure(response.statusCode(), response.body());
-            log.error("Gemini returned status {}: {}", response.statusCode(), response.body());
-            // Carries the actionable text, not just a status code — the auto-fix
-            // agent surfaces this message straight to the user.
-            throw new RuntimeException(reason);
-        }
-
-        return response.body();
-    }
-
-    /**
-     * Pulls the model's answer out of a generateContent response.
-     *
-     * Two silent-failure modes are handled explicitly rather than surfacing as
-     * a bare empty string:
-     *   - a safety filter blocked the prompt (no candidates at all)
-     *   - thinking consumed the whole token budget (candidate present but no
-     *     parts, finishReason MAX_TOKENS)
-     * The second is the live risk here: 2.5 models think before answering, and
-     * those tokens come out of the same allowance as the reply.
-     */
-    private String extractContent(String responseJson) throws Exception {
-        JsonNode root = objectMapper.readTree(responseJson);
-
-        JsonNode candidates = root.path("candidates");
-        if (!candidates.isArray() || candidates.isEmpty()) {
-            String blockReason = root.path("promptFeedback").path("blockReason").asText("");
-            if (!blockReason.isEmpty()) {
-                log.warn("Gemini blocked the prompt: {}", blockReason);
-            } else {
-                log.warn("No candidates in Gemini response: {}", trimForMessage(responseJson));
-            }
-            return null;
-        }
-
-        JsonNode candidate = candidates.get(0);
-        JsonNode parts = candidate.path("content").path("parts");
-
-        StringBuilder sb = new StringBuilder();
-        if (parts.isArray()) {
-            for (JsonNode p : parts) {
-                JsonNode text = p.get("text");
-                if (text != null && !text.isNull()) sb.append(text.asText());
-            }
-        }
-
-        String answer = sb.toString();
-        if (answer.isBlank()) {
-            String finishReason = candidate.path("finishReason").asText("");
-            if ("MAX_TOKENS".equals(finishReason)) {
-                log.warn("Gemini spent the entire token budget on thinking and returned no answer "
-                        + "(thoughtsTokenCount={}). Raise maxOutputTokens.",
-                        root.path("usageMetadata").path("thoughtsTokenCount").asInt());
-            } else {
-                log.warn("Gemini returned an empty answer (finishReason={})", finishReason);
-            }
-            return null;
-        }
-        return answer;
-    }
-
-    private AiAnalysisResult parseResponse(String responseJson) throws Exception {
-        String content = extractContent(responseJson);
+    /** Splits the model's markdown reply into the sections the UI renders. */
+    private AiAnalysisResult parseResponse(String content) {
         if (content == null) return null;
 
         AiAnalysisResult result = new AiAnalysisResult();

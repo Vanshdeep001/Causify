@@ -7,7 +7,7 @@ import useEditorStore from '../../store/useEditorStore';
 import HtmlPreview from '../Preview/HtmlPreview';
 import DevServerPanel from '../Terminal/DevServerPanel';
 import AutoFixPanel from './AutoFixPanel';
-import AiKeySetupCard from './AiKeySetupCard';
+import AiKeySetupCard, { AiProviderChip } from './AiKeySetupCard';
 
 const LogLine = ({ type, message, timestamp }) => {
   const tagClass =
@@ -161,6 +161,10 @@ const RootCauseCard = ({ rootCause, code }) => {
             {isReportExpanded ? '(Click to collapse)' : '(Click to expand)'}
           </span>
         </span>
+
+        {/* Always on screen, because the moment a key stops working is the
+            moment nobody thinks to go looking inside a collapsed report. */}
+        <AiProviderChip onManage={() => setIsReportExpanded(true)} />
       </div>
 
       {isReportExpanded && (
@@ -171,7 +175,11 @@ const RootCauseCard = ({ rootCause, code }) => {
           <div className="rca2-body">
 
             {/* AI key onboarding — only when this report ran without AI */}
-            {rootCause.aiGenerated === false && <AiKeySetupCard />}
+            {/* Rendered whether or not a key is configured: with one it shows
+                which provider is live and offers to swap or remove it, which is
+                the only place in the app that can be done. The card decides
+                which of those two faces to wear. */}
+            <AiKeySetupCard />
 
             {/* Section: What Happened */}
             {rootCause.whatHappened && (

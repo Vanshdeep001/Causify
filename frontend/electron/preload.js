@@ -114,10 +114,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('update:progress', handler);
   },
 
-  /* ── AI / Security ── */
-  makeAIRequest: (prompt, options) =>
-    ipcRenderer.invoke('security:make-ai-request', prompt, options),
-
+  /* ── AI / Security ──
+   * Key storage only. There is deliberately no AI-request channel here: every
+   * LLM call goes through the backend, which owns provider selection. */
   setApiKey: (key) =>
     ipcRenderer.invoke('security:set-api-key', key),
 

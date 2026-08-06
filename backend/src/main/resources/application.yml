@@ -49,12 +49,18 @@ spring:
 # Custom DebugSync configuration
 debugsync:
   ai:
-    # Google Gemini. Left blank on purpose — paste the key into the UI instead,
-    # which activates it live and keeps it out of this file and out of git.
-    gemini-api-key: ${GEMINI_API_KEY:}
-    # gemini-2.5-flash is the default because free-tier keys commonly have
-    # gemini-2.5-pro capped at zero requests (429 with "limit: 0").
-    gemini-model: ${GEMINI_MODEL:gemini-2.5-flash}
+    # Bring your own provider: OpenRouter, Groq, Gemini, Bedrock, OpenAI, or any
+    # OpenAI-compatible endpoint. All four settings are blank on purpose — paste
+    # the key into the UI instead, which verifies it with a real call, activates
+    # it live, and keeps it out of this file and out of git.
+    api-key: ${AI_API_KEY:}
+    # Blank means "work it out from the key's shape" (sk-or- -> OpenRouter,
+    # gsk_ -> Groq, AIza/AQ. -> Gemini, ABSK -> Bedrock, sk- -> OpenAI).
+    provider: ${AI_PROVIDER:}
+    # Blank means the provider's own default model.
+    model: ${AI_MODEL:}
+    # Only used when provider is "custom", e.g. https://api.together.xyz/v1
+    base-url: ${AI_BASE_URL:}
   cors:
     allowed-origins: http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000,http://localhost:3001
   git:

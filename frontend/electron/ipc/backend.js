@@ -299,9 +299,10 @@ async function spawnBackend(isDev = false) {
   pushLog(`[SYSTEM] Starting backend: java -jar ${path.basename(jarPath)} (max heap ${getMaxHeapMb()} MB)`);
   backendStatus = 'starting';
 
-  // Hand the stored Gemini key (safeStorage-encrypted) to the backend —
-  // AiAnalysisService reads it from the GEMINI_API_KEY env var. A fresh key
-  // pasted through the UI updates the running backend without a restart.
+  // Hand the stored provider key (safeStorage-encrypted) to the backend —
+  // AiAnalysisService reads it from AI_API_KEY and works out which vendor it
+  // belongs to from the key's own shape. A fresh key pasted through the UI
+  // updates the running backend without a restart.
   const storedApiKey = retrieveApiKey();
 
   return new Promise((resolve, reject) => {
@@ -317,7 +318,7 @@ async function spawnBackend(isDev = false) {
           ...process.env,
           // Keeps the H2 file in the user profile rather than the install dir.
           CAUSIFY_DATA_DIR: toJdbcPath(dataDir),
-          ...(storedApiKey ? { GEMINI_API_KEY: storedApiKey } : {}),
+          ...(storedApiKey ? { AI_API_KEY: storedApiKey } : {}),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });

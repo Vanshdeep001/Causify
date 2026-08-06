@@ -38,6 +38,9 @@ const STAGES = [
   { label: 'CHECK THE RESULT', hint: 'did it survive?' },
 ];
 
+/* Sprite is 12 columns wide, drawn at px=3. */
+const SPRITE_W = 36;
+
 const VERDICT = {
   VERIFIED:   { color: '#3DD68C', label: 'COURSE CLEAR',     sub: 'the patched code ran clean' },
   UNVERIFIED: { color: '#FFB224', label: 'ANOTHER CASTLE',   sub: 'the fix did not hold' },
@@ -72,8 +75,8 @@ const StartScene = ({ onStart }) => (
           until it passes. You review the diff before anything is saved.
         </div>
       </div>
-      <button className="afx-btn afx-btn-start" onClick={onStart}>
-        <span className="afx-btn-start-glyph">▶</span> START
+      <button className="afx-start-btn" onClick={onStart}>
+        <span className="afx-start-btn-glyph">▶</span> START
       </button>
     </div>
   </div>
@@ -104,7 +107,19 @@ const RunScene = () => {
     return () => clearInterval(timer);
   }, []);
 
+  /* The stages run out after ~8s, but a run with several attempts takes longer
+   * than that. Without a clock the panel looked stuck on the last block with
+   * no way to tell working from hung. This is the one honest signal available,
+   * since the backend answers in a single response rather than streaming. */
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   const pct = (stage / (STAGES.length - 1)) * 100;
+  const onLastStage = stage >= STAGES.length - 1;
 
   return (
     <div className="afx-scene">
@@ -121,8 +136,13 @@ const RunScene = () => {
           ))}
         </div>
 
-        <div className="afx-runner" style={{ left: `calc(${pct}% )` }}>
-          <PixelSprite rows={bumping ? MARIO_JUMP : (frame ? MARIO_RUN : MARIO_IDLE)} px={3} />
+        {/* Offset by his own width in proportion to the distance travelled, so
+            at the far end his right edge lands on the track's right edge
+            instead of his left edge landing there and the rest hanging out. */}
+        <div className="afx-runner-track">
+          <div className="afx-runner" style={{ left: `calc(${pct}% - ${(SPRITE_W * pct) / 100}px)` }}>
+            <PixelSprite rows={bumping ? MARIO_JUMP : (frame ? MARIO_RUN : MARIO_IDLE)} px={3} />
+          </div>
         </div>
       </div>
 
@@ -134,7 +154,14 @@ const RunScene = () => {
             <span className="afx-stage-num">{String(stage + 1).padStart(2, '0')}</span>
             {STAGES[stage].label}
           </div>
-          <div className="afx-hud-sub afx-mono">{STAGES[stage].hint}…</div>
+          <div className="afx-hud-sub afx-mono">
+            {STAGES[stage].hint}…
+            {/* Only once the stages have run out — before that the stage text
+                is itself the progress, and a clock would just add noise. */}
+            {onLastStage && elapsed > 0 && (
+              <span className="afx-elapsed">{elapsed}s</span>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -142,13 +169,15 @@ const RunScene = () => {
 };
 
 /* ── Result banner: flagpole for a clear, castle sign otherwise ── */
-const ResultScene = ({ status, attemptsUsed, confidence }) => {
+const ResultScene = ({ status, attemptsUsed, confidence, attached }) => {
   const v = VERDICT[status] || VERDICT.ERROR;
   const cleared = status === 'VERIFIED';
   const coins = Math.round((confidence || 0) * 5);
 
+  // `attached` squares off the bottom so the coin slot below reads as the same
+  // cabinet rather than a second panel that happens to sit underneath.
   return (
-    <div className="afx-scene">
+    <div className={`afx-scene ${attached ? 'is-attached' : ''}`}>
       <div className="afx-sky afx-sky-short">
         {cleared ? (
           <>
@@ -339,39 +368,50 @@ const AutoFixPanel = () => {
 
   /* ── Working ── */
   if (autoFixState === 'working') {
-    return <div className="afx-panel"><RunScene /></div>;
+    return <div className="afx-panel is-bare"><RunScene /></div>;
   }
 
   /* ── Idle ── */
   if (!autoFix) {
-    return <div className="afx-panel"><StartScene onStart={requestAutoFix} /></div>;
+    return <div className="afx-panel is-bare"><StartScene onStart={requestAutoFix} /></div>;
   }
 
   /* ── A proposal came back ── */
   const hasPatch = Boolean(autoFix.fixedCode) && Array.isArray(autoFix.edits) && autoFix.edits.length > 0;
+  const needsKey = autoFix.status === 'NO_AI_KEY';
 
+  /* Bare while asking for a key: the scene and the coin slot below it already
+     form one framed cabinet, so the panel adds nothing but a second border. */
   return (
-    <div className="afx-panel">
+    <div className={`afx-panel ${needsKey ? 'is-bare' : ''}`}>
       <ResultScene
         status={autoFix.status}
         attemptsUsed={autoFix.attemptsUsed}
         confidence={hasPatch ? autoFix.confidence : 0}
+        attached={needsKey}
       />
+
+      {/* The coin slot on the front of the cabinet. Joined to the scene above
+          it, which already says INSERT COIN — so the form carries no heading,
+          badge or paragraph of its own. */}
+      {needsKey && (
+        <AiKeySetupCard
+          forceVisible
+          context="autofix"
+          variant="arcade"
+          /* Inserting the coin starts the game. There is no "Try again" button
+             because there is nothing left for the user to decide once the key
+             is live — the run they already asked for simply proceeds. */
+          onActivated={requestAutoFix}
+        />
+      )}
 
       {/* Suppressed on a clean verdict: the scoreboard above already says
           COURSE CLEAR and WORLD 1-N, and the output block below proves it.
-          Repeating it in prose was a whole line that told you nothing new.
+          Also suppressed while asking for a key, where the slot says it better.
           Kept everywhere else, where it carries a real warning. */}
-      {autoFix.message && autoFix.status !== 'VERIFIED' && (
+      {autoFix.message && autoFix.status !== 'VERIFIED' && !needsKey && (
         <div className="afx-message">{autoFix.message}</div>
-      )}
-
-      {/* Somewhere to actually put the key. Without this the panel states a
-          requirement and leaves the field buried in the collapsed report. */}
-      {autoFix.status === 'NO_AI_KEY' && (
-        <div className="afx-keysetup">
-          <AiKeySetupCard forceVisible context="autofix" />
-        </div>
       )}
 
       {hasPatch && (
@@ -419,20 +459,22 @@ const AutoFixPanel = () => {
 
       {notice && <div className="afx-notice">{notice}</div>}
 
-      <div className="afx-actions">
-        {hasPatch ? (
-          <>
-            <button className="afx-btn afx-btn-primary" onClick={handleApply}>
-              Apply {autoFix.edits.length > 1 ? `${autoFix.edits.length} edits` : 'fix'}
-            </button>
-            <button className="afx-btn afx-btn-ghost" onClick={clearAutoFix}>Reject</button>
-          </>
-        ) : (
-          <button className="afx-btn afx-btn-ghost" onClick={requestAutoFix}>
-            {autoFix.status === 'NO_AI_KEY' ? 'Try again' : 'Continue?'}
-          </button>
-        )}
-      </div>
+      {/* No actions while asking for a key: the slot is the only thing to do,
+          and activating it runs the agent on its own. */}
+      {!needsKey && (
+        <div className="afx-actions">
+          {hasPatch ? (
+            <>
+              <button className="afx-btn afx-btn-primary" onClick={handleApply}>
+                Apply {autoFix.edits.length > 1 ? `${autoFix.edits.length} edits` : 'fix'}
+              </button>
+              <button className="afx-btn afx-btn-ghost" onClick={clearAutoFix}>Reject</button>
+            </>
+          ) : (
+            <button className="afx-btn afx-btn-ghost" onClick={requestAutoFix}>Continue?</button>
+          )}
+        </div>
+      )}
     </div>
   );
 };

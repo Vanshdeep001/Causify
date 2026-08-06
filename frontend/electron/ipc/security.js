@@ -1,15 +1,16 @@
 /* -------------------------------------------------------
  * ipc/security.js — API Key Security & AI Proxy
  *
- * Protects the Google Gemini API key using Electron's
+ * Protects the user's AI provider key using Electron's
  * safeStorage (OS-level encryption):
  *   - macOS: Keychain
  *   - Windows: Credential Manager (DPAPI)
  *   - Linux: libsecret
  *
- * The API key NEVER leaves the main process.
- * The renderer only calls makeAIRequest() and receives
- * the response — it never sees the raw key.
+ * Storage only. Provider selection, validation and every LLM call live in the
+ * backend, which is the single place that knows how each vendor is addressed —
+ * a second implementation here would drift out of step with the one actually
+ * serving requests.
  * ------------------------------------------------------- */
 
 const { ipcMain, app, safeStorage } = require('electron');
@@ -21,38 +22,8 @@ const CONFIG_DIR = app.getPath('userData');
 const KEY_FILE = path.join(CONFIG_DIR, 'api-key.enc');
 const SETUP_FILE = path.join(CONFIG_DIR, 'setup-complete.flag');
 
-/* ── Gemini ──
- * Overridable by env, and must match what the backend uses — otherwise the
- * setup wizard would validate a key against a model the backend never calls. */
-const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 /* ── Helpers ── */
-
-/**
- * Turn a Gemini error into something the user can act on.
- *
- * Mirrors AiAnalysisService.describeFailure on the backend. The status alone
- * misleads: a 400 here usually means the model id is wrong for the region, and
- * a 403 on a short-term key normally means it expired rather than that it was
- * never valid.
- */
-function describeGeminiFailure(status, body, modelId) {
-  const detail = body || '';
-  if (status === 400 && detail.includes('API_KEY_INVALID')) {
-    return 'Google rejected this key as invalid. Check it was copied in full.';
-  }
-  if (status === 401 || status === 403) {
-    return `Google rejected this key (${status}). Make sure the Gemini API is enabled for it.`;
-  }
-  if (status === 404) {
-    return `No model named '${modelId}'. Check the model id.`;
-  }
-  if (status === 429) {
-    return `Quota exhausted for '${modelId}'. Some models are capped at zero on free-tier keys (gemini-2.5-pro often is) — switch to gemini-2.5-flash, or wait for the quota to reset.`;
-  }
-  return `Gemini returned status ${status}${detail ? `: ${detail.slice(0, 300)}` : '.'}`;
-}
 
 /**
  * Encrypt and store the API key.
@@ -120,54 +91,6 @@ function registerSecurityHandlers() {
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
-    }
-  });
-
-  /* ── AI Request Proxy ── */
-
-  ipcMain.handle('security:make-ai-request', async (_event, prompt, options = {}) => {
-    const apiKey = retrieveApiKey();
-    if (!apiKey) {
-      return { error: 'API key not configured. Please set it in Settings.' };
-    }
-
-    try {
-      const body = JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          // Sized for thinking + answer, not the answer alone: 2.5 models spend
-          // several hundred tokens of this budget before writing anything, and
-          // a tight limit comes back as an empty reply.
-          maxOutputTokens: options.max_tokens || 3000,
-          temperature: options.temperature ?? 0.4,
-        },
-      });
-
-      const modelId = options.model || GEMINI_MODEL;
-
-      const response = await fetch(`${GEMINI_BASE}${modelId}:generateContent`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Header rather than ?key= — a key in a URL leaks into logs.
-          'x-goog-api-key': apiKey,
-        },
-        body,
-        signal: AbortSignal.timeout(90000),
-      });
-
-      if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        return { error: describeGeminiFailure(response.status, errText, modelId) };
-      }
-
-      const data = await response.json();
-      const content = (data?.candidates?.[0]?.content?.parts || [])
-        .map((part) => part?.text || '')
-        .join('');
-      return { content, usage: data?.usageMetadata };
-    } catch (err) {
-      return { error: err.message || 'AI request failed' };
     }
   });
 
