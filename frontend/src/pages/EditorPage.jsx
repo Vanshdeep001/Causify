@@ -15,6 +15,8 @@ import BinaryFilePreview from '../components/Editor/BinaryFilePreview';
 import EmptyEditorState from '../components/Editor/EmptyEditorState';
 import { isBinaryAssetPath, isTextImagePath } from '../utils/binaryAssets';
 import ImpactWarningBanner from '../components/Editor/ImpactWarningBanner';
+import ConnectionBanner from '../components/Session/ConnectionBanner';
+import CollisionHint from '../components/Session/CollisionHint';
 import Whiteboard from '../components/Editor/Whiteboard';
 import ScreenCapture from '../components/Capture/ScreenCapture';
 
@@ -1031,6 +1033,10 @@ const EditorPage = () => {
               <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 {/* Line-collision lock removed — the CRDT merges concurrent edits,
                     so same-line editing is safe and no longer blocked. */}
+                {/* Above the impact warning: if the session is gone, that is
+                    the more urgent thing on screen. */}
+                <ConnectionBanner />
+                <CollisionHint />
                 <ImpactWarningBanner />
                 <div id="causify-code-region" style={{ flex: 1, position: 'relative', minHeight: 0 }}>
                   <MonacoEditor />

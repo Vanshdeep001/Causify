@@ -16,6 +16,21 @@
  * both. What separates them is the proxy headers Cloudflare adds on the way
  * in, so those are what this inspects.
  *
+ * A second group runs commands on the host and must stay reachable for invited
+ * collaborators, so it cannot simply be blocked:
+ *
+ *   /api/execute       — compiles and runs submitted code
+ *   /api/auto-fix      — executes model-written patches to verify them
+ *   /api/dev-server/** — runs npm install and project scripts
+ *   /api/git/**        — runs git against a real repository
+ *   /api/ai/**         — holds the user's API key and provider settings
+ *
+ * Those require a session token when the request arrives from off-machine. The
+ * password guarded joining a session; it never guarded the API, so anyone with
+ * the tunnel URL could reach these directly. Local requests are untouched —
+ * the machine running the backend is already trusted with its own shell, and
+ * demanding a token there would break working without a session at all.
+ *
  * Guarded paths answer 404 rather than 403: a forbidden response confirms the
  * console is there, and there is no reason to tell a scanner that.
  */
@@ -50,6 +65,25 @@ public class RemoteAccessGuardFilter extends OncePerRequestFilter {
         List.of("/h2-console", "/api/system", "/actuator");
 
     /**
+     * Endpoints a remote caller may use, but only after proving they joined.
+     *
+     * Every one of these either runs a command on the host or holds the user's
+     * credentials. Session create/join are deliberately absent: they are how a
+     * token is obtained in the first place.
+     */
+    private static final List<String> TOKEN_REQUIRED_PREFIXES =
+        List.of("/api/execute", "/api/auto-fix", "/api/dev-server", "/api/git", "/api/ai");
+
+    /** Header the client presents its session token in. */
+    public static final String TOKEN_HEADER = "X-Causify-Session";
+
+    private final SessionTokenStore tokenStore;
+
+    public RemoteAccessGuardFilter(SessionTokenStore tokenStore) {
+        this.tokenStore = tokenStore;
+    }
+
+    /**
      * Headers a reverse proxy adds. Their presence means the request did not
      * originate on this machine, whatever the socket address claims.
      */
@@ -82,14 +116,22 @@ public class RemoteAccessGuardFilter extends OncePerRequestFilter {
         return false;
     }
 
-    private static boolean isGuarded(String path) {
+    private static boolean matches(String path, List<String> prefixes) {
         if (path == null) return false;
-        for (String prefix : GUARDED_PREFIXES) {
+        for (String prefix : prefixes) {
             if (path.equals(prefix) || path.startsWith(prefix + "/")) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static boolean isGuarded(String path) {
+        return matches(path, GUARDED_PREFIXES);
+    }
+
+    private static boolean needsToken(String path) {
+        return matches(path, TOKEN_REQUIRED_PREFIXES);
     }
 
     @Override
@@ -98,9 +140,22 @@ public class RemoteAccessGuardFilter extends OncePerRequestFilter {
                                     FilterChain chain) throws ServletException, IOException {
 
         String path = request.getRequestURI();
-        if (isGuarded(path) && isRemote(request)) {
+
+        // Local requests are left alone entirely: without a session there is no
+        // token to present, and the host is already trusted with its own shell.
+        boolean remote = isRemote(request);
+
+        if (isGuarded(path) && remote) {
             log.warn("[Security] Blocked remote access to {} (from {})",
                 path, request.getRemoteAddr());
+            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            return;
+        }
+
+        if (remote && needsToken(path) && !tokenStore.isValid(request.getHeader(TOKEN_HEADER))) {
+            log.warn("[Security] Blocked untrusted remote call to {} — no valid session token", path);
+            // 404 for the same reason as above: a 401 would confirm that the
+            // endpoint exists and invite someone to go looking for a token.
             response.sendError(HttpServletResponse.SC_NOT_FOUND);
             return;
         }

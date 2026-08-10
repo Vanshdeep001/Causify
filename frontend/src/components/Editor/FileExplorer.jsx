@@ -7,7 +7,7 @@ import useEditorStore from '../../store/useEditorStore';
 import { createSession, joinSession, leaveSession, uploadProject, saveFile, deleteFile, gitStatus } from '../../services/api';
 import { connectWebSocket, sendCodeChange, sendFileDelete, sendProjectSync } from '../../services/socket';
 import { buildCollabCallbacks } from '../../services/collabCallbacks';
-import { setOrigin, resetOrigin, buildJoinCode, parseJoinCode, getOrigin } from '../../services/backendHost';
+import { setOrigin, resetOrigin, buildJoinCode, parseJoinCode, getOrigin, setSessionToken, clearSessionToken } from '../../services/backendHost';
 import { detectProject } from '../../services/devserver';
 import { isBinaryAssetPath, isSkippedAssetPath } from '../../utils/binaryAssets';
 import { decorationFor, parseGitStatus } from '../../utils/gitStatusMap';
@@ -112,7 +112,7 @@ const ActionButton = ({ onClick, title, children }) => {
  * spinner; the status line underneath says how far the reach currently
  * extends.
  */
-const ShareStrip = ({ code, state, error }) => {
+const ShareStrip = ({ code, state, error, stale, onDismissStale }) => {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -120,6 +120,8 @@ const ShareStrip = ({ code, state, error }) => {
       await navigator.clipboard.writeText(code);
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
+      // Copying is the act of re-sharing, so the warning has served its purpose.
+      if (stale && onDismissStale) onDismissStale();
     } catch {
       /* Clipboard blocked — the code is on screen and can be selected. */
     }
@@ -136,8 +138,10 @@ const ShareStrip = ({ code, state, error }) => {
     <div style={{
       margin: '8px 14px 4px',
       padding: '9px 10px',
-      background: 'rgba(255,255,255,0.03)',
-      border: '1px solid var(--line)',
+      /* A changed link is a call to action, not a status line — it is tinted
+         so it reads as something to do rather than something to know. */
+      background: stale ? 'rgba(251,191,36,0.09)' : 'rgba(255,255,255,0.03)',
+      border: `1px solid ${stale ? 'rgba(251,191,36,0.45)' : 'var(--line)'}`,
       borderRadius: '6px',
       display: 'flex',
       flexDirection: 'column',
@@ -146,11 +150,22 @@ const ShareStrip = ({ code, state, error }) => {
       <div style={{
         fontSize: '0.58rem',
         letterSpacing: '0.08em',
-        color: 'var(--t3)',
+        color: stale ? 'var(--amber, #FBBF24)' : 'var(--t3)',
         fontWeight: 600,
       }}>
-        SHARE THIS CODE
+        {stale ? 'YOUR INVITE LINK CHANGED — SEND THIS' : 'SHARE THIS CODE'}
       </div>
+
+      {stale && (
+        <div style={{
+          fontSize: '0.62rem',
+          lineHeight: 1.5,
+          color: 'var(--t2)',
+        }}>
+          The connection reset and Cloudflare issued a new address. Anyone
+          already in the session has been disconnected — send them this.
+        </div>
+      )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         <code style={{
@@ -199,6 +214,7 @@ const FileExplorer = ({ onToggle }) => {
   const sessionId = useEditorStore((s) => s.sessionId);
   const sessionName = useEditorStore((s) => s.sessionName);
   const joinCode = useEditorStore((s) => s.joinCode);
+  const joinCodeStale = useEditorStore((s) => s.joinCodeStale);
   const tunnelState = useEditorStore((s) => s.tunnelState);
   const tunnelError = useEditorStore((s) => s.tunnelError);
   const currentUser = useEditorStore((s) => s.currentUser);
@@ -422,6 +438,9 @@ const FileExplorer = ({ onToggle }) => {
       if (filesToShare.length > 0) {
         await uploadProject(session.id, filesToShare);
       }
+      // Before setSession, so any guarded call made as the session comes up
+      // already carries proof of membership.
+      setSessionToken(session.token);
       setSession(session.id, session.name);
       setCurrentUser(session.user);
       setUserRole('owner');
@@ -474,6 +493,9 @@ const FileExplorer = ({ onToggle }) => {
         }
       }
 
+      // Before setSession, so any guarded call made as the session comes up
+      // already carries proof of membership.
+      setSessionToken(session.token);
       setSession(session.id, session.name);
       setCurrentUser(session.user);
       setUserRole('collaborator');
@@ -722,6 +744,7 @@ const FileExplorer = ({ onToggle }) => {
       // to reach the host we are leaving.
       try { await window.electronAPI?.tunnel?.stop(); } catch { /* best effort */ }
       resetOrigin();
+      clearSessionToken();
       resetSession();
       return;
     }
@@ -839,7 +862,8 @@ const FileExplorer = ({ onToggle }) => {
       } catch (err) {
         if (err.response?.status === 404) {
           setErrorMsg('SESSION EXPIRED: Please start/join a new session.');
-          resetSession();
+          clearSessionToken();
+      resetSession();
         } else {
           const msg = err.response?.data?.message || err.response?.data?.error || err.message || 'Failed to create item';
           setErrorMsg(`SERVER ERROR: ${msg}`);
@@ -1968,11 +1992,13 @@ const FileExplorer = ({ onToggle }) => {
                 the invitation has served its purpose and the code is still
                 in the header beside RUN — leaving this here would keep a
                 permanent panel of setup instructions above the file tree. */}
-            {sessionId && joinCode && connectedUsers.length <= 1 && (
+            {sessionId && joinCode && (connectedUsers.length <= 1 || joinCodeStale) && (
               <ShareStrip
                 code={joinCode}
                 state={tunnelState}
                 error={tunnelError}
+                stale={joinCodeStale}
+                onDismissStale={() => useEditorStore.getState().setJoinCodeStale(false)}
               />
             )}
 

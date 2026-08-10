@@ -3,7 +3,7 @@
  * ------------------------------------------------------- */
 
 import axios from 'axios';
-import { getApiBase } from './backendHost';
+import { getApiBase, getSessionToken } from './backendHost';
 
 // Create an Axios instance with defaults
 const api = axios.create({
@@ -20,6 +20,14 @@ const api = axios.create({
 // someone joins a session hosted elsewhere.
 api.interceptors.request.use((config) => {
   config.baseURL = getApiBase();
+
+  /* Proof of session membership, for the endpoints that run commands on the
+   * host. Attached to everything rather than a chosen list: the backend
+   * decides what to enforce, and a client-side list would silently drift out
+   * of step with it. Absent in local mode, where nothing asks for it. */
+  const token = getSessionToken();
+  if (token) config.headers['X-Causify-Session'] = token;
+
   return config;
 });
 

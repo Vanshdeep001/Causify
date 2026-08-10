@@ -142,9 +142,18 @@ export const buildCollabCallbacks = ({ sessionId, onConnected }) => ({
     }
   },
 
-  onConnected: onConnected || (() => {
-    useEditorStore.getState().loadSessionHistory(sessionId);
-  }),
+  /* Health is tracked here rather than at each call site so every path that
+     builds these callbacks gets it — including the reconnect path, which
+     supplies its own onConnected. */
+  onConnected: () => {
+    useEditorStore.getState().markSocketConnected();
+    if (onConnected) onConnected();
+    else useEditorStore.getState().loadSessionHistory(sessionId);
+  },
+
+  onDisconnected: () => {
+    useEditorStore.getState().markSocketDropped();
+  },
 });
 
 /**

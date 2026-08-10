@@ -13,6 +13,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import useEditorStore from '../../store/useEditorStore';
+import FinishSession from './FinishSession';
 import { PixelSprite, MARIO_PAL, MARIO_ROWS } from '../common/pixelArt';
 import {
   executeGitCommit, cloneGitRepo, gitPush, gitPull,
@@ -1651,8 +1652,13 @@ git push`}
  * ═══════════════════════════════════════════════════════ */
 
 const GitAssistantPanel = () => (
-  <div style={{ height: '100%', overflow: 'hidden', background: 'var(--s0)' }}>
+  /* Scrolls now: the finish card sits below the git dashboard, and the pair is
+     taller than the panel on a short terminal. */
+  <div style={{ height: '100%', overflowY: 'auto', background: 'var(--s0)' }}>
     <GitAssistantCore />
+    {/* The session's ending lives with the git tools, since that is where
+        someone goes when they are thinking about landing the work. */}
+    <FinishSession />
   </div>
 );
 

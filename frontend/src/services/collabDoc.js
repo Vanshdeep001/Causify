@@ -128,6 +128,37 @@ export function getFileText(path) {
  * ───────────────────────────────────────────────────────── */
 
 /** Anchor an offset in `path` to the character there. Returns base64 or null. */
+/**
+ * Overwrite a file's shared text, wherever it is.
+ *
+ * Session Rewind needs this: restoring the project to an earlier moment has to
+ * reach every file, not just the one on screen. The Monaco binding only covers
+ * the open file, so any other path would otherwise change locally and never
+ * reach the other participants.
+ *
+ * Written as one transaction so collaborators see a single replacement rather
+ * than a delete followed by an insert — a gap between the two would briefly
+ * blank the file on their screen and, worse, land in their own undo history as
+ * two separate steps.
+ *
+ * A no-op when the text already matches, so restoring a mostly-unchanged
+ * project does not spam every peer with updates for files nobody touched.
+ */
+export function replaceFileText(path, text) {
+  if (!doc) return false;
+  const ytext = getFileText(path);
+  if (!ytext) return false;
+
+  const next = text || '';
+  if (ytext.toString() === next) return false;
+
+  doc.transact(() => {
+    ytext.delete(0, ytext.length);
+    if (next) ytext.insert(0, next);
+  });
+  return true;
+}
+
 export function encodeCursor(path, index) {
   const ytext = getFileText(path);
   if (!ytext) return null;
