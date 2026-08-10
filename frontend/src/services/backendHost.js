@@ -65,6 +65,45 @@ export const getWsUrl = () => `${getOrigin()}/ws`;
 /** True when we are pointed at something other than this machine. */
 export const isRemoteHost = () => origin !== DEFAULT_ORIGIN;
 
+/* ── Session token ──
+ *
+ * Handed back by /session/create and /session/join, and presented on calls that
+ * run commands on the host. The backend only demands it for requests arriving
+ * from off-machine, so a local session never notices it exists.
+ *
+ * It lives here rather than in the editor store because api.js needs it on
+ * every request and already imports this module — reaching into the store from
+ * there would be a circular import, since the store imports api.js.
+ *
+ * sessionStorage, to match how the session id itself is kept: a refresh keeps
+ * the collaborator working, closing the window ends the session anyway.
+ */
+const TOKEN_KEY = 'causify-session-token';
+
+const readToken = () => {
+  try {
+    return sessionStorage.getItem(TOKEN_KEY) || '';
+  } catch {
+    return '';
+  }
+};
+
+let sessionToken = readToken();
+
+export const getSessionToken = () => sessionToken;
+
+export function setSessionToken(token) {
+  sessionToken = token || '';
+  try {
+    if (sessionToken) sessionStorage.setItem(TOKEN_KEY, sessionToken);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* private mode — the in-memory copy still serves this window */
+  }
+}
+
+export const clearSessionToken = () => setSessionToken('');
+
 /** Point every subsequent request at `newOrigin` (absolute, with scheme). */
 export function setOrigin(newOrigin) {
   origin = normalizeOrigin(newOrigin);

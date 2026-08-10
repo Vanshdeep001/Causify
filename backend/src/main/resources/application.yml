@@ -49,7 +49,18 @@ spring:
 # Custom DebugSync configuration
 debugsync:
   ai:
-    openrouter-api-key: ${OPENROUTER_API_KEY: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}
+    # Bring your own provider: OpenRouter, Groq, Gemini, Bedrock, OpenAI, or any
+    # OpenAI-compatible endpoint. All four settings are blank on purpose — paste
+    # the key into the UI instead, which verifies it with a real call, activates
+    # it live, and keeps it out of this file and out of git.
+    api-key: ${AI_API_KEY:}
+    # Blank means "work it out from the key's shape" (sk-or- -> OpenRouter,
+    # gsk_ -> Groq, AIza/AQ. -> Gemini, ABSK -> Bedrock, sk- -> OpenAI).
+    provider: ${AI_PROVIDER:}
+    # Blank means the provider's own default model.
+    model: ${AI_MODEL:}
+    # Only used when provider is "custom", e.g. https://api.together.xyz/v1
+    base-url: ${AI_BASE_URL:}
   cors:
     allowed-origins: http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3000,http://localhost:3001
   git:

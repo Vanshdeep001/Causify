@@ -2,7 +2,7 @@
  * SetupWizard.jsx — First-Launch Setup Wizard
  *
  * Shows on first Electron launch to collect:
- *   Step 1: OpenRouter API key (with validation)
+ *   Step 1: An AI provider key, any vendor (validated by the backend)
  *   Step 2: Backend connectivity check
  *
  * After completion, calls electronAPI.completeSetup()
@@ -10,6 +10,7 @@
  * ------------------------------------------------------- */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { saveAiKey } from '../../services/api';
 
 const STEPS = ['api-key', 'backend', 'complete'];
 
@@ -20,6 +21,7 @@ const SetupWizard = ({ onComplete }) => {
   const [apiKey, setApiKey] = useState('');
   const [keyStatus, setKeyStatus] = useState(null); // null | 'testing' | 'success' | 'error'
   const [keyError, setKeyError] = useState('');
+  const [keyProvider, setKeyProvider] = useState(''); // which vendor the key turned out to be
 
   // Step 2 state
   const [backendStatus, setBackendStatus] = useState('checking'); // 'checking' | 'ready' | 'error'
@@ -32,31 +34,24 @@ const SetupWizard = ({ onComplete }) => {
     setKeyError('');
 
     try {
-      if (window.electronAPI) {
-        // In Electron: use secure IPC
-        await window.electronAPI.setApiKey(apiKey.trim());
-        const result = await window.electronAPI.makeAIRequest(
-          'Reply with exactly: "OK"',
-          { max_tokens: 5 }
-        );
-        if (result && !result.error) {
-          setKeyStatus('success');
-        } else {
-          setKeyStatus('error');
-          setKeyError(result?.error || 'API returned an unexpected response.');
-          await window.electronAPI.clearApiKey();
+      /* The backend validates, in every mode. It is the only place that knows
+       * which providers exist and how each one is called, so validating here
+       * would mean a second implementation drifting out of step with the one
+       * that serves real requests. It also detects the provider from the key,
+       * which is why no provider is passed. */
+      const res = await saveAiKey(apiKey.trim());
+
+      if (res && res.success) {
+        // Desktop additionally keeps the key in the OS keychain so it survives
+        // a restart; the backend holds it only for this session.
+        if (window.electronAPI?.setApiKey) {
+          try { await window.electronAPI.setApiKey(apiKey.trim()); } catch { /* non-fatal */ }
         }
+        setKeyStatus('success');
+        setKeyProvider(res.providerName || '');
       } else {
-        // In browser dev mode: simulate validation via direct fetch
-        const res = await fetch('https://openrouter.ai/api/v1/models', {
-          headers: { 'Authorization': `Bearer ${apiKey.trim()}` },
-        });
-        if (res.ok) {
-          setKeyStatus('success');
-        } else {
-          setKeyStatus('error');
-          setKeyError(`API returned status ${res.status}. Check your key.`);
-        }
+        setKeyStatus('error');
+        setKeyError(res?.error || 'That key was rejected.');
       }
     } catch (err) {
       setKeyStatus('error');
@@ -146,18 +141,15 @@ const SetupWizard = ({ onComplete }) => {
         {currentStep === 0 && (
           <div className="setup-step" style={{ animation: 'setup-fade-in 0.4s ease' }}>
             <div className="setup-step-icon">🔑</div>
-            <h2 className="setup-title">OpenRouter API Key</h2>
+            <h2 className="setup-title">AI Provider Key</h2>
             <p className="setup-subtitle">
-              Causify uses OpenRouter for AI-powered root cause analysis.
+              Causify uses your own AI provider for root cause analysis and auto-fix.
+              Paste a key from whichever you already use — the provider is
+              recognised automatically.
               <br />
-              <a
-                href="https://openrouter.ai/keys"
-                target="_blank"
-                rel="noreferrer"
-                className="setup-link"
-              >
-                Get your API key →
-              </a>
+              <span className="setup-provider-list">
+                OpenRouter · Groq · Gemini · AWS Bedrock · OpenAI · any OpenAI-compatible endpoint
+              </span>
             </p>
 
             <div className="setup-input-group">
@@ -169,7 +161,7 @@ const SetupWizard = ({ onComplete }) => {
                   setKeyStatus(null);
                   setKeyError('');
                 }}
-                placeholder="sk-or-v1-..."
+                placeholder="Paste your API key…"
                 className="setup-input"
                 spellCheck={false}
                 autoFocus
@@ -275,7 +267,7 @@ const SetupWizard = ({ onComplete }) => {
             <div className="setup-checklist">
               <div className="setup-checklist-item">
                 <span className="setup-check">✓</span>
-                OpenRouter API connected
+                {keyProvider ? `${keyProvider} connected` : 'AI provider connected'}
               </div>
               <div className="setup-checklist-item">
                 <span className="setup-check">✓</span>

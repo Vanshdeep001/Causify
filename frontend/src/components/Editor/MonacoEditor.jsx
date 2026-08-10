@@ -69,6 +69,16 @@ const MonacoEditor = () => {
   const canEdit = userRole === 'owner'
     || connectedUsers.find((u) => u.id === currentUser?.id)?.permission !== 'viewer';
 
+  /* A session whose connection has gone for good is frozen.
+   *
+   * Yjs will happily keep accepting edits into the local document forever, so
+   * without this someone can write for twenty minutes into a session that no
+   * longer exists — and only find out when they press Run. Locking the editor
+   * is what makes the failure safe rather than merely visible: you cannot
+   * create work you are about to lose. Deliberately not applied while
+   * reconnecting, when a returning socket would merge the edits cleanly. */
+  const connectionLost = useEditorStore((s) => s.connectionState) === 'lost';
+
   /* ── Format timestamp ── */
   const formatTimeAgo = (ts) => {
     const diff = Math.floor((Date.now() - ts) / 1000);
@@ -1117,7 +1127,7 @@ const MonacoEditor = () => {
           smoothScrolling: true,
           cursorBlinking: 'smooth',
           renderLineHighlight: 'all',
-          readOnly: isReplaying || !canEdit,
+          readOnly: isReplaying || !canEdit || connectionLost,
           wordWrap: 'on',
           lineNumbers: 'on',
           glyphMargin: false,

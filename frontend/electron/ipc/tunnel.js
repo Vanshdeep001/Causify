@@ -17,7 +17,7 @@
  * the kind of setup step people abandon an install over.
  * ------------------------------------------------------- */
 
-const { ipcMain, app } = require('electron');
+const { ipcMain, app, BrowserWindow } = require('electron');
 const { spawn, execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -153,11 +153,32 @@ function startTunnel(port = 8080) {
       return;
     }
 
-    // The banner carrying the URL goes to stderr, not stdout.
+    /* The banner carrying the URL goes to stderr, not stdout.
+     *
+     * Scanning continues after the first address. A quick tunnel does not keep
+     * one URL for its lifetime: cloudflared re-negotiates after the host's
+     * Wi-Fi drops, after the machine wakes from sleep, when Cloudflare rotates
+     * an edge node, or when the ISP hands out a new IP — and prints a fresh
+     * banner each time. This used to stop listening the moment it had an
+     * address, so the app went on advertising a link that had stopped working
+     * while the process was still running perfectly well. */
     const scan = (chunk) => {
       const text = chunk.toString();
       const match = text.match(URL_PATTERN);
-      if (match) finish(null, match[0]);
+      if (!match) return;
+
+      const url = match[0];
+      if (!settled) {
+        finish(null, url);
+        return;
+      }
+      if (url !== tunnelUrl) {
+        const previous = tunnelUrl;
+        tunnelUrl = url;
+        tunnelStatus = 'running';
+        console.log(`[Tunnel] Address changed: ${previous} -> ${url}`);
+        broadcast('tunnel:url-changed', { url, previous });
+      }
     };
 
     tunnelProcess.stdout?.on('data', scan);
@@ -180,8 +201,16 @@ function startTunnel(port = 8080) {
       // reachable from outside; surface that rather than leaving a dead link.
       tunnelStatus = 'stopped';
       tunnelUrl = null;
+      broadcast('tunnel:down', { code });
     });
   });
+}
+
+/** Tell every open window something about the tunnel. */
+function broadcast(channel, payload) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(channel, payload);
+  }
 }
 
 /** Close the tunnel. Safe to call when nothing is running. */

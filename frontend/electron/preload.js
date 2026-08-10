@@ -114,10 +114,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('update:progress', handler);
   },
 
-  /* ── AI / Security ── */
-  makeAIRequest: (prompt, options) =>
-    ipcRenderer.invoke('security:make-ai-request', prompt, options),
-
+  /* ── AI / Security ──
+   * Key storage only. There is deliberately no AI-request channel here: every
+   * LLM call goes through the backend, which owns provider selection. */
   setApiKey: (key) =>
     ipcRenderer.invoke('security:set-api-key', key),
 
@@ -314,5 +313,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     start: (port) => ipcRenderer.invoke('tunnel:start', port),
     stop: () => ipcRenderer.invoke('tunnel:stop'),
     status: () => ipcRenderer.invoke('tunnel:status'),
+
+    /* A quick tunnel's address is not stable — it is re-negotiated after a
+       network drop, a wake from sleep, or a Cloudflare edge rotation. Without
+       this the app would keep showing an invite link that had quietly died. */
+    onUrlChanged: (callback) => {
+      const handler = (_e, payload) => callback(payload);
+      ipcRenderer.on('tunnel:url-changed', handler);
+      return () => ipcRenderer.removeListener('tunnel:url-changed', handler);
+    },
+
+    onDown: (callback) => {
+      const handler = (_e, payload) => callback(payload);
+      ipcRenderer.on('tunnel:down', handler);
+      return () => ipcRenderer.removeListener('tunnel:down', handler);
+    },
   },
 });

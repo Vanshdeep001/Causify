@@ -13,6 +13,7 @@ import useEditorStore from './store/useEditorStore';
 import { connectWebSocket, disconnectWebSocket } from './services/socket';
 import { buildCollabCallbacks, reconnectOnConnected } from './services/collabCallbacks';
 import { saveFile, getSession, touchSession, leaveSession } from './services/api';
+import { setOrigin, buildJoinCode } from './services/backendHost';
 import MigrateWorkspaceModal from './components/Editor/MigrateWorkspaceModal';
 import causifyLogo from './assets/causify-logo.png';
 
@@ -150,6 +151,45 @@ const App = () => {
     };
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  /* ── The tunnel changed address ──
+   *
+   * A quick tunnel keeps its URL only until the next interruption: a Wi-Fi
+   * drop, a wake from sleep, a Cloudflare edge rotation, a new IP from the
+   * ISP. cloudflared then prints a fresh address and carries on, so the app
+   * stays perfectly healthy while the link everyone was given goes dead.
+   *
+   * Nothing can be done about the old link — the only channel to the people
+   * holding it was that link. What is possible is to notice immediately, point
+   * this app at the new address, and put the new invite in front of the host
+   * so re-sharing is a copy and a paste.
+   */
+  useEffect(() => {
+    if (!window.electronAPI?.tunnel?.onUrlChanged) return;
+
+    const unsubscribe = window.electronAPI.tunnel.onUrlChanged(({ url }) => {
+      if (!url) return;
+      const store = useEditorStore.getState();
+
+      setOrigin(url);
+      if (store.sessionId) {
+        store.setJoinCode(buildJoinCode(store.sessionId, url));
+        store.setJoinCodeStale(true);
+      }
+      console.warn('[Causify] Tunnel address changed — the previous invite link is dead.');
+    });
+
+    return unsubscribe;
+  }, []);
+
+  /* ── Session Rewind sampling ──
+   * One timer for the whole app. Checkpoints are taken here rather than at each
+   * place a file can change, so no existing edit path had to be touched. */
+  useEffect(() => {
+    const store = useEditorStore.getState();
+    store.startRewindSampler();
+    return () => useEditorStore.getState().stopRewindSampler();
   }, []);
 
   // ── Deep-link navigation handler (Electron causify:// protocol) ──

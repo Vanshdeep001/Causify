@@ -15,6 +15,8 @@ import BinaryFilePreview from '../components/Editor/BinaryFilePreview';
 import EmptyEditorState from '../components/Editor/EmptyEditorState';
 import { isBinaryAssetPath, isTextImagePath } from '../utils/binaryAssets';
 import ImpactWarningBanner from '../components/Editor/ImpactWarningBanner';
+import ConnectionBanner from '../components/Session/ConnectionBanner';
+import CollisionHint from '../components/Session/CollisionHint';
 import Whiteboard from '../components/Editor/Whiteboard';
 import ScreenCapture from '../components/Capture/ScreenCapture';
 
@@ -324,6 +326,12 @@ const CodeShotButton = () => {
 };
 
 
+/* Sidebar resize limits. Module scope on purpose: resize() is a useCallback
+ * with no dependencies, so anything it reads must not be re-created per render.
+ * The floor is what the explorer's own header needs to stay intact. */
+const MIN_SIDEBAR_WIDTH = 220;
+const MAX_SIDEBAR_WIDTH = 800;
+
 const EditorPage = () => {
   const [copied, setCopied] = useState(false);
   const isTerminalOpen = useEditorStore((s) => s.isTerminalOpen);
@@ -386,12 +394,16 @@ const EditorPage = () => {
   }, []);
 
   const resize = useCallback((e) => {
-    if (isResizing.current) {
-      const newWidth = e.clientX;
-      if (newWidth > 150 && newWidth < 800) {
-        setSidebarWidth(newWidth);
-      }
-    }
+    if (!isResizing.current) return;
+    /* Clamped, not ignored. The old check simply skipped the update once the
+     * pointer went out of range, which froze the panel at whatever width the
+     * cursor happened to be crossing — drag fast and it stuck somewhere
+     * arbitrary. Clamping pins it to the limit instead.
+     *
+     * The floor is 220 rather than 150 because the Project Files row alone
+     * needs roughly that much: below it the action buttons were pushed off the
+     * panel's edge and the headings broke apart mid-word. */
+    setSidebarWidth(Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, e.clientX)));
   }, []);
 
   useEffect(() => {
@@ -1021,6 +1033,10 @@ const EditorPage = () => {
               <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 {/* Line-collision lock removed — the CRDT merges concurrent edits,
                     so same-line editing is safe and no longer blocked. */}
+                {/* Above the impact warning: if the session is gone, that is
+                    the more urgent thing on screen. */}
+                <ConnectionBanner />
+                <CollisionHint />
                 <ImpactWarningBanner />
                 <div id="causify-code-region" style={{ flex: 1, position: 'relative', minHeight: 0 }}>
                   <MonacoEditor />

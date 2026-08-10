@@ -200,7 +200,23 @@ export const connectWebSocket = (sessionId, userInfo, callbacks = {}) => {
       if (callbacks.onDisconnected) callbacks.onDisconnected();
     },
 
+    /* onDisconnect only fires for a polite STOMP shutdown. The failures that
+     * matter here are not polite: the host's laptop sleeps, the Wi-Fi drops,
+     * Cloudflare rotates its edge, the ISP re-assigns an IP. Those surface as
+     * a socket close — or, without heartbeats, as nothing at all. */
+    onWebSocketClose: () => {
+      console.log('[WS] Socket closed');
+      if (callbacks.onDisconnected) callbacks.onDisconnected();
+    },
+
     reconnectDelay: 3000,
+
+    /* Ten seconds each way, matching the broker. A dead connection is
+     * otherwise invisible: nothing is being sent, so nothing fails, and the
+     * socket sits half-open for minutes while edits pile up locally with
+     * nowhere to go. Missing a beat is what makes the drop detectable. */
+    heartbeatIncoming: 10000,
+    heartbeatOutgoing: 10000,
 
     onStompError: (frame) => {
       console.error('[WS] STOMP error:', frame.headers['message']);

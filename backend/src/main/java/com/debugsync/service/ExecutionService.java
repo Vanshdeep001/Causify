@@ -332,6 +332,138 @@ public class ExecutionService {
         return response;
     }
 
+    /* ─────────────────────────────────────────────────────────
+     * Dry run — execute code without recording anything
+     *
+     * The auto-fix agent has to run a candidate patch to find out whether it
+     * actually works. executeCode() is the wrong tool for that: every call
+     * writes a snapshot, an execution log and a parsed error row, and pays for
+     * a full AI root-cause analysis. An agent making three attempts would
+     * bury the user's real timeline under six entries they never asked for.
+     *
+     * This path compiles and runs exactly like the real one — same commands,
+     * same 10s ceiling — and returns only what the agent needs to judge the
+     * attempt: stdout and stderr.
+     * ───────────────────────────────────────────────────────── */
+
+    /** Raw result of a verification run: no snapshot, no analysis, just output. */
+    public static class DryRunResult {
+        private final String stdout;
+        private final String stderr;
+
+        public DryRunResult(String stdout, String stderr) {
+            this.stdout = stdout == null ? "" : stdout;
+            this.stderr = stderr == null ? "" : stderr;
+        }
+
+        public String getStdout() { return stdout; }
+        public String getStderr() { return stderr; }
+        public boolean hasError() { return !stderr.isBlank(); }
+    }
+
+    /**
+     * Whether a language can be executed here at all. Static and UI languages
+     * (html, css, react) have no runnable form on the backend, so a fix for one
+     * can be proposed but never machine-verified.
+     */
+    public boolean canDryRun(String language, String code) {
+        String lang = (language == null || "javascript".equals(language)) ? guessLanguage(code) : language.toLowerCase();
+        if ("html".equals(lang) || "css".equals(lang) || "react".equals(lang)
+                || "jsx".equals(lang) || "tsx".equals(lang)) {
+            return false;
+        }
+        boolean isReactCode = code != null && (code.contains("import React")
+                || code.contains("from 'react'") || code.contains("from \"react\""));
+        return !isReactCode;
+    }
+
+    /** Compile and run {@code code}, returning its raw output. Never throws. */
+    public DryRunResult dryRun(String code, String language) {
+        String lang = (language == null || "javascript".equals(language)) ? guessLanguage(code) : language.toLowerCase();
+        try {
+            if ("java".equals(lang)) return dryRunJava(code);
+            if ("c".equals(lang) || "cpp".equals(lang)) return dryRunC(code, "cpp".equals(lang));
+            return dryRunScript(code, "python".equals(lang));
+        } catch (Exception e) {
+            log.warn("Dry run failed to start: {}", e.getMessage());
+            return new DryRunResult("", "Could not run the patched code: " + e.getMessage());
+        }
+    }
+
+    private DryRunResult dryRunScript(String code, boolean isPython) throws Exception {
+        Path tempFile = Files.createTempFile("debugsync_fix_", isPython ? ".py" : ".js");
+        try {
+            Files.writeString(tempFile, code);
+            String[] command = isPython
+                    ? new String[] { "python", tempFile.toString() }
+                    : new String[] { "node", tempFile.toString() };
+            return runRaw(command);
+        } finally {
+            try { Files.deleteIfExists(tempFile); } catch (IOException ignored) { }
+        }
+    }
+
+    private DryRunResult dryRunJava(String code) throws Exception {
+        Path tempDir = Files.createTempDirectory("debugsync_fix_java_");
+        try {
+            String mainClass = findMainClass(code);
+            if (mainClass == null) mainClass = "Main";
+
+            Path javaFile = tempDir.resolve(mainClass + ".java");
+            Files.writeString(javaFile, code);
+
+            Process compileProcess = new ProcessBuilder("javac", javaFile.toString()).start();
+            String compileError = readStream(compileProcess.getErrorStream());
+            if (compileProcess.waitFor() != 0) {
+                return new DryRunResult("", compileError);
+            }
+            return runRaw(new String[] { "java", "-cp", tempDir.toString(), mainClass });
+        } finally {
+            deleteTree(tempDir);
+        }
+    }
+
+    private DryRunResult dryRunC(String code, boolean isCpp) throws Exception {
+        Path tempDir = Files.createTempDirectory("debugsync_fix_c_");
+        try {
+            Path srcFile = tempDir.resolve("main" + (isCpp ? ".cpp" : ".c"));
+            Files.writeString(srcFile, code);
+
+            Path outFile = tempDir.resolve("main.exe");
+            Process compileProcess = new ProcessBuilder(isCpp ? "g++" : "gcc",
+                    srcFile.toString(), "-o", outFile.toString()).start();
+            String compileError = readStream(compileProcess.getErrorStream());
+            if (compileProcess.waitFor() != 0) {
+                return new DryRunResult("", compileError);
+            }
+            return runRaw(new String[] { outFile.toString() });
+        } finally {
+            deleteTree(tempDir);
+        }
+    }
+
+    private DryRunResult runRaw(String[] command) throws Exception {
+        Process process = new ProcessBuilder(command).start();
+        String stdout = readStream(process.getInputStream());
+        String stderr = readStream(process.getErrorStream());
+
+        if (!process.waitFor(10, TimeUnit.SECONDS)) {
+            process.destroyForcibly();
+            return new DryRunResult(stdout, "Execution timed out (10 second limit)");
+        }
+        return new DryRunResult(stdout, stderr);
+    }
+
+    private void deleteTree(Path dir) {
+        try {
+            Files.walk(dir)
+                    .sorted(Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .forEach(File::delete);
+        } catch (IOException ignored) {
+        }
+    }
+
     private String guessLanguage(String code) {
         if (code == null)
             return "javascript";

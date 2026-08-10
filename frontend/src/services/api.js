@@ -3,7 +3,7 @@
  * ------------------------------------------------------- */
 
 import axios from 'axios';
-import { getApiBase } from './backendHost';
+import { getApiBase, getSessionToken } from './backendHost';
 
 // Create an Axios instance with defaults
 const api = axios.create({
@@ -20,6 +20,14 @@ const api = axios.create({
 // someone joins a session hosted elsewhere.
 api.interceptors.request.use((config) => {
   config.baseURL = getApiBase();
+
+  /* Proof of session membership, for the endpoints that run commands on the
+   * host. Attached to everything rather than a chosen list: the backend
+   * decides what to enforce, and a client-side list would silently drift out
+   * of step with it. Absent in local mode, where nothing asks for it. */
+  const token = getSessionToken();
+  if (token) config.headers['X-Causify-Session'] = token;
+
   return config;
 });
 
@@ -28,7 +36,13 @@ api.interceptors.request.use((config) => {
 //   HEAVY — large uploads and git clone (lots of data / full network fetch)
 //   LONG  — git push/pull/commit and code execution
 //   AI    — LLM round-trips (root-cause, key verification)
-const TIMEOUT = { HEAVY: 300000, LONG: 120000, AI: 120000 };
+/* AGENT is deliberately the longest. The auto-fix agent makes up to three
+ * propose → patch → execute cycles in one request, each capped at 90s for the
+ * model plus 10s for the run, so its true ceiling is ~300s. At the 120s AI
+ * deadline a slow multi-attempt run was being aborted by the client while the
+ * backend was still working — the user saw a network error and every attempt
+ * already made was thrown away. */
+const TIMEOUT = { HEAVY: 300000, LONG: 120000, AI: 120000, AGENT: 310000 };
 
 // If the local database becomes unusable, every request fails and Axios reports
 // only its generic "Request failed with status code 500", which tells the user
@@ -114,15 +128,41 @@ export const executeCode = async (sessionId, code, language = 'javascript') => {
 
 /* ---- AI Diagnosis Configuration APIs ---- */
 
-// Whether the backend has an OpenRouter key (env var, yml, or set at runtime)
+// Whether a provider is configured, and which one
 export const getAiStatus = async () => {
   const response = await api.get('/ai/status');
   return response.data;
 };
 
-// Verify a key with OpenRouter and activate it on the backend (no restart needed)
-export const saveAiKey = async (key) => {
-  const response = await api.post('/ai/key', { key }, { timeout: TIMEOUT.AI });
+// The providers this build supports, with their default models and key hints
+export const getAiProviders = async () => {
+  const response = await api.get('/ai/providers');
+  return response.data;
+};
+
+// Guess the provider from a pasted key so the form can pre-select it.
+// Advisory only — an unrecognised key is not an error.
+export const detectAiProvider = async (key) => {
+  const response = await api.post('/ai/detect', { key });
+  return response.data;
+};
+
+/* Verify a key with a real generation call and activate it (no restart needed).
+ * `provider` blank means "detect it from the key". `model` blank means the
+ * provider's default. `baseUrl` is only read for the custom provider. */
+// Forget the active key on the backend. On desktop the caller should also
+// clear the OS keychain copy, or it would be re-injected on the next launch.
+export const clearAiKey = async () => {
+  const response = await api.delete('/ai/key');
+  return response.data;
+};
+
+export const saveAiKey = async (key, { provider = '', model = '', baseUrl = '' } = {}) => {
+  const response = await api.post(
+    '/ai/key',
+    { key, provider, model, baseUrl },
+    { timeout: TIMEOUT.AI }
+  );
   return response.data;
 };
 
@@ -163,6 +203,18 @@ export const analyzeRootCause = async (sessionId, error, code) => {
     error,
     code,
   }, { timeout: TIMEOUT.AI });
+  return response.data;
+};
+
+/* ---- Auto-Fix Agent APIs ----
+ * The agent may run several propose → patch → execute cycles before it answers,
+ * so this shares the long AI deadline rather than the 30s CRUD one.
+ */
+
+export const requestAutoFix = async (payload) => {
+  // payload: { sessionId, code, language, filePath, errorType, errorMessage,
+  //            errorLine, suspectedVariable, semanticContext }
+  const response = await api.post('/auto-fix', payload, { timeout: TIMEOUT.AGENT });
   return response.data;
 };
 

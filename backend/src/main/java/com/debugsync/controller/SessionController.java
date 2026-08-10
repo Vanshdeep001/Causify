@@ -6,6 +6,7 @@ package com.debugsync.controller;
 import com.debugsync.model.Session;
 import com.debugsync.repository.SessionRepository;
 import com.debugsync.service.CollaborationService;
+import com.debugsync.config.SessionTokenStore;
 import com.debugsync.service.FileService;
 import com.debugsync.service.SessionCleanupService;
 import org.springframework.http.ResponseEntity;
@@ -21,11 +22,14 @@ public class SessionController {
     private final FileService fileService;
     private final CollaborationService collaborationService;
     private final SessionCleanupService sessionCleanupService;
+    private final SessionTokenStore tokenStore;
 
     public SessionController(SessionRepository sessionRepository,
                              FileService fileService,
                              CollaborationService collaborationService,
-                             SessionCleanupService sessionCleanupService) {
+                             SessionCleanupService sessionCleanupService,
+                             SessionTokenStore tokenStore) {
+        this.tokenStore = tokenStore;
         this.sessionRepository = sessionRepository;
         this.fileService = fileService;
         this.collaborationService = collaborationService;
@@ -79,6 +83,10 @@ public class SessionController {
         response.put("name", session.getName());
         response.put("userId", userId);
         response.put("role", "owner");
+        /* Proof of membership for calls that arrive through the tunnel. The
+         * host's own requests are local and never checked, but the owner may be
+         * reaching their session from another machine. */
+        response.put("token", tokenStore.issue(session.getId()));
         // Full user object the client uses for presence + change attribution
         response.put("user", Map.of("id", userId, "username", username, "color", "#FF2E93"));
 
@@ -111,6 +119,9 @@ public class SessionController {
         response.put("name", session.getName());
         response.put("userId", userId);
         response.put("role", "collaborator");
+        // Only reached once the password check above has passed, so this is the
+        // point where "knows the password" becomes "may call the API".
+        response.put("token", tokenStore.issue(session.getId()));
         response.put("files", files);
         // Full user object the client uses for presence + change attribution
         response.put("user", Map.of("id", userId, "username", username, "color", "#4DD6FF"));

@@ -1,75 +1,149 @@
 /*
- * AiAnalysisService.java — AI-Powered Root Cause Analysis via OpenRouter
- * 
- * Calls OpenRouter's LLM API to generate:
- *   - A clear, creative explanation of WHY the error happened
- *   - A detailed breakdown of the root cause chain
- *   - Actionable suggested fixes with code examples
+ * AiAnalysisService.java — AI-Powered Root Cause Analysis
+ *
+ * Produces, for a failing program:
+ *   - A clear explanation of WHY the error happened
+ *   - A breakdown of the root cause chain
+ *   - An actionable suggested fix
+ *
+ * Also the single LLM entry point for the auto-fix agent (see AutoFixService),
+ * which calls complete() directly.
+ *
+ * WHICH VENDOR ANSWERS IS NOT THIS CLASS'S BUSINESS. It owns the prompts and
+ * the parsing of replies; the transport lives behind LlmProvider, so a user can
+ * bring a key from OpenRouter, Groq, Gemini, Bedrock, OpenAI or any
+ * OpenAI-compatible endpoint without a line of this file changing.
+ *
+ * The key, provider and model are all mutable at runtime: they arrive from
+ * POST /api/ai/key and take effect on the next call, with no restart. That
+ * matters because some keys expire within a day.
+ *
+ * NOTE ON TOKEN BUDGETS — reasoning models spend part of the output allowance
+ * thinking before they write anything. Measured on Gemini 2.5 Flash: ~700
+ * tokens of reasoning before a ~120 token answer. Budgets below are therefore
+ * sized for thinking + answer; one sized for the answer alone comes back empty.
  */
 package com.debugsync.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.debugsync.ai.LlmProvider;
+import com.debugsync.ai.ProviderRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
-
 @Service
 public class AiAnalysisService {
 
     private static final Logger log = LoggerFactory.getLogger(AiAnalysisService.class);
-    private static final String OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-    // Primary: OPENROUTER_API_KEY env var. Fallback: debugsync.ai.openrouter-api-key in application.yml.
-    // Can also be set at runtime via POST /api/ai/key (see AiConfigController).
-    @Value("${OPENROUTER_API_KEY:${debugsync.ai.openrouter-api-key:}}")
+    private final ProviderRegistry registry;
+
+    /* All three are volatile and settable at runtime — see updateConfig(). The
+     * @Value defaults only seed the initial state from env or application.yml. */
+    @Value("${AI_API_KEY:${debugsync.ai.api-key:}}")
     private volatile String apiKey;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(15))
-            .build();
+    @Value("${AI_PROVIDER:${debugsync.ai.provider:}}")
+    private volatile String providerId;
 
-    /** Whether an OpenRouter key is currently available (env, yml, or set at runtime). */
+    @Value("${AI_MODEL:${debugsync.ai.model:}}")
+    private volatile String model;
+
+    /** Only meaningful for the custom OpenAI-compatible provider. */
+    @Value("${AI_BASE_URL:${debugsync.ai.base-url:}}")
+    private volatile String baseUrl;
+
+    public AiAnalysisService(ProviderRegistry registry) {
+        this.registry = registry;
+    }
+
+    /* ─────────────────────────────────────────────────────────
+     * Configuration
+     * ───────────────────────────────────────────────────────── */
+
+    /** Whether a key is currently available (env, yml, or set at runtime). */
     public boolean isConfigured() {
         return apiKey != null && !apiKey.isBlank();
     }
 
-    /** Replaces the active OpenRouter key at runtime (no restart needed). */
-    public void updateApiKey(String key) {
+    /**
+     * Swap the active credentials at runtime. A blank provider is detected from
+     * the key's own shape, so the common case needs no choice from the user.
+     */
+    public void updateConfig(String key, String provider, String model, String baseUrl) {
         this.apiKey = key;
-        log.info("OpenRouter API key updated at runtime");
+        this.providerId = (provider == null || provider.isBlank())
+                ? providerIdFor(key)
+                : provider;
+        this.model = model;
+        this.baseUrl = baseUrl;
+        log.info("AI provider set to {} (model={})", this.providerId, (model == null || model.isBlank()) ? "default" : model);
     }
 
     /**
-     * Verifies a key against OpenRouter's key-info endpoint without storing it.
-     * Returns null when the key is valid, otherwise a short error description.
+     * Forget the active credentials.
+     *
+     * Clears the model and base URL too, not just the key: leaving them behind
+     * would silently apply one provider's model to the next key pasted in.
      */
-    public String testApiKey(String key) {
+    public void clearConfig() {
+        this.apiKey = "";
+        this.providerId = "";
+        this.model = "";
+        this.baseUrl = "";
+        log.info("AI credentials cleared");
+    }
+
+    private String providerIdFor(String key) {
+        LlmProvider detected = registry.detect(key);
+        return detected != null ? detected.id() : "";
+    }
+
+    /** The provider currently in use, or null when none is configured. */
+    public LlmProvider activeProvider() {
+        if (!isConfigured()) return null;
         try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("https://openrouter.ai/api/v1/auth/key"))
-                    .header("Authorization", "Bearer " + key)
-                    .GET()
-                    .timeout(Duration.ofSeconds(15))
-                    .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            int status = response.statusCode();
-            if (status == 200) return null;
-            if (status == 401 || status == 403) return "OpenRouter rejected this key. Double-check it and try again.";
-            return "OpenRouter returned an unexpected status (" + status + "). Try again in a moment.";
+            return registry.resolve(providerId, apiKey, baseUrl);
         } catch (Exception e) {
-            return "Could not reach OpenRouter: " + e.getMessage();
+            return null;
         }
+    }
+
+    /** Model actually in effect, resolving the provider default when unset. */
+    public String activeModel() {
+        LlmProvider p = activeProvider();
+        if (p == null) return model;
+        return (model == null || model.isBlank()) ? p.defaultModel() : model;
+    }
+
+    /**
+     * Verify a candidate configuration without storing it.
+     *
+     * @return null when it works, otherwise a short reason it does not
+     */
+    public String testConfig(String key, String provider, String model, String baseUrl) {
+        try {
+            LlmProvider p = registry.resolve(provider, key, baseUrl);
+            return p.testKey(key, model);
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }
+
+    /* ─────────────────────────────────────────────────────────
+     * The one call everything else goes through
+     * ───────────────────────────────────────────────────────── */
+
+    /**
+     * Send a prompt to whichever provider is configured and return its reply.
+     *
+     * @return the reply, or null when the model returned nothing usable
+     */
+    public String complete(String prompt, int maxTokens, double temperature) throws Exception {
+        if (!isConfigured()) throw new IllegalStateException("No AI provider is configured.");
+        LlmProvider provider = registry.resolve(providerId, apiKey, baseUrl);
+        return provider.complete(apiKey, model, prompt, maxTokens, temperature);
     }
 
     /**
@@ -79,15 +153,15 @@ public class AiAnalysisService {
     public AiAnalysisResult analyze(String errorType, String errorMessage, int errorLine,
                                      String suspectedVariable, String code, String language,
                                      java.util.Map<String, String> semContext) {
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("OpenRouter API key not configured — skipping AI analysis");
+        if (!isConfigured()) {
+            log.warn("No AI provider configured — skipping AI analysis");
             return null;
         }
 
         try {
             String prompt = buildPrompt(errorType, errorMessage, errorLine, suspectedVariable, code, language, semContext);
-            String response = callOpenRouter(prompt);
-            return parseResponse(response);
+            // 3500, not 800: a large part of it goes on reasoning before a word is written.
+            return parseResponse(complete(prompt, 3500, 0.4));
         } catch (Exception e) {
             log.error("AI analysis failed: {}", e.getMessage());
             return null;
@@ -149,48 +223,9 @@ public class AiAnalysisService {
         return sb.toString();
     }
 
-    private String callOpenRouter(String prompt) throws Exception {
-        ObjectNode requestBody = objectMapper.createObjectNode();
-        requestBody.put("model", "google/gemini-2.0-flash-001");
-        requestBody.put("max_tokens", 800);
-        requestBody.put("temperature", 0.4);
-
-        ArrayNode messages = objectMapper.createArrayNode();
-        ObjectNode message = objectMapper.createObjectNode();
-        message.put("role", "user");
-        message.put("content", prompt);
-        messages.add(message);
-        requestBody.set("messages", messages);
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(OPENROUTER_API_URL))
-                .header("Content-Type", "application/json")
-                .header("Authorization", "Bearer " + apiKey)
-                .header("HTTP-Referer", "https://causify.dev")
-                .header("X-Title", "Causify IDE")
-                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody)))
-                .timeout(Duration.ofSeconds(30))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() != 200) {
-            log.error("OpenRouter API returned status {}: {}", response.statusCode(), response.body());
-            throw new RuntimeException("OpenRouter API error: " + response.statusCode());
-        }
-
-        return response.body();
-    }
-
-    private AiAnalysisResult parseResponse(String responseJson) throws Exception {
-        JsonNode root = objectMapper.readTree(responseJson);
-        JsonNode choices = root.get("choices");
-        if (choices == null || choices.isEmpty()) {
-            log.warn("No choices in OpenRouter response");
-            return null;
-        }
-
-        String content = choices.get(0).get("message").get("content").asText();
+    /** Splits the model's markdown reply into the sections the UI renders. */
+    private AiAnalysisResult parseResponse(String content) {
+        if (content == null) return null;
 
         AiAnalysisResult result = new AiAnalysisResult();
         result.setFullAnalysis(content);

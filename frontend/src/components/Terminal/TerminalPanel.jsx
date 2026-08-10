@@ -8,6 +8,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import useEditorStore from '../../store/useEditorStore';
 import OutputPanel from '../Output/OutputPanel';
 import TimelineSlider from '../Timeline/TimelineSlider';
+import SessionRewind from '../Timeline/SessionRewind';
 import CausalityGraph from '../Graph/CausalityGraph';
 import GitAssistantPanel from './GitAssistantPanel';
 import XTermTab from './XTermTab';
@@ -347,7 +348,7 @@ const TerminalPanel = () => {
       }}>
         {/* Tabs (Pane 1) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {['output', 'terminal', 'timeline', 'graph', 'git', 'deploy']
+          {['output', 'terminal', 'timeline', 'rewind', 'graph', 'git', 'deploy']
             .filter(t => t !== 'timeline' || canSeeTimeline)
             .map((t) => (
               <button
@@ -423,7 +424,7 @@ const TerminalPanel = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {terminalLayoutMode === 'split' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', borderRight: '1px solid var(--line)', paddingRight: '10px' }}>
-               {['output', 'timeline', 'graph', 'git', 'deploy']
+               {['output', 'timeline', 'rewind', 'graph', 'git', 'deploy']
                 .filter(t => t !== 'timeline' || canSeeTimeline)
                 .map((t) => (
                   <button
@@ -527,6 +528,7 @@ const TerminalPanel = () => {
             </div>
           )}
           {activeTab === 'timeline' && <TimelineSlider />}
+          {activeTab === 'rewind' && <SessionRewind />}
           {activeTab === 'graph' && <CausalityGraph />}
           {activeTab === 'git' && <GitAssistantPanel />}
           {activeTab === 'deploy' && <DeployHub />}
@@ -551,6 +553,7 @@ const TerminalPanel = () => {
           >
             {terminalSecondActiveTab === 'output' && <OutputPanel />}
             {terminalSecondActiveTab === 'timeline' && <TimelineSlider />}
+            {terminalSecondActiveTab === 'rewind' && <SessionRewind />}
             {terminalSecondActiveTab === 'graph' && <CausalityGraph />}
             {terminalSecondActiveTab === 'git' && <GitAssistantPanel />}
             {terminalSecondActiveTab === 'deploy' && <DeployHub />}

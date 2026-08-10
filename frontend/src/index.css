@@ -1265,17 +1265,75 @@ body {
   user-select: none;
 }
 
+/* Which provider is live, parked on the report's toggle row where it is always
+   visible. Quiet by default — it is a readout first and a control second. */
+.rca2-provider-chip {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 100px;
+  cursor: pointer;
+  font-family: var(--font-number);
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--t3);
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.rca2-provider-chip:hover {
+  color: #FFFFFF;
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.rca2-provider-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--t4);
+}
+
+/* Lit only when a key is actually live, so the state is readable at a glance
+   without reading the label. */
+.rca2-provider-chip.is-live .rca2-provider-dot {
+  background: #3DD68C;
+  box-shadow: 0 0 7px rgba(61, 214, 140, 0.65);
+}
+
+/* Now sits below the agent panel rather than above it, so it needs its own
+   separation — otherwise the trigger reads as part of the panel's footer. */
+.rca2-trigger-after {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px dashed rgba(255, 79, 86, 0.18);
+  width: 100%;
+}
+
 .rca2-trigger-symbol {
   color: #FF4F56;
   font-size: 0.75rem;
   transition: transform 0.15s ease;
 }
 
+/* JetBrains Mono — the same face the terminal and its log lines use, so the
+   heading belongs to the output pane it sits in rather than announcing itself
+   in the display font.
+   Weight drops from 900 to 700 because this family stops there, and the size
+   comes down a little: a monospace face sets wider than Unbounded at the same
+   nominal size, so matching the old 1.05rem would have made the line longer. */
 .rca2-trigger-text {
-  font-family: var(--font-header), sans-serif;
-  font-weight: 900;
-  font-size: 1.05rem;
-  letter-spacing: 0.04em;
+  font-family: var(--font-code);
+  font-weight: 700;
+  font-size: 0.94rem;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
   line-height: 1;
   display: inline-flex;
@@ -1283,24 +1341,17 @@ body {
   user-select: none;
 }
 
-.rca2-title-fill {
+/* Both halves of the title render identically. "Intelligence" used to be drawn
+   as an outline via -webkit-text-stroke; the two spans now differ only in the
+   markup, which is kept so either word can be styled separately again later. */
+.rca2-title-fill,
+.rca2-title-stroke {
   color: #FFFFFF;
   transition: color 0.15s ease;
 }
 
-.rca2-title-stroke {
-  color: transparent;
-  -webkit-text-stroke-width: 1px;
-  -webkit-text-stroke-color: rgba(255, 255, 255, 0.7);
-  /* Only the colour is transitioned. The `-webkit-text-stroke` shorthand carries
-     the stroke *width*, which browsers cannot interpolate — animating it made the
-     text repaint on every frame, which read as flickering on hover. Keeping the
-     width fixed and fading just the colour is smooth. */
-  transition: -webkit-text-stroke-color 0.15s ease;
-}
-
 .rca2-trigger-subtext {
-  font-family: var(--font-body);
+  font-family: var(--font-code);
   font-size: 0.62rem;
   color: var(--t4);
   text-transform: none;
@@ -1311,12 +1362,9 @@ body {
 }
 
 /* Hover transitions */
-.rca2-collapse-trigger:hover .rca2-title-fill {
-  color: #FF4F56;
-}
-
+.rca2-collapse-trigger:hover .rca2-title-fill,
 .rca2-collapse-trigger:hover .rca2-title-stroke {
-  -webkit-text-stroke-color: rgba(255, 79, 86, 0.7);
+  color: #FF4F56;
 }
 
 .rca2-collapse-trigger:hover .rca2-trigger-subtext {
@@ -1644,150 +1692,1785 @@ body {
 }
 
 /* ── AI Key Setup card (shown when no OpenRouter key is configured) ── */
+/* ── Key setup card ──
+ * The premium feel here comes from layering, not ornament. Three things do the
+ * work, and they are the same three on every surface in this panel:
+ *
+ *   1. a background that is never one flat fill — a soft corner light over a
+ *      vertical gradient, so the surface has a direction
+ *   2. a 1px inset highlight along the top edge, which is what reads as a
+ *      physical bevel catching light
+ *   3. a wide, soft outer shadow that lifts the card off the page
+ *
+ * Flat #050505 with a hairline border had none of that, which is exactly why
+ * it read as a default.
+ */
+
 .rca2-keysetup {
   position: relative;
-  background: #050505;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 18px 18px 16px;
+  padding: 20px 22px 18px;
   margin-bottom: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
   overflow: hidden;
+  background:
+    radial-gradient(120% 110% at 0% 0%, rgba(255, 255, 255, 0.05) 0%, transparent 58%),
+    linear-gradient(180deg, #111113 0%, #0A0A0B 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 14px 36px rgba(0, 0, 0, 0.5);
 }
 
+/* Accent seam. Fades at both ends rather than cutting off — a hard stop is
+   what made the old one look like a progress bar that had stalled. */
 .rca2-keysetup::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, #FF4F56, transparent 65%);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 79, 86, 0.75) 22%, rgba(255, 79, 86, 0.18) 62%, transparent);
 }
 
+/* ── Active provider readout ──
+ * An instrument panel, not a card with a headline. It reports two facts and
+ * offers two actions, so it is laid out as a readout: a micro label, the value
+ * in the terminal's own face, and the controls held to one side.
+ *
+ * Type is deliberately all JetBrains Mono — the same face as the diagnostic
+ * heading, the section labels and the terminal itself. The display/body pairing
+ * it used before belonged to a marketing card and read as imported.
+ */
+.ai-status {
+  --bracket: rgba(61, 214, 140, 0.65);
+  --bracket-len: 13px;
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding: 18px 20px;
+  /* Square, unfilled, no shadow. The report this sits in is card-less and
+     typographic by design; a rounded gradient panel with a drop shadow was the
+     one thing in it pretending to be a floating surface. */
+  border: none;
+  border-radius: 0;
+  background:
+    repeating-linear-gradient(180deg,
+      rgba(255, 255, 255, 0.014) 0px,
+      rgba(255, 255, 255, 0.014) 1px,
+      transparent 1px,
+      transparent 3px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022) 0%, transparent 100%);
+}
+
+/* Four corner brackets instead of a border: eight hairlines positioned at the
+   corners, so the frame is implied rather than drawn. Reads as instrumentation,
+   and it is the green that carries "this is live" — no tick required. */
+.ai-status::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket)),
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket)),
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket)),
+    linear-gradient(var(--bracket), var(--bracket)), linear-gradient(var(--bracket), var(--bracket));
+  background-size:
+    var(--bracket-len) 1px, 1px var(--bracket-len),
+    var(--bracket-len) 1px, 1px var(--bracket-len),
+    var(--bracket-len) 1px, 1px var(--bracket-len),
+    var(--bracket-len) 1px, 1px var(--bracket-len);
+  background-position:
+    left top, left top,
+    right top, right top,
+    left bottom, left bottom,
+    right bottom, right bottom;
+  background-repeat: no-repeat;
+}
+
+.ai-status-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-status-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+  font-family: var(--font-number);
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+
+.ai-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3DD68C;
+  box-shadow: 0 0 8px rgba(61, 214, 140, 0.7);
+  animation: pulse-live 2.4s ease-in-out infinite;
+}
+
+.ai-status-value {
+  font-family: var(--font-number);
+  font-weight: 700;
+  font-size: 1.02rem;
+  letter-spacing: -0.01em;
+  color: #FFFFFF;
+  line-height: 1.2;
+}
+
+/* Prefixed rather than boxed — a chip here would reintroduce the rounded
+   surface the readout just got rid of. */
+.ai-status-model {
+  margin-top: 8px;
+  font-family: var(--font-code);
+  font-size: 0.71rem;
+  color: var(--t3);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-status-model::before {
+  content: '▸ ';
+  color: rgba(61, 214, 140, 0.8);
+}
+
+.ai-status-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 11px;
+  flex-shrink: 0;
+}
+
+.ai-status-note {
+  font-family: var(--font-number);
+  font-size: 0.52rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--t4);
+}
+
+.ai-status-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Hairline command buttons: flat, square, no fill until approached. A gradient
+   pill would put the softest thing on screen next to a bracketed readout. */
+.ai-btn {
+  padding: 8px 14px;
+  border-radius: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: var(--t2);
+  font-family: var(--font-number);
+  font-weight: 600;
+  font-size: 0.56rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+
+.ai-btn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.05);
+  color: #FFFFFF;
+}
+
+.ai-btn:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ai-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Destructive, so it only shows its colour on approach. */
+.ai-btn.is-danger:hover:not(:disabled) {
+  border-color: rgba(229, 72, 77, 0.6);
+  color: #FF8085;
+  background: rgba(229, 72, 77, 0.08);
+}
+
+.ai-status-error {
+  flex-basis: 100%;
+  margin-top: 4px;
+  padding: 9px 12px;
+  border-radius: 3px;
+  background: rgba(229, 72, 77, 0.08);
+  border-left: 2px solid #E5484D;
+  font-family: var(--font-body);
+  font-size: 0.73rem;
+  color: #FF9A9E;
+}
+
+/* ── A key is already in place ──
+   Green seam, same as success: this is a working state, not a prompt. */
+.rca2-keysetup.is-connected::before,
 .rca2-keysetup.is-success::before {
-  background: linear-gradient(90deg, #4ADE80, transparent 65%);
+  background: linear-gradient(90deg, transparent, rgba(61, 214, 140, 0.8) 22%, rgba(61, 214, 140, 0.2) 62%, transparent);
 }
 
 .rca2-keysetup-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: 11px;
+  margin-bottom: 9px;
 }
 
 .rca2-keysetup-title {
   font-family: var(--font-header);
-  font-weight: 900;
-  font-size: 0.8rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 800;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
   color: #FFFFFF;
 }
 
+/* The tick gets a ring instead of sitting loose in the text flow — it becomes
+   a deliberate status object rather than a stray character. */
 .rca2-keysetup-check {
-  color: #4ADE80;
-  font-size: 0.85rem;
-  font-weight: 900;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: #3DD68C;
+  background: rgba(61, 214, 140, 0.12);
+  border: 1px solid rgba(61, 214, 140, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* The model in effect, sat beside the provider name. */
+.rca2-keysetup-model {
+  margin-left: auto;
+  font-family: var(--font-code);
+  font-size: 0.68rem;
+  color: var(--t3);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 4px;
+  padding: 3px 8px;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rca2-keysetup-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* The destructive action stays quiet — findable, never hit by momentum. */
+.rca2-keysetup-btn.is-ghost {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.015) 100%);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--t2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.rca2-keysetup-btn.is-ghost:hover:not(:disabled) {
+  border-color: rgba(229, 72, 77, 0.5);
+  color: #FF8085;
+  filter: none;
+  transform: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .rca2-keysetup-badge {
+  margin-left: auto;
   font-family: var(--font-number);
-  font-size: 0.55rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 0.53rem;
+  font-weight: 600;
+  letter-spacing: 0.11em;
   text-transform: uppercase;
-  color: #FF4F56;
-  border: 1px solid rgba(255, 79, 86, 0.4);
-  border-radius: 3px;
-  padding: 2px 7px;
+  color: #FF8085;
+  background: rgba(255, 79, 86, 0.09);
+  border: 1px solid rgba(255, 79, 86, 0.28);
+  border-radius: 100px;
+  padding: 4px 10px;
 }
 
 .rca2-keysetup-sub {
   font-family: var(--font-body);
-  font-size: 0.78rem;
-  color: #888888;
-  line-height: 1.65;
-  margin-bottom: 14px;
+  font-size: 0.79rem;
+  color: var(--t2);
+  line-height: 1.7;
+  margin-bottom: 16px;
+  max-width: 64ch;
 }
 
 .rca2-keysetup-link {
-  color: #FF4F56;
+  color: #FFFFFF;
   text-decoration: none;
-  border-bottom: 1px dotted rgba(255, 79, 86, 0.5);
-  transition: border-bottom-color 0.15s ease;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+  padding-bottom: 1px;
+  transition: border-color 0.18s ease, color 0.18s ease;
 }
 
 .rca2-keysetup-link:hover {
-  border-bottom: 1px solid #FF4F56;
+  color: #FF8085;
+  border-bottom-color: #FF8085;
+}
+
+/* ── Provider picker and its optional fields ── */
+
+.rca2-keysetup-field {
+  margin-bottom: 10px;
+}
+
+.rca2-keysetup-label {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-number);
+  font-size: 0.53rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+
+/* Matches the key field exactly — the two are read as one form, so a differently
+   shaped select would make the provider look like a separate control. */
+.rca2-keysetup-select {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  color: #FFFFFF;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  outline: none;
+  cursor: pointer;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  /* The native arrow is drawn in the OS light theme on Windows and turns into a
+     dark smudge on this background; this is the same glyph, in our own colour. */
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236E6E6E' stroke-width='3' stroke-linecap='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 11px;
+  padding-right: 34px;
+}
+
+.rca2-keysetup-select:focus {
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.5),
+    0 0 0 3px rgba(255, 255, 255, 0.07);
+}
+
+.rca2-keysetup-select option {
+  background: #111113;
+  color: #FFFFFF;
+}
+
+/* Model override — a disclosure, because almost nobody needs it. */
+.rca2-keysetup-advanced {
+  margin-top: 12px;
+}
+
+.rca2-keysetup-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font-number);
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t4);
+  transition: color 0.15s ease;
+}
+
+.rca2-keysetup-toggle:hover {
+  color: #FFFFFF;
+}
+
+/* What the key was recognised as, shown on the closed disclosure so the
+   information survives without a field asking for it. */
+.rca2-keysetup-detected {
+  margin-left: 10px;
+  color: #3DD68C;
+  letter-spacing: 0.06em;
+}
+
+.rca2-keysetup-note-inline {
+  margin: 12px 0 4px;
+  padding: 8px 11px;
+  background: rgba(255, 178, 36, 0.08);
+  border-left: 2px solid #FFB224;
+  border-radius: 3px;
+  font-family: var(--font-body);
+  font-size: 0.73rem;
+  line-height: 1.5;
+  color: #FFD08A;
+}
+
+.rca2-keysetup-advanced .rca2-keysetup-field {
+  margin: 10px 0 0;
 }
 
 .rca2-keysetup-row {
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 .rca2-keysetup-input {
   flex: 1;
   min-width: 0;
-  background: #000000;
+  height: 42px;
+  background: rgba(0, 0, 0, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 5px;
-  padding: 9px 12px;
+  /* Matches the button beside it — a rounded field against a squared button
+     makes the pair read as two unrelated controls. */
+  border-radius: 3px;
+  padding: 0 14px;
   font-family: var(--font-code);
-  font-size: 0.76rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
   color: #FFFFFF;
   outline: none;
-  transition: border-color 0.15s ease;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.5);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
 .rca2-keysetup-input::placeholder {
   color: var(--t4);
+  letter-spacing: 0;
 }
 
+/* A focus ring rather than a colour swap: it reads at a glance, and it is the
+   accessible signal keyboard users need. */
 .rca2-keysetup-input:focus {
-  border-color: rgba(255, 79, 86, 0.6);
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(0, 0, 0, 0.72);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.5),
+    0 0 0 3px rgba(255, 255, 255, 0.07);
 }
 
+/* ── Primary button ──
+ * A pressable object: gradient body so it has a lit top and a shaded base,
+ * a bright inset seam along the top edge, and a shadow that shortens as the
+ * button travels down on press. */
 .rca2-keysetup-btn {
   flex-shrink: 0;
-  background: #FF4F56;
-  border: none;
-  border-radius: 5px;
-  color: #000000;
+  height: 42px;
+  padding: 0 22px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, #FFFFFF 0%, #DCDCDC 100%);
+  color: #0A0A0A;
   font-family: var(--font-header);
-  font-weight: 900;
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 0 18px;
+  font-weight: 800;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
   cursor: pointer;
-  transition: background 0.15s ease, opacity 0.15s ease;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 6px 18px rgba(0, 0, 0, 0.45);
+  transition: transform 0.14s cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 0.18s ease, filter 0.18s ease;
 }
 
 .rca2-keysetup-btn:hover:not(:disabled) {
-  background: #ff6b71;
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 10px 24px rgba(0, 0, 0, 0.55);
+}
+
+.rca2-keysetup-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 .rca2-keysetup-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.32;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 .rca2-keysetup-error {
-  margin-top: 10px;
+  margin-top: 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(255, 79, 86, 0.08);
+  border-left: 2px solid #FF4F56;
   font-family: var(--font-body);
-  font-size: 0.72rem;
-  color: #FF4F56;
-  line-height: 1.5;
+  font-size: 0.74rem;
+  color: #FF9A9E;
+  line-height: 1.55;
 }
 
 .rca2-keysetup-note {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.055);
+  font-family: var(--font-number);
+  font-size: 0.55rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--t4);
+}
+
+/* ========== Auto-Fix Agent ==========
+ * Sits under the diagnostic trigger. Reads as an action surface, not another
+ * report: one clear offer, one clear diff, two buttons.
+ */
+
+.afx-panel {
   margin-top: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, #0C0C0E 0%, #090909 100%);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  /* Square throughout. Pixel sprites and rounded chrome are the same mismatch
+     as pixel type with a soft glow — the corners give the illusion away. */
+  border-radius: 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 10px 30px rgba(0, 0, 0, 0.35);
+  animation: rca2-content-in 0.25s ease forwards;
+}
+
+/* The applied state is a confirmation, not a document — it holds one line of
+   text and two buttons. Framing that in a card gives weight to something the
+   user has already finished reading, so it sits bare on the panel instead. */
+/* The level draws its own frame. Whenever it is the only thing in the panel,
+   the panel's frame is a second box drawn around the first — so the outer one
+   steps aside and the scene becomes the card. */
+.afx-panel.is-bare {
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.afx-panel.is-applied {
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 4px 2px 10px;
+}
+
+/* ── The level ──
+ * A side-scrolling strip: sky, a row of ? blocks, ground. The plumber's
+ * horizontal position is driven from React (one step per stage of the agent
+ * loop) and eased here, so movement reads as running rather than teleporting.
+ */
+
+/* The sky is deliberately NOT cartoon blue. A saturated navy fights the IDE's
+   neutral surface scale and reads cheap next to it; a near-black base lifted by
+   two faint coloured glows — warm high, cool at the horizon — gives depth
+   without introducing a colour the rest of the app never uses. */
+.afx-scene {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(135% 88% at 50% 106%, rgba(61, 214, 140, 0.07) 0%, transparent 58%),
+    radial-gradient(78% 62% at 82% 4%, rgba(255, 178, 36, 0.06) 0%, transparent 62%),
+    linear-gradient(180deg, #08090C 0%, #0D0F14 46%, #121419 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 8px 26px rgba(0, 0, 0, 0.42);
+}
+
+.afx-sky {
+  position: relative;
+  height: 104px;
+  overflow: hidden;
+}
+
+/* Fine CRT scanlines + a soft vignette. Both sit far below the threshold of
+   "effect" — they read as material, not as decoration. */
+.afx-sky::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 100% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.34) 100%),
+    repeating-linear-gradient(180deg,
+      rgba(255, 255, 255, 0.016) 0px,
+      rgba(255, 255, 255, 0.016) 1px,
+      transparent 1px,
+      transparent 3px);
+}
+
+.afx-sky-short {
+  height: 92px;
+}
+
+/* A clear used to tint the whole scene green. It flattened the background into
+   one muddy wash and undid the neutral palette the panel is built on — the
+   flag, the verdict colour and the coins already say "cleared" without
+   repainting the sky. */
+
+/* Clouds — pure decoration, deliberately slow so they never pull the eye
+   away from the status text below. */
+.afx-cloud {
+  position: absolute;
+  width: 26px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  border-radius: 4px;
+  filter: blur(0.3px);
+}
+
+.afx-cloud::before,
+.afx-cloud::after {
+  content: '';
+  position: absolute;
+  background: rgba(255, 255, 255, 0.055);
+  border-radius: 50%;
+}
+
+.afx-cloud::before { width: 12px; height: 12px; top: -5px; left: 4px; }
+.afx-cloud::after  { width: 9px;  height: 9px;  top: -3px; left: 14px; }
+
+.afx-cloud-1 { top: 16px; left: 12%; animation: afx-drift 34s linear infinite; }
+.afx-cloud-2 { top: 34px; left: 62%; animation: afx-drift 48s linear infinite; }
+
+@keyframes afx-drift {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-160px); }
+}
+
+/* Ground: a brick strip in dark bronze rather than toy brown — it still reads
+   as ground, but sits in the same tonal family as the rest of the IDE. The
+   warm hairline on top is what separates it from the sky; the inner shadow
+   underneath gives the strip weight. The scrolling variant runs only while the
+   agent works, which is what sells "he is moving" during the wait. */
+.afx-ground {
+  height: 15px;
+  background:
+    repeating-linear-gradient(90deg,
+      #241C15 0px, #241C15 13px,
+      #16110C 13px, #16110C 14px),
+    #241C15;
+  border-top: 1px solid rgba(255, 178, 36, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -6px 12px rgba(0, 0, 0, 0.55);
+}
+
+.afx-ground.is-scrolling {
+  animation: afx-ground-scroll 0.7s linear infinite;
+}
+
+@keyframes afx-ground-scroll {
+  0%   { background-position: 0 0; }
+  100% { background-position: -14px 0; }
+}
+
+/* ── Idle scene ── */
+
+.afx-idle-block {
+  position: absolute;
+  top: 14px;
+  left: 76px;
+  animation: afx-block-hover 2.6s ease-in-out infinite;
+}
+
+@keyframes afx-block-hover {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+
+.afx-idle-mario {
+  position: absolute;
+  bottom: 0;
+  left: 24px;
+  animation: afx-idle-bob 2.6s ease-in-out infinite;
+}
+
+@keyframes afx-idle-bob {
+  0%, 88%, 100% { transform: translateY(0); }
+  94%           { transform: translateY(-3px); }
+}
+
+/* ── Run scene ── */
+
+.afx-blocks {
+  position: absolute;
+  top: 12px;
+  left: 24px;
+  right: 24px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.afx-block-slot {
+  position: relative;
+}
+
+.afx-block.is-hit {
+  animation: afx-block-bump 0.38s ease;
+}
+
+@keyframes afx-block-bump {
+  0%   { transform: translateY(0); }
+  35%  { transform: translateY(-9px); }
+  100% { transform: translateY(0); }
+}
+
+.afx-coin-pop {
+  position: absolute;
+  left: 50%;
+  margin-left: -8px;
+  top: -6px;
+  animation: afx-coin-rise 0.62s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes afx-coin-rise {
+  0%   { transform: translateY(0) scale(0.6); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: translateY(-30px) scale(1); opacity: 0; }
+}
+
+/* The runner travels inside the same insets the blocks use, so he arrives
+   under the block he is bumping. He used to be positioned straight off the
+   scene's full width, which put him at left:100% on the final stage — his
+   whole body past the right edge, erased by the sky's overflow:hidden. The
+   level then animated with no character in it, which read as frozen. */
+.afx-runner-track {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 0;
+  height: 48px;
+}
+
+.afx-runner {
+  position: absolute;
+  bottom: 0;
+  transition: left 0.75s cubic-bezier(0.32, 0.72, 0.35, 1);
+}
+
+/* ── Result scene ── */
+
+.afx-flagpole {
+  position: absolute;
+  bottom: 0;
+  right: 34px;
+}
+
+.afx-flag {
+  transform: translateY(0);
+  transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.afx-flag.is-raised {
+  transform: translateY(6px);
+}
+
+.afx-winner {
+  position: absolute;
+  bottom: 0;
+  right: 62px;
+  animation: afx-victory 1.6s ease-in-out infinite;
+}
+
+@keyframes afx-victory {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-7px); }
+}
+
+.afx-castle-row {
+  position: absolute;
+  bottom: 6px;
+  left: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.afx-goomba {
+  animation: afx-waddle 0.9s steps(2) infinite;
+  flex-shrink: 0;
+}
+
+@keyframes afx-waddle {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(4px) scaleX(-1); }
+}
+
+.afx-castle-sign {
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 700;
+  font-size: 0.6rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #FFB224;
+}
+
+/* ── HUD / scoreboard ── */
+
+/* Type rule for this panel: pixel face for LABELS (they are game chrome and
+   never longer than a few words), the app's body face for SENTENCES. Silkscreen
+   is the app's existing pixel voice — the Run button and welcome wordmark
+   already use it — so this stays in-family instead of importing kitsch.
+   It ships 400/700 only, so nothing here asks for a heavier weight. */
+
+.afx-hud {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 13px 15px;
+  background: rgba(6, 7, 9, 0.72);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(2px);
+}
+
+.afx-hud-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.afx-hud-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 700;
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  color: #FFFFFF;
+  margin-bottom: 6px;
+}
+
+.afx-stage-num {
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 700;
+  font-size: 0.58rem;
+  color: #0A0A0A;
+  background: #FFB224;
+  padding: 2px 5px;
+  border-radius: 2px;
+}
+
+.afx-blink {
+  animation: afx-blink 1.4s steps(2) infinite;
+}
+
+@keyframes afx-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.72; }
+}
+
+.afx-hud-sub {
+  font-family: var(--font-body);
+  font-size: 0.73rem;
+  line-height: 1.55;
+  color: var(--t2);
+}
+
+/* Elapsed seconds, shown only after the stages run out. */
+.afx-elapsed {
+  margin-left: 10px;
+  padding: 1px 5px;
+  background: rgba(255, 178, 36, 0.14);
+  color: #FFB224;
+  letter-spacing: 0.04em;
+}
+
+.afx-mono {
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 400;
+  font-size: 0.56rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+
+/* ── START ──
+ * Standalone rather than a modifier on .afx-btn. As a modifier its Silkscreen
+ * was silently lost: .afx-btn is declared later in this file at the same
+ * specificity, so its font-family won and the button rendered in the display
+ * face — the one element in the level not speaking pixel.
+ *
+ * Same construction as the coin button: flat fill, square corners, a hard
+ * four-sided bevel, and a solid drop that is the button's thickness rather
+ * than a shadow. Pressing sinks the face onto the panel.
+ */
+.afx-start-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 0;
+  background: #EDEDED;
+  color: #1A1A1A;
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 700;
+  font-size: 0.6rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.9),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.22),
+    0 4px 0 #6E6E6E;
+  transition: background 0.12s ease, transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.afx-start-btn:hover {
+  background: #FFFFFF;
+}
+
+.afx-start-btn:active {
+  transform: translateY(4px);
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.8),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.25);
+}
+
+.afx-start-btn:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.9),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.22),
+    0 4px 0 #6E6E6E,
+    0 0 0 2px #FFB224;
+}
+
+/* The plumber's own red, so the play glyph belongs to the level. */
+.afx-start-btn-glyph {
+  color: #E5484D;
+  font-size: 0.66rem;
+  line-height: 1;
+}
+
+.afx-scoreboard {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 11px 15px;
+  background: rgba(6, 7, 9, 0.72);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 400;
+  font-size: 0.56rem;
+  letter-spacing: 0.04em;
+  color: var(--t3);
+  text-transform: uppercase;
+  backdrop-filter: blur(2px);
+}
+
+.afx-score-item b {
+  color: #FFFFFF;
+  font-weight: 700;
+}
+
+.afx-coins {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Motion is the whole idea here, but it must never be the price of using the
+   feature — honour the OS setting and let the level sit still. */
+@media (prefers-reduced-motion: reduce) {
+  .afx-cloud-1, .afx-cloud-2,
+  .afx-idle-block, .afx-idle-mario,
+  .afx-ground.is-scrolling, .afx-block.is-hit,
+  .afx-coin-pop, .afx-winner, .afx-goomba, .afx-blink {
+    animation: none;
+  }
+  .afx-runner, .afx-flag { transition: none; }
+}
+
+/* ── Verdict ── */
+
+/* No glow on pixel type anywhere in this panel. A halo bleeds past the pixel
+   grid and softens the very edges that make the sprite work — the letterforms
+   go from crisp to smeared at exactly the sizes used here. Colour alone
+   carries the verdict. */
+.afx-verdict-label {
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+}
+
+.afx-message {
+  font-family: var(--font-body);
+  font-size: 0.74rem;
+  line-height: 1.6;
+  color: var(--t2);
+  margin: 10px 0;
+}
+
+/* ── What the agent did, in words ──
+ * Held in its own block with generous breathing room, so the headline and its
+ * explanation read as one unit rather than two stacked paragraphs. */
+.afx-brief {
+  padding: 16px 0 18px;
+}
+
+.afx-summary {
+  font-family: var(--font-header);
+  font-weight: 800;
+  font-size: 0.92rem;
+  line-height: 1.4;
+  letter-spacing: -0.012em;
+  color: #FFFFFF;
+  margin: 0 0 8px;
+}
+
+.afx-explanation {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  line-height: 1.75;
+  color: var(--t2);
+  margin: 0;
+  /* A comfortable measure. Long lines across a wide terminal are the single
+     biggest reason a block of prose feels like work to read. */
+  max-width: 68ch;
+}
+
+/* Identifiers the model wrote in backticks. Set as a real chip so the eye
+   registers "this is code" instead of tripping over punctuation. */
+.afx-inline-code {
+  font-family: var(--font-code);
+  font-size: 0.88em;
+  color: #E6E6E6;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+/* ── Section joints ──
+ * A label, a rule that fills the gap, and optional right-aligned meta. Cheap
+ * to render and it turns one long column into legible chapters. */
+.afx-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 11px;
+}
+
+.afx-section-label {
+  flex-shrink: 0;
   font-family: var(--font-number);
   font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+
+.afx-section-rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.02));
+}
+
+.afx-section-meta {
+  flex-shrink: 0;
+  font-family: var(--font-number);
+  font-size: 0.55rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--t4);
+}
+
+/* ── The diff ── */
+.afx-diffs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.afx-diff {
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+/* The marker is drawn in CSS rather than typed as a box-drawing glyph — that
+   character rendered as a stray artifact and depended on the font having it. */
+.afx-diff-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  font-family: var(--font-number);
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--t3);
+  background: rgba(255, 255, 255, 0.022);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.afx-diff-head::before {
+  content: '';
+  width: 2px;
+  height: 10px;
+  border-radius: 1px;
+  background: #3DD68C;
+  flex-shrink: 0;
+}
+
+.afx-diff-body {
+  padding: 6px 0;
+  overflow-x: auto;
+}
+
+.afx-diff-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 2px 12px;
+  font-family: var(--font-code);
+  font-size: 0.76rem;
+  line-height: 1.6;
+  white-space: pre;
+}
+
+.afx-diff-del {
+  background: rgba(229, 72, 77, 0.07);
+  color: #FF9A9E;
+}
+
+.afx-diff-add {
+  background: rgba(61, 214, 140, 0.07);
+  color: #8CE6BB;
+}
+
+.afx-diff-ln {
+  min-width: 26px;
+  text-align: right;
+  flex-shrink: 0;
+  font-family: var(--font-number);
+  font-size: 0.66rem;
+  color: var(--t4);
+  user-select: none;
+}
+
+.afx-diff-sign {
+  flex-shrink: 0;
+  font-weight: 700;
+  user-select: none;
+}
+
+.afx-diff-del .afx-diff-sign { color: #E5484D; }
+.afx-diff-add .afx-diff-sign { color: #3DD68C; }
+
+.afx-diff-code {
+  flex: 1;
+}
+
+.afx-diff-empty {
+  font-style: italic;
+  opacity: 0.6;
+}
+
+/* ── Evidence: what the patched code actually printed ──
+ * The section head above it already names it, so the block itself is just the
+ * output — one framed surface instead of a captioned box inside a box. */
+.afx-evidence-pre {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.55);
+  /* Neutral hairline, no accent rule. The section head above already names
+     this block, so a coloured edge was saying the same thing a second time
+     and pulling the eye away from the output itself. */
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0;
+  font-family: var(--font-code);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: #D4D4D4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 170px;
+  overflow-y: auto;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.afx-evidence-pre.is-error {
+  border-color: rgba(229, 72, 77, 0.22);
+  color: #E8B4B6;
+}
+
+/* ── Agent log ── */
+.afx-trail-toggle {
+  font-family: var(--font-number);
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  color: var(--t4);
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 0;
+  margin-top: 4px;
+  transition: color 0.15s ease;
+}
+
+.afx-trail-toggle:hover {
+  color: #FFFFFF;
+}
+
+.afx-trail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0 4px;
+}
+
+.afx-trail-row {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 0.72rem;
+  font-family: var(--font-body);
+  line-height: 1.5;
+}
+
+.afx-trail-mark {
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
+.afx-trail-row.is-pass .afx-trail-mark { color: #3DD68C; }
+.afx-trail-row.is-fail .afx-trail-mark { color: #E5484D; }
+
+/* Each attempt is a world you either cleared or didn't. */
+.afx-trail-world {
+  flex-shrink: 0;
+  font-family: 'Silkscreen', var(--font-number);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #0A0A0A;
+  background: var(--t3);
+  padding: 2px 5px;
+  border-radius: 2px;
+}
+
+.afx-trail-row.is-pass .afx-trail-world { background: #3DD68C; }
+.afx-trail-row.is-fail .afx-trail-world { background: #8A5A2B; color: #FFFFFF; }
+
+.afx-trail-goomba {
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.afx-trail-body {
+  flex: 1;
+  min-width: 0;
+  color: var(--t2);
+}
+
+.afx-trail-why {
+  display: block;
+  font-family: var(--font-code);
+  font-size: 0.66rem;
+  color: var(--t4);
+  margin-top: 2px;
+  word-break: break-word;
+}
+
+.afx-trail-why.afx-pass {
+  color: rgba(61, 214, 140, 0.7);
+}
+
+/* ── Applied ── */
+/* Header row of the applied state. The rule under it separates "what happened"
+   from "what changed" without needing a card around either. */
+.afx-applied {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding-bottom: 15px;
+  margin-bottom: 17px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.afx-applied-sprite {
+  flex-shrink: 0;
+  animation: afx-victory 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .afx-applied-sprite { animation: none; }
+}
+
+.afx-applied-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.afx-applied-title {
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  color: #3DD68C;
+  margin-bottom: 4px;
+}
+
+.afx-applied-sub {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--t2);
+}
+
+.afx-applied-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── The coin slot ──
+ * The front of the cabinet: joined to the level above it, same materials, and
+ * carrying no heading of its own because the scene already says INSERT COIN.
+ */
+
+/* The scene and the slot share one edge, so the seam between them is dropped. */
+.afx-scene.is-attached {
+  border-bottom: none;
+}
+
+.afx-slot {
+  margin-bottom: 4px;
+  padding: 13px 15px 12px;
+  background: rgba(6, 7, 9, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 0;
+}
+
+/* A control panel keeps its size regardless of how wide the terminal is. */
+.afx-slot-inner {
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+.afx-slot-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.afx-slot-row:last-of-type {
+  margin-bottom: 0;
+}
+
+.afx-slot-label {
+  flex-shrink: 0;
+  width: 62px;
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 400;
+  font-size: 0.52rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+
+/* Recessed slots in a cabinet face: square corners and a hard two-tone bevel —
+   dark on the top/left where the panel casts into them, light on the
+   bottom/right. Rounded corners with a soft glow read as a web form. */
+.afx-slot-select,
+.afx-slot-input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 11px;
+  background: #050505;
+  border: none;
+  border-radius: 0;
+  color: #FFFFFF;
+  font-family: var(--font-code);
+  font-size: 0.74rem;
+  outline: none;
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.9),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.07),
+    0 0 0 1px rgba(255, 255, 255, 0.09);
+  transition: box-shadow 0.15s ease;
+}
+
+.afx-slot-select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236E6E6E' stroke-width='3' stroke-linecap='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 10px;
+  padding-right: 30px;
+}
+
+.afx-slot-select option {
+  background: #111113;
+  color: #FFFFFF;
+}
+
+.afx-slot-select:focus,
+.afx-slot-input:focus {
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.9),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.07),
+    0 0 0 2px #FFB224;
+}
+
+.afx-slot-input::placeholder {
+  color: var(--t4);
+  font-family: 'Silkscreen', var(--font-number);
+  font-size: 0.56rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* The coin sits where a cabinet's slot would be — left of the key field. */
+.afx-slot-row.is-coin {
+  gap: 8px;
+}
+
+.afx-slot-coin {
+  flex-shrink: 0;
+  width: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: afx-coin-spin 2.4s ease-in-out infinite;
+}
+
+@keyframes afx-coin-spin {
+  0%, 100% { transform: scaleX(1); }
+  50%      { transform: scaleX(0.25); }
+}
+
+/* ── The coin button ──
+ * Built the way an NES button is drawn rather than the way a web button is:
+ * flat coin-gold fill, no gradient, square corners, and a hard four-sided
+ * bevel made of solid inset shadows — bright top-left, dark bottom-right. The
+ * drop underneath is the button's thickness, so pressing it moves the face
+ * down onto the panel and the thickness disappears.
+ */
+.afx-coin-btn {
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 0;
+  background: #FFB224;
+  color: #2A1A00;
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 700;
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.5),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.28),
+    0 4px 0 #8A5A18;
+  transition: background 0.12s ease, transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.afx-coin-btn:hover:not(:disabled) {
+  background: #FFC658;
+}
+
+.afx-coin-btn:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.4),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.3);
+}
+
+.afx-coin-btn:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.5),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.28),
+    0 4px 0 #8A5A18,
+    0 0 0 2px #FFFFFF;
+}
+
+/* An unlit slot: no gold, no thickness, nothing to press. */
+.afx-coin-btn:disabled {
+  cursor: not-allowed;
+  background: #2A2A2A;
+  color: #5E5E5E;
+  box-shadow:
+    inset 2px 2px 0 rgba(255, 255, 255, 0.05),
+    inset -2px -2px 0 rgba(0, 0, 0, 0.4);
+}
+
+.afx-slot-link {
+  flex-shrink: 0;
+  font-family: 'Silkscreen', var(--font-number);
+  font-size: 0.5rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--t3);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.afx-slot-link:hover {
+  color: #FFB224;
+  border-bottom-color: #FFB224;
+}
+
+.afx-slot-error {
+  margin-top: 10px;
+  padding: 8px 11px;
+  background: rgba(229, 72, 77, 0.09);
+  border-left: 2px solid #E5484D;
+  border-radius: 0;
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: #FF9A9E;
+}
+
+.afx-slot-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.afx-slot-toggle {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: 'Silkscreen', var(--font-number);
+  font-size: 0.5rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--t4);
+  transition: color 0.15s ease;
+}
+
+.afx-slot-toggle:hover {
+  color: #FFFFFF;
+}
+
+.afx-slot-input.is-model {
+  height: 30px;
+  font-size: 0.7rem;
+}
+
+/* Options, revealed only when the user asks or the key isn't recognised. */
+.afx-slot-options {
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.afx-slot-note {
+  margin-bottom: 10px;
+  padding: 7px 10px;
+  background: rgba(255, 178, 36, 0.08);
+  border-left: 2px solid #FFB224;
+  font-family: var(--font-body);
+  font-size: 0.71rem;
+  line-height: 1.5;
+  color: #FFD08A;
+}
+
+/* Confirmation that the key was recognised — replaces the form row that used
+   to ask the same question. */
+.afx-slot-hint.is-detected {
+  color: #FFB224;
+}
+
+/* The roster of supported vendors, kept to one quiet line. */
+.afx-slot-hint {
+  flex: 1;
+  min-width: 0;
+  font-family: 'Silkscreen', var(--font-number);
+  font-size: 0.48rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--t4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+/* ── Coin accepted ── */
+.afx-slot.is-success {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  border-color: rgba(61, 214, 140, 0.3);
+}
+
+.afx-slot-sprite {
+  flex-shrink: 0;
+  animation: afx-victory 1.6s ease-in-out infinite;
+}
+
+.afx-slot-success-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.afx-slot-success-title {
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  color: #3DD68C;
+  margin-bottom: 4px;
+}
+
+.afx-slot-success-sub {
+  font-family: var(--font-body);
+  font-size: 0.73rem;
+  color: var(--t2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .afx-slot-coin, .afx-slot-sprite { animation: none; }
+}
+
+/* ── Notices and buttons ── */
+.afx-notice {
+  margin-top: 12px;
+  padding: 10px 13px;
+  background: linear-gradient(90deg, rgba(255, 178, 36, 0.1) 0%, rgba(255, 178, 36, 0.03) 100%);
+  border-left: 2px solid #FFB224;
+  border-radius: 0;
+  font-family: var(--font-body);
+  font-size: 0.74rem;
+  line-height: 1.55;
+  color: #FFD08A;
+}
+
+.afx-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* ── Panel buttons ──
+ * Same construction as START and INSERT COIN, so every control in this feature
+ * is visibly the same object: flat fill, square corners, a hard four-sided
+ * bevel, and a solid drop that is the button's thickness. Pressing sinks the
+ * face onto the panel.
+ *
+ * Silkscreen, because these sit inside the level. The diff itself stays
+ * monospace and plain — the code you review is the serious part; a short
+ * button label is not.
+ */
+.afx-btn {
+  border-radius: 0;
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 700;
+  font-size: 0.58rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0 16px;
+  height: 32px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease,
+              transform 0.08s ease, box-shadow 0.08s ease;
+}
+
+.afx-btn-primary {
+  background: #EDEDED;
+  color: #1A1A1A;
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.9),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.22),
+    0 4px 0 #6E6E6E;
+}
+
+.afx-btn-primary:hover {
+  background: #FFFFFF;
+}
+
+.afx-btn-primary:active {
+  transform: translateY(4px);
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.8),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.25);
+}
+
+/* The secondary action stays quiet on purpose — Reject and Undo should be easy
+   to find and impossible to hit by momentum. */
+.afx-btn-ghost {
+  background: #232323;
+  color: var(--t2);
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.07),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.45),
+    0 4px 0 #101010;
+}
+
+.afx-btn-ghost:hover {
+  background: #2E2E2E;
+  color: #FFFFFF;
+}
+
+.afx-btn-ghost:active {
+  transform: translateY(4px);
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.07),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.45);
+}
+
+/* Keyboard users get the same affordance the mouse gets. */
+.afx-btn:focus-visible,
+.rca2-keysetup-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.22);
 }
 
 /* --- Diagnostic FX --- */
@@ -3468,4 +5151,664 @@ body {
 
 .dep-zoom-btn:active {
   background: var(--s3);
+}
+
+/* Vendors listed under the setup wizard's key field. */
+.setup-provider-list {
+  display: inline-block;
+  margin-top: 8px;
+  font-family: var(--font-number);
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  color: var(--t4);
+}
+
+/* ========== Connection banner ==========
+ * Two weights, because a blink and a dead session are not the same news.
+ * Reconnecting is a thin strip that most people should be able to ignore;
+ * lost is a full callout, because by then the editor has gone read-only.
+ */
+
+.conn-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  font-family: var(--font-body);
+  animation: rca2-content-in 0.2s ease forwards;
+}
+
+.conn-banner.is-reconnecting {
+  padding: 6px 14px;
+  background: rgba(255, 178, 36, 0.07);
+  border-bottom: 1px solid rgba(255, 178, 36, 0.22);
+  font-size: 0.7rem;
+  color: #FFD08A;
+}
+
+.conn-banner-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #FFB224;
+  flex-shrink: 0;
+  animation: pulse-live 1.4s ease-in-out infinite;
+}
+
+.conn-banner-text {
+  font-family: var(--font-number);
+  font-size: 0.6rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.conn-banner.is-lost {
+  align-items: flex-start;
+  padding: 12px 16px;
+  background: linear-gradient(90deg, rgba(229, 72, 77, 0.13) 0%, rgba(229, 72, 77, 0.04) 100%);
+  border-bottom: 1px solid rgba(229, 72, 77, 0.4);
+}
+
+.conn-banner-icon {
+  color: #FF4F56;
+  font-size: 0.9rem;
+  line-height: 1.3;
+  flex-shrink: 0;
+}
+
+.conn-banner-body {
+  min-width: 0;
+}
+
+.conn-banner-title {
+  font-family: var(--font-header);
+  font-weight: 800;
+  font-size: 0.78rem;
+  color: #FFFFFF;
+  margin-bottom: 3px;
+}
+
+.conn-banner-sub {
+  font-size: 0.73rem;
+  line-height: 1.55;
+  color: var(--t2);
+  max-width: 72ch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conn-banner-pulse { animation: none; }
+}
+
+/* ========== Session Rewind ==========
+ * A scrubber over the whole project's history. Reads as an instrument: the
+ * terminal's own mono face, square edges, no floating card.
+ */
+
+.rw-panel,
+.rw-empty {
+  padding: 16px 18px;
+  height: 100%;
+  overflow-y: auto;
+  font-family: var(--font-number);
+}
+
+.rw-empty-title,
+.rw-title {
+  font-family: var(--font-number);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #FFFFFF;
+}
+
+.rw-empty-sub {
+  margin-top: 8px;
+  max-width: 66ch;
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  line-height: 1.65;
+  color: var(--t3);
+}
+
+.rw-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+/* The one shortcut worth having: back to the last state that actually ran. */
+.rw-lastgood {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  background: rgba(61, 214, 140, 0.08);
+  border: 1px solid rgba(61, 214, 140, 0.3);
+  border-radius: 3px;
+  color: #3DD68C;
+  font-family: var(--font-number);
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.rw-lastgood:hover {
+  background: rgba(61, 214, 140, 0.16);
+  border-color: rgba(61, 214, 140, 0.55);
+}
+
+.rw-lastgood-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3DD68C;
+  box-shadow: 0 0 7px rgba(61, 214, 140, 0.7);
+}
+
+.rw-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.55rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--t4);
+  margin-bottom: 6px;
+}
+
+.rw-track {
+  position: relative;
+  padding: 6px 0 14px;
+}
+
+.rw-range {
+  width: 100%;
+  appearance: none;
+  height: 3px;
+  border-radius: 0;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08));
+  outline: none;
+  cursor: pointer;
+}
+
+.rw-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 18px;
+  border-radius: 2px;
+  background: #FFFFFF;
+  border: 1px solid #000000;
+  cursor: grab;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.rw-range::-webkit-slider-thumb:active { cursor: grabbing; }
+
+.rw-range::-moz-range-thumb {
+  width: 12px;
+  height: 18px;
+  border-radius: 2px;
+  background: #FFFFFF;
+  border: 1px solid #000000;
+  cursor: grab;
+}
+
+/* Run outcomes pinned along the track — a failed build is findable by eye. */
+.rw-marks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 6px;
+  pointer-events: none;
+}
+
+.rw-mark {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 6px;
+  margin-left: -1px;
+  pointer-events: auto;
+}
+
+.rw-mark.is-ok { background: #3DD68C; }
+.rw-mark.is-fail { background: #E5484D; }
+
+.rw-selected {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.rw-selected-time {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.rw-selected-meta {
+  font-size: 0.56rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--t4);
+}
+
+.rw-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rw-btn {
+  padding: 8px 14px;
+  border-radius: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: var(--t2);
+  font-family: var(--font-number);
+  font-weight: 600;
+  font-size: 0.56rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+
+.rw-btn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.rw-btn:disabled { opacity: 0.32; cursor: not-allowed; }
+
+.rw-btn.is-primary {
+  border-color: rgba(255, 255, 255, 0.45);
+  color: #FFFFFF;
+}
+
+/* Destructive and shared, so it announces itself before the second press. */
+.rw-btn.is-confirm {
+  border-color: rgba(229, 72, 77, 0.65);
+  background: rgba(229, 72, 77, 0.12);
+  color: #FF8085;
+}
+
+.rw-warn {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 2px solid #E5484D;
+  background: rgba(229, 72, 77, 0.07);
+  font-family: var(--font-body);
+  font-size: 0.74rem;
+  line-height: 1.55;
+  color: #FFB3B6;
+  max-width: 74ch;
+}
+
+.rw-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 2px solid #3DD68C;
+  background: rgba(61, 214, 140, 0.07);
+  font-family: var(--font-body);
+  font-size: 0.74rem;
+  color: #9BE8C4;
+}
+
+.rw-notice-x {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.rw-notice-x:hover { opacity: 1; }
+
+/* ── Preview ──
+   Rendered here rather than in the editor: pushing history into Monaco would
+   send it out through the CRDT and show the past to everyone else. */
+.rw-preview {
+  margin-top: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.rw-preview-head {
+  padding: 7px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+
+.rw-preview-body {
+  display: flex;
+  min-height: 0;
+  max-height: 320px;
+}
+
+.rw-preview-files {
+  width: 190px;
+  flex-shrink: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.rw-preview-file {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 12px;
+  background: none;
+  border: none;
+  color: var(--t3);
+  font-family: var(--font-code);
+  font-size: 0.7rem;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rw-preview-file:hover { color: #FFFFFF; background: rgba(255, 255, 255, 0.04); }
+.rw-preview-file.is-active { color: #FFFFFF; background: rgba(255, 255, 255, 0.07); }
+
+.rw-preview-code {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.5);
+  font-family: var(--font-code);
+  font-size: 0.73rem;
+  line-height: 1.6;
+  color: #D4D4D4;
+  white-space: pre;
+}
+
+/* ── Undo one person's changes ──
+   Kept visually quiet: it is a scalpel, not the main control. */
+.rw-authors {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.rw-authors-head {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-family: var(--font-number);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: #FFFFFF;
+}
+
+.rw-authors-file {
+  font-family: var(--font-code);
+  font-size: 0.66rem;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--t4);
+}
+
+.rw-authors-sub {
+  margin: 7px 0 12px;
+  max-width: 68ch;
+  font-family: var(--font-body);
+  font-size: 0.73rem;
+  line-height: 1.6;
+  color: var(--t3);
+}
+
+.rw-author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.rw-author-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.rw-author-name {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  color: #FFFFFF;
+}
+
+.rw-author-lines {
+  font-family: var(--font-number);
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t4);
+}
+
+.rw-author-btn {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ── Someone else is in this file ──
+ * Informational, not an alarm: nothing is broken, two people just need to
+ * talk. Quieter than the connection and impact banners on purpose.
+ */
+.collide-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 7px 14px;
+  background: rgba(99, 102, 241, 0.09);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.25);
+  font-family: var(--font-body);
+  font-size: 0.73rem;
+  color: #C7C9FF;
+  animation: rca2-content-in 0.2s ease forwards;
+}
+
+.collide-dots {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.collide-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--s0);
+  margin-right: -3px;
+}
+
+.collide-text strong { color: #FFFFFF; font-weight: 600; }
+
+.collide-x {
+  margin-left: auto;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.collide-x:hover { opacity: 1; }
+
+/* Takeover control on the lost-connection banner. */
+.conn-banner-btn {
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: auto;
+  padding: 8px 14px;
+  border-radius: 0;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  color: #FFFFFF;
+  font-family: var(--font-number);
+  font-weight: 600;
+  font-size: 0.56rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.conn-banner-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: #FFFFFF;
+}
+
+.conn-banner-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.conn-banner-takeover {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.conn-banner-takeover.is-ok { color: #9BE8C4; }
+.conn-banner-takeover.is-error { color: #FFB3B6; }
+
+/* ── Finish & push ── */
+.fin-panel {
+  margin: 14px;
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.022) 0%, transparent 100%);
+}
+
+.fin-panel.is-done { border-color: rgba(61, 214, 140, 0.35); }
+
+.fin-title {
+  font-family: var(--font-number);
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #FFFFFF;
+  margin-bottom: 7px;
+}
+
+.fin-panel.is-done .fin-title { color: #3DD68C; }
+
+.fin-sub {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  line-height: 1.65;
+  color: var(--t3);
+  max-width: 68ch;
+  margin-bottom: 13px;
+}
+
+.fin-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  background: #050505;
+  border: none;
+  border-radius: 0;
+  color: #FFFFFF;
+  font-family: var(--font-code);
+  font-size: 0.75rem;
+  outline: none;
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.9),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.06),
+    0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+
+.fin-input:focus { box-shadow: inset 2px 2px 0 rgba(0,0,0,0.9), 0 0 0 2px rgba(255,255,255,0.28); }
+
+.fin-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 11px;
+  font-family: var(--font-number);
+  font-size: 0.55rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--t4);
+}
+
+.fin-dot-sep { opacity: 0.5; }
+
+.fin-authors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.fin-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: var(--font-body);
+  font-size: 0.71rem;
+  color: var(--t2);
+}
+
+.fin-author-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+.fin-actions { display: flex; gap: 8px; margin-top: 14px; }
+
+.fin-btn {
+  padding: 9px 16px;
+  border-radius: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: var(--t2);
+  font-family: var(--font-number);
+  font-weight: 600;
+  font-size: 0.56rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.fin-btn:hover:not(:disabled) { border-color: rgba(255,255,255,0.5); color: #FFF; background: rgba(255,255,255,0.05); }
+.fin-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.fin-btn.is-primary { border-color: rgba(255,255,255,0.45); color: #FFFFFF; }
+.fin-btn.is-confirm { border-color: rgba(61,214,140,0.6); background: rgba(61,214,140,0.1); color: #3DD68C; }
+
+.fin-error {
+  margin-top: 12px;
+  padding: 9px 12px;
+  border-left: 2px solid #E5484D;
+  background: rgba(229, 72, 77, 0.08);
+  font-family: var(--font-body);
+  font-size: 0.73rem;
+  color: #FF9A9E;
 }

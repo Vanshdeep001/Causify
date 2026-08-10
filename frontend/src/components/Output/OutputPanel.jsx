@@ -6,7 +6,8 @@ import React, { useState, useEffect } from 'react';
 import useEditorStore from '../../store/useEditorStore';
 import HtmlPreview from '../Preview/HtmlPreview';
 import DevServerPanel from '../Terminal/DevServerPanel';
-import { getAiStatus, saveAiKey } from '../../services/api';
+import AutoFixPanel from './AutoFixPanel';
+import AiKeySetupCard, { AiProviderChip } from './AiKeySetupCard';
 
 const LogLine = ({ type, message, timestamp }) => {
   const tagClass =
@@ -85,113 +86,6 @@ const ConfidenceRing = ({ percent, color, size = 52 }) => {
   );
 };
 
-/* ── AI Key Setup — shown inside the diagnosis report when no
- *    OpenRouter key is configured on the backend ── */
-const AiKeySetupCard = () => {
-  const [visible, setVisible] = useState(false);
-  const [keyInput, setKeyInput] = useState('');
-  const [status, setStatus] = useState('idle'); // 'idle' | 'saving' | 'success' | 'error'
-  const [errorMsg, setErrorMsg] = useState('');
-
-  useEffect(() => {
-    let cancelled = false;
-    getAiStatus()
-      .then((res) => {
-        if (!cancelled && res && res.configured === false) setVisible(true);
-      })
-      .catch(() => { /* backend unreachable — keep the card hidden */ });
-    return () => { cancelled = true; };
-  }, []);
-
-  if (!visible) return null;
-
-  const handleActivate = async () => {
-    const key = keyInput.trim();
-    if (!key || status === 'saving') return;
-    setStatus('saving');
-    setErrorMsg('');
-    try {
-      const res = await saveAiKey(key);
-      if (res && res.success) {
-        // On desktop, also persist encrypted (OS keychain) so the key
-        // is re-injected into the backend on every future launch.
-        if (window.electronAPI?.setApiKey) {
-          try { await window.electronAPI.setApiKey(key); } catch { /* non-fatal */ }
-        }
-        setStatus('success');
-      } else {
-        setStatus('error');
-        setErrorMsg(res?.error || 'OpenRouter rejected this key.');
-      }
-    } catch (err) {
-      setStatus('error');
-      setErrorMsg(err.response?.data?.error || 'Could not verify the key. Check your connection.');
-    }
-  };
-
-  if (status === 'success') {
-    return (
-      <div className="rca2-keysetup is-success">
-        <div className="rca2-keysetup-head">
-          <span className="rca2-keysetup-check">✓</span>
-          <span className="rca2-keysetup-title">AI Diagnosis Activated</span>
-        </div>
-        <div className="rca2-keysetup-sub">
-          Your key is verified and live. Run your code again to generate a full AI-powered diagnosis.
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rca2-keysetup">
-      <div className="rca2-keysetup-head">
-        <span className="rca2-keysetup-title">Unlock AI Diagnosis</span>
-        <span className="rca2-keysetup-badge">API Key Required</span>
-      </div>
-      <div className="rca2-keysetup-sub">
-        This report used rule-based analysis only. Add an OpenRouter API key to unlock
-        AI-powered explanations, cause chains, and fix suggestions.{' '}
-        <a
-          className="rca2-keysetup-link"
-          href="https://openrouter.ai/keys"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Get your free key at openrouter.ai/keys →
-        </a>
-      </div>
-      <div className="rca2-keysetup-row">
-        <input
-          type="password"
-          className="rca2-keysetup-input"
-          placeholder="sk-or-v1-..."
-          value={keyInput}
-          onChange={(e) => {
-            setKeyInput(e.target.value);
-            if (status === 'error') { setStatus('idle'); setErrorMsg(''); }
-          }}
-          onKeyDown={(e) => { if (e.key === 'Enter') handleActivate(); }}
-          spellCheck={false}
-        />
-        <button
-          className="rca2-keysetup-btn"
-          onClick={handleActivate}
-          disabled={!keyInput.trim() || status === 'saving'}
-        >
-          {status === 'saving' ? 'Verifying…' : 'Activate'}
-        </button>
-      </div>
-      {status === 'error' && <div className="rca2-keysetup-error">{errorMsg}</div>}
-      <div className="rca2-keysetup-note">
-        {window.electronAPI
-          ? 'Verified with OpenRouter · Stored encrypted on this device · Never shared'
-          : 'Verified with OpenRouter · Held by your local backend for this session'}
-      </div>
-    </div>
-  );
-};
-
 /* ── Smart Root Cause Analysis Card — v2 Redesign ── */
 const RootCauseCard = ({ rootCause, code }) => {
   const [isReportExpanded, setIsReportExpanded] = useState(false);
@@ -251,8 +145,14 @@ const RootCauseCard = ({ rootCause, code }) => {
       {/* Dashed separator divider */}
       <div className="rca2-divider" />
 
+      {/* Order is deliberate: the thing you can act on comes first.
+          The agent offers a fix you either apply or reject; the diagnosis
+          below it is reference material you consult only if you want to
+          understand the failure yourself. Reading order follows intent. */}
+      <AutoFixPanel />
+
       {/* Typographic Collapse Trigger */}
-      <div className="rca2-collapse-trigger" onClick={() => setIsReportExpanded(!isReportExpanded)}>
+      <div className="rca2-collapse-trigger rca2-trigger-after" onClick={() => setIsReportExpanded(!isReportExpanded)}>
         <span className="rca2-trigger-symbol">{isReportExpanded ? '▼' : '▶'}</span>
         <span className="rca2-trigger-text">
           <span className="rca2-title-fill">AI Diagnostic&nbsp;</span>
@@ -261,6 +161,10 @@ const RootCauseCard = ({ rootCause, code }) => {
             {isReportExpanded ? '(Click to collapse)' : '(Click to expand)'}
           </span>
         </span>
+
+        {/* Always on screen, because the moment a key stops working is the
+            moment nobody thinks to go looking inside a collapsed report. */}
+        <AiProviderChip onManage={() => setIsReportExpanded(true)} />
       </div>
 
       {isReportExpanded && (
@@ -271,7 +175,11 @@ const RootCauseCard = ({ rootCause, code }) => {
           <div className="rca2-body">
 
             {/* AI key onboarding — only when this report ran without AI */}
-            {rootCause.aiGenerated === false && <AiKeySetupCard />}
+            {/* Rendered whether or not a key is configured: with one it shows
+                which provider is live and offers to swap or remove it, which is
+                the only place in the app that can be done. The card decides
+                which of those two faces to wear. */}
+            <AiKeySetupCard />
 
             {/* Section: What Happened */}
             {rootCause.whatHappened && (
@@ -366,27 +274,39 @@ const RootCauseCard = ({ rootCause, code }) => {
   );
 };
 
-const TELEMETRY_LINES = [
-  'INITIALIZING SYMBOL RESOLVER',
-  'PARSING CALL GRAPH TRAVERSALS',
-  'MAPPING EVENT EMITTER SCHEMAS',
-  'EVALUATING CAUSALITY GRADIENTS',
-  'CORRELATING METRICS & LOG ENTRIES',
-  'ISOLATING ROOT CAUSE SEQUENCE',
-  'GENERATING INTELLIGENCE REPORT'
-];
+/* Jump geometry.
+ *
+ * The character must rise until the top of its cap meets the underside of the
+ * block — no less, or it stops short and the block appears to bounce on its
+ * own; no more, and it clips straight through.
+ *
+ * Both sprites are anchored to the SAME edge (the stage's top). They used to
+ * straddle it — block measured from the top, character from the bottom — which
+ * silently made the distance between them depend on the stage's height. The
+ * stage is a flex item, so in a short terminal pane it was shrinking below its
+ * 140px and dragging the two sprites together: at rest the head already sat
+ * near the block, and the jump then carried it clean over. Anchoring both from
+ * the top makes the gap a constant that no amount of squeezing can alter.
+ *
+ *   block sits at top 16, is 40 tall, so its underside is at        56
+ *   the cap begins on row 2 of a 16-unit viewBox drawn at 40px  ->   5 into the box
+ *   the character box is placed so its cap rests REST_GAP below the underside
+ *   the jump is therefore exactly REST_GAP
+ */
+const SPRITE_BOX = 40;   // both the block and the character render at 40x40
+const VIEWBOX_UNITS = 16;
+const BLOCK_TOP = 16;
+const CAP_ROW = 2;       // first drawn row of the character's cap in the viewBox
+
+const CAP_INSET = CAP_ROW * (SPRITE_BOX / VIEWBOX_UNITS);
+const BLOCK_UNDERSIDE_Y = BLOCK_TOP + SPRITE_BOX;
+const REST_GAP = 48;     // head-to-block clearance while standing
+
+const CHAR_TOP = BLOCK_UNDERSIDE_Y + REST_GAP - CAP_INSET;
+const JUMP_PX = REST_GAP;
+const STAGE_H = CHAR_TOP + SPRITE_BOX;
 
 const ScanningSegment = () => {
-  const [telemetryIndex, setTelemetryIndex] = useState(0);
-  const [traceId] = useState(() => Math.random().toString(36).substring(7).toUpperCase());
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTelemetryIndex((prev) => (prev + 1) % TELEMETRY_LINES.length);
-    }, 1600);
-    return () => clearInterval(timer);
-  }, []);
-
   return (
     <div className="output-placeholder terminal-window-pane" style={{
       position: 'relative',
@@ -404,16 +324,19 @@ const ScanningSegment = () => {
           0%, 100% { transform: translateY(0) scaleY(1) scaleX(1); }
           20% { transform: translateY(0) scaleY(0.75) scaleX(1.25); }
           26% { transform: translateY(0) scaleY(1.15) scaleX(0.85); }
-          50% { transform: translateY(-38px) scaleY(1) scaleX(1); }
+          50% { transform: translateY(-${JUMP_PX}px) scaleY(1) scaleX(1); }
           72% { transform: translateY(0) scaleY(1) scaleX(1); }
           76% { transform: translateY(0) scaleY(0.7) scaleX(1.3); }
           84% { transform: translateY(0) scaleY(1.05) scaleX(0.95); }
           90% { transform: translateY(0) scaleY(1) scaleX(1); }
         }
+        /* The block is still at rest through 50% — the instant of contact —
+           and only then gets knocked upward. It used to start moving at 48%,
+           so it flinched before anything had touched it. */
         @keyframes block-bounce {
-          0%, 48%, 62%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-10px); }
-          56% { transform: translateY(2px); }
+          0%, 50%, 66%, 100% { transform: translateY(0); }
+          55% { transform: translateY(-10px); }
+          61% { transform: translateY(2px); }
         }
         @keyframes particle-tl {
           0%, 49% { transform: translate(0, 0); opacity: 0; }
@@ -460,12 +383,14 @@ const ScanningSegment = () => {
       <div style={{
         position: 'relative',
         width: '180px',
-        height: '140px',
+        height: `${STAGE_H}px`,
+        // Never let the pane squeeze the stage: the sprite positions are fixed
+        // pixels, so a shrunk stage silently breaks the distances between them.
+        flexShrink: 0,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'flex-end',
-        marginBottom: '28px'
+        justifyContent: 'flex-end'
       }}>
         {/* Pixel Question Block */}
         <div style={{
@@ -506,7 +431,8 @@ const ScanningSegment = () => {
         {/* Character */}
         <div style={{
           position: 'absolute',
-          bottom: '0',
+          // Measured from the top, like the block — see the note above.
+          top: `${CHAR_TOP}px`,
           left: 'calc(50% - 20px)',
           width: '40px',
           height: '40px',
@@ -532,60 +458,15 @@ const ScanningSegment = () => {
         </div>
       </div>
 
-      {/* Platform under the character */}
+      {/* Platform under the character. Sits flush against the stage, since the
+          stage no longer reserves room beneath it for a caption. */}
       <div style={{
         width: '140px',
         height: '1px',
         background: '#FFFFFF',
         opacity: 0.15,
-        marginTop: '-28px',
-        marginBottom: '28px'
+        flexShrink: 0
       }} />
-
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-        {/* Title */}
-        <div style={{
-          fontFamily: 'var(--font-header)',
-          fontSize: '0.82rem',
-          fontWeight: 900,
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          color: '#FFFFFF',
-          lineHeight: 1.2,
-          marginBottom: '8px'
-        }}>
-          Scanning Execution Flow
-        </div>
-
-        {/* Live Telemetry Message */}
-        <div style={{
-          fontFamily: 'var(--font-number)',
-          fontSize: '0.55rem',
-          fontWeight: 500,
-          color: 'var(--t2)',
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase',
-          height: '14px',
-          marginBottom: '8px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '4px'
-        }}>
-          <span style={{ color: 'var(--t4)' }}>▶</span> {TELEMETRY_LINES[telemetryIndex]}
-        </div>
-
-        {/* Trace ID Tag */}
-        <div style={{
-          fontFamily: 'var(--font-number)',
-          fontSize: '0.52rem',
-          letterSpacing: '0.04em',
-          color: 'var(--t4)',
-          textTransform: 'uppercase'
-        }}>
-          TRACE_ID: {traceId}
-        </div>
-      </div>
     </div>
   );
 };
@@ -595,6 +476,7 @@ const OutputPanel = () => {
   const error = useEditorStore((s) => s.error);
   const isRunning = useEditorStore((s) => s.isRunning);
   const rootCause = useEditorStore((s) => s.rootCause);
+  const autoFix = useEditorStore((s) => s.autoFix);
   const sessionId = useEditorStore((s) => s.sessionId);
   const code = useEditorStore((s) => s.code);
   const files = useEditorStore((s) => s.files);
@@ -620,7 +502,9 @@ const OutputPanel = () => {
     return <ScanningSegment />;
   }
 
-  if (!output && !error) {
+  // An applied fix clears the output it was diagnosing, so the panel would fall
+  // back to the idle placeholder and take the agent's confirmation with it.
+  if (!output && !error && !autoFix) {
     return (
       <div className="output-placeholder terminal-window-pane" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div className="terminal-scanlines" />
@@ -650,6 +534,15 @@ const OutputPanel = () => {
         {rootCause && (
           <div style={{ padding: '0 12px', marginTop: '16px' }}>
             <RootCauseCard rootCause={rootCause} code={code} />
+          </div>
+        )}
+
+        {/* The agent outlives the diagnosis. Normally it renders inside the
+            report card, just under the trigger; once a fix is applied there is
+            no report left to sit in, but the user still needs the result. */}
+        {!rootCause && autoFix && (
+          <div style={{ padding: '0 12px', marginTop: '16px' }}>
+            <AutoFixPanel />
           </div>
         )}
       </div>

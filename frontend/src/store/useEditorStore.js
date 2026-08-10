@@ -13,10 +13,28 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { executeCode, createSnapshot, getTimeline, getDeployments } from '../services/api';
+// Aliased: the store exposes its own requestAutoFix action, and an identical
+// name here would read like recursion even though it is not.
+import { executeCode, createSnapshot, getTimeline, getDeployments, requestAutoFix as fetchAutoFix, createSession, uploadProject } from '../services/api';
 import { analyzeImpact, summarizeImpacts } from '../utils/impactAnalyzer';
 import { clearSymbolCache } from '../utils/impact/symbols';
 import { sendCodeChange, sendRevert, sendFollowStart, sendFollowStop } from '../services/socket';
+import { replaceFileText } from '../services/collabDoc';
+import { resetOrigin, setSessionToken, clearSessionToken } from '../services/backendHost';
+
+/* How long a dropped socket is given to come back before the session is
+ * treated as gone. Long enough that a brief network blink heals silently,
+ * short enough that nobody writes much into a session that no longer exists. */
+const CONNECTION_GRACE_MS = 15000;
+
+/* How many checkpoints Session Rewind keeps. Entry 0 is a full copy of the
+ * project and the rest are deltas, so this bounds memory at roughly one project
+ * plus the churn since — not one copy per checkpoint. At the sampling interval
+ * below this is several hours of history, which covers a hackathon. */
+const MAX_REWIND_POINTS = 240;
+const REWIND_SAMPLE_MS = 15000;
+let rewindSampler = null;
+let connectionLostTimer = null;
 
 const parseExecutionGraph = (code, language) => {
   if (!code) return { nodes: [], edges: [] };
@@ -263,6 +281,31 @@ const useEditorStore = create(persist((set, get) => ({
   liveRootCause: null,
   liveCausalityGraph: null,
 
+  /* ── Session Rewind ──
+   *
+   * A continuous history of the WHOLE project, so a team can go back to a
+   * moment rather than to a commit. Git only remembers what was committed, and
+   * nobody commits mid-sprint — which is precisely when things break.
+   *
+   * Storage shape, chosen to stay bounded over a long session:
+   *   entry 0        always holds a complete copy of the project
+   *   entries 1..n   hold only what changed since the one before
+   *
+   * So the state at any point is entry 0 with the deltas after it applied. When
+   * the log gets too long the oldest delta is folded into entry 0 and dropped,
+   * which keeps that invariant true forever and keeps memory flat. Storing a
+   * full copy per checkpoint would have grown without limit — a few hundred
+   * copies of a real project is hundreds of megabytes.
+   *
+   * Each entry: { id, at, files: { path: content | null }, run: 'ok'|'fail'|null }
+   * A null content means the file did not exist at that point.
+   */
+  rewindLog: [],
+  rewindOpen: false,
+  rewindIndex: null,     // which checkpoint is being previewed
+  rewindBusy: false,
+  rewindNotice: null,
+
   // ---- Timeline State ----
   snapshots: [],            // Array of { id, code, userId, timestamp, diff }
   currentSnapshotIndex: -1, // Which snapshot is currently being viewed (-1 = live)
@@ -285,6 +328,27 @@ const useEditorStore = create(persist((set, get) => ({
     explanation: "AI-generated explanation",
     confidence: 0.85
   } */
+
+  // ---- Auto-Fix Agent State ----
+  /* The agent proposes; the user disposes. `autoFix` holds a proposal that has
+   * NOT been written to the file yet, plus enough context to apply it safely:
+   *
+   *   targetPath    which file it was generated for
+   *   basedOnCode   the exact content it patched — checked again at apply time,
+   *                 because line-numbered edits are meaningless against code
+   *                 that has moved on since
+   *   previousCode  set on apply, so the change can be undone in one click
+   *
+   * Shape: {
+   *   status: 'VERIFIED' | 'UNVERIFIED' | 'NO_FIX' | 'NO_AI_KEY' | 'ERROR',
+   *   summary, explanation, confidence, fixedCode, message,
+   *   edits: [{ startLine, endLine, oldText, newText }],
+   *   attempts: [{ number, summary, verified, rejectedBecause }],
+   *   verifiedOutput, remainingError, verificationSupported,
+   *   targetPath, basedOnCode, applied, previousCode
+   * } */
+  autoFix: null,
+  autoFixState: 'idle',   // 'idle' | 'working' | 'ready' | 'failed'
 
   // ---- Causality Graph State ----
   causalityGraph: null,
@@ -389,6 +453,138 @@ const useEditorStore = create(persist((set, get) => ({
    * as a suffix once a tunnel is open, so a joiner needs nothing extra. */
   joinCode: '',
   setJoinCode: (joinCode) => set({ joinCode }),
+
+  /* True when the tunnel handed out a new address after the invite had already
+   * been shared, so the link everyone is holding no longer works. Forces the
+   * share panel back on screen — it normally hides once somebody has joined,
+   * which is exactly the moment this becomes important. */
+  joinCodeStale: false,
+  setJoinCodeStale: (joinCodeStale) => set({ joinCodeStale }),
+
+  /* ── Connection health ──
+   *
+   *   connected     → normal
+   *   reconnecting  → the socket dropped; the retry loop is running
+   *   lost          → it has stayed down long enough to stop trusting it
+   *
+   * Two stages rather than one, because a three-second Wi-Fi blink and a dead
+   * tunnel look identical at the moment they happen and deserve opposite
+   * responses. While reconnecting, editing stays open: if the socket returns,
+   * the CRDT merges everything typed in the gap, which is the whole point of
+   * using one. Only once the grace period expires — by which time the tunnel
+   * URL has most likely changed and those edits can never merge — does the
+   * editor lock.
+   *
+   * Only ever armed inside a session. Local mode has no socket.
+   */
+  connectionState: 'connected',
+
+  markSocketConnected: () => {
+    clearTimeout(connectionLostTimer);
+    connectionLostTimer = null;
+    if (get().connectionState !== 'connected') {
+      console.log('[Causify] Connection restored');
+    }
+    set({ connectionState: 'connected' });
+  },
+
+  markSocketDropped: () => {
+    // No session, no socket to lose — and local mode must never be locked.
+    if (!get().sessionId) return;
+
+    /* Once given up on, stay given up on until a real reconnect.
+     *
+     * The retry loop keeps firing close events every few seconds for as long
+     * as the host is unreachable. Without this the first one after the verdict
+     * would find no timer running, flip the state back to 'reconnecting', and
+     * start the countdown again — so the banner would alternate between
+     * "Reconnecting…" and "Lost connection" and the editor would unlock and
+     * re-lock every fifteen seconds, forever. */
+    if (get().connectionState === 'lost') return;
+
+    // Already counting down; restarting the timer on every retry attempt
+    // would keep pushing the deadline away and it would never fire.
+    if (connectionLostTimer) return;
+
+    set({ connectionState: 'reconnecting' });
+
+    connectionLostTimer = setTimeout(() => {
+      connectionLostTimer = null;
+      // Re-checked because the socket may have come back while we waited.
+      if (get().connectionState === 'reconnecting') {
+        set({ connectionState: 'lost' });
+      }
+    }, CONNECTION_GRACE_MS);
+  },
+
+  /* ── Take over hosting ──
+   *
+   * Everything routes through the host's machine, so their laptop closing ends
+   * the session for everyone. That will happen at a long event — someone walks
+   * away, a lid shuts, a battery dies.
+   *
+   * Nothing is actually lost when it does: local-first means every participant
+   * already holds the files. Only the channel died. So recovery does not need
+   * infrastructure, just permission for somebody else to open a new channel
+   * from the copy they already have.
+   *
+   * Returns the new join code for the taker to share; the others rejoin with it.
+   */
+  reformSessionAsHost: async () => {
+    const { files, sessionName, currentUser, workspaceRoot } = get();
+
+    const toShare = Object.entries(files || {})
+      .filter(([, content]) => typeof content === 'string')
+      .map(([path, content]) => ({ path, content }));
+
+    if (toShare.length === 0) {
+      return { ok: false, reason: 'There are no files loaded here to host.' };
+    }
+
+    set({ connectionState: 'connected' });
+
+    try {
+      /* Point at this machine first. The origin still refers to the host that
+       * just vanished, and the new session would otherwise be created on their
+       * backend — which is exactly the one that is unreachable. */
+      resetOrigin();
+      clearSessionToken();
+
+      const username = currentUser?.username || 'Host';
+      const session = await createSession(
+        sessionName || 'Recovered session',
+        username,
+        '0000'
+      );
+
+      await uploadProject(session.id, toShare);
+      setSessionToken(session.token);
+
+      set({
+        sessionId: session.id,
+        sessionName: session.name,
+        currentUser: session.user,
+        userRole: 'owner',
+        connectedUsers: [],
+        remoteCursors: {},
+        filePresence: {},
+        remoteLineChanges: {},
+        connectionState: 'connected',
+        joinCodeStale: false,
+      });
+
+      return { ok: true, sessionId: session.id, keepWorkspace: Boolean(workspaceRoot) };
+    } catch (err) {
+      set({ connectionState: 'lost' });
+      return { ok: false, reason: err.response?.data?.message || err.message || 'Could not start a new session.' };
+    }
+  },
+
+  resetConnectionState: () => {
+    clearTimeout(connectionLostTimer);
+    connectionLostTimer = null;
+    set({ connectionState: 'connected' });
+  },
 
   // Reachability of a hosted session from outside this network.
   tunnelState: 'off',        // 'off' | 'starting' | 'on' | 'error'
@@ -544,6 +740,8 @@ const useEditorStore = create(persist((set, get) => ({
       output: '',
       error: '',
       rootCause: null,
+      autoFix: null,
+      autoFixState: 'idle',
       causalityGraph: parseExecutionGraph(code, language)
     });
 
@@ -637,6 +835,9 @@ const useEditorStore = create(persist((set, get) => ({
       detectedProjects: [],
       devServers: {},
       projectDetected: false,
+      // Attribution from a session that was open beforehand would otherwise
+      // linger in this folder's gutter, pointing at lines it never described.
+      remoteLineChanges: {},
       // Cleared here and repopulated below if this folder has been opened before.
       snapshots: [],
       currentSnapshotIndex: -1,
@@ -934,6 +1135,17 @@ const useEditorStore = create(persist((set, get) => ({
   recordLineDiff: (path, oldContent, newContent, userId, username, color) => {
     if (!path || oldContent === newContent) return;
 
+    /* Line attribution answers "who changed this line", which is only a
+     * question when more than one person can. A folder opened from disk has a
+     * single author, so every marker read "You" — a gutter full of icons and a
+     * hover card describing the line you had just finished typing.
+     *
+     * Guarded here rather than at the call sites so no future caller can
+     * reintroduce it. Sessions are untouched: they always carry a sessionId,
+     * and both callers (local typing via setCode, collaborators via
+     * updateRemoteFile) behave exactly as before inside one. */
+    if (!get().sessionId) return;
+
     const oldLines = (oldContent || '').split('\n');
     const newLines = (newContent || '').split('\n');
     const now = Date.now();
@@ -1019,6 +1231,11 @@ const useEditorStore = create(persist((set, get) => ({
       output: '',
       error: '',
       rootCause: null,
+      // A proposal is a set of line edits against the text as it was. Once that
+      // text changes the proposal is scrap. applyAutoFix re-sets it when the
+      // change was the fix itself being applied.
+      autoFix: null,
+      autoFixState: 'idle',
       causalityGraph: parseExecutionGraph(code, language)
     }));
   },
@@ -1349,6 +1566,299 @@ const useEditorStore = create(persist((set, get) => ({
   setCurrentSnapshotIndex: (index) => set({ currentSnapshotIndex: index }),
   setIsReplaying: (isReplaying) => set({ isReplaying }),
 
+  /* ── Session Rewind: capture ──
+   *
+   * Sampled on a timer rather than wired into every place a file can change.
+   * There are a dozen such places — typing, a collaborator's edit, a new file,
+   * a delete, a disk write, an applied AI fix — and hooking each one would mean
+   * touching a dozen working code paths for a feature that only needs to know
+   * "did anything change since last time".
+   */
+  captureRewindPoint: ({ run = null, force = false } = {}) => {
+    const { files, rewindLog } = get();
+
+    // Only real, loaded content. Local mode leaves unopened files as null, and
+    // recording those would later "restore" a file into emptiness.
+    const current = {};
+    Object.entries(files || {}).forEach(([path, content]) => {
+      if (typeof content === 'string') current[path] = content;
+    });
+    if (Object.keys(current).length === 0) return;
+
+    // First checkpoint is the keyframe every later delta is measured from.
+    if (rewindLog.length === 0) {
+      set({
+        rewindLog: [{
+          id: `rw-${Date.now()}`,
+          at: Date.now(),
+          files: current,
+          run,
+        }],
+      });
+      return;
+    }
+
+    const previous = get().projectAtRewind(rewindLog.length - 1);
+
+    const delta = {};
+    Object.entries(current).forEach(([path, content]) => {
+      if (previous[path] !== content) delta[path] = content;
+    });
+    // A file that has gone is recorded as null so a restore can bring it back.
+    Object.keys(previous).forEach((path) => {
+      if (!(path in current)) delta[path] = null;
+    });
+
+    if (Object.keys(delta).length === 0 && !force) return;
+
+    let next = [...rewindLog, {
+      id: `rw-${Date.now()}`,
+      at: Date.now(),
+      files: delta,
+      run,
+    }];
+
+    /* Fold the oldest delta into the keyframe rather than dropping it, or the
+     * history would start from a state that never existed. */
+    while (next.length > MAX_REWIND_POINTS) {
+      const [keyframe, oldest, ...rest] = next;
+      const merged = { ...keyframe.files };
+      Object.entries(oldest.files).forEach(([path, content]) => {
+        if (content === null) delete merged[path];
+        else merged[path] = content;
+      });
+      next = [{ ...keyframe, at: oldest.at, files: merged }, ...rest];
+    }
+
+    set({ rewindLog: next });
+  },
+
+  /** The complete project as it stood at a checkpoint. */
+  projectAtRewind: (index) => {
+    const { rewindLog } = get();
+    if (index < 0 || index >= rewindLog.length) return {};
+
+    const state = { ...rewindLog[0].files };
+    for (let i = 1; i <= index; i++) {
+      Object.entries(rewindLog[i].files).forEach(([path, content]) => {
+        if (content === null) delete state[path];
+        else state[path] = content;
+      });
+    }
+    return state;
+  },
+
+  /** Most recent checkpoint whose run succeeded — the "last working build". */
+  lastGoodRewindIndex: () => {
+    const { rewindLog } = get();
+    for (let i = rewindLog.length - 1; i >= 0; i--) {
+      if (rewindLog[i].run === 'ok') return i;
+    }
+    return -1;
+  },
+
+  /* Sampling runs only while the app is mounted, and is idempotent so React's
+   * double-mount in development cannot end up with two timers appending
+   * duplicate checkpoints. */
+  startRewindSampler: () => {
+    if (rewindSampler) return;
+    rewindSampler = setInterval(() => {
+      useEditorStore.getState().captureRewindPoint();
+    }, REWIND_SAMPLE_MS);
+  },
+
+  stopRewindSampler: () => {
+    clearInterval(rewindSampler);
+    rewindSampler = null;
+  },
+
+  /* ── Undo one person's changes ──
+   *
+   * The thing git structurally cannot do. Git reverts commits, which bundle
+   * everyone's work together — you cannot take back what one person did to a
+   * file over the last twenty minutes while keeping what someone else did to
+   * the same file.
+   *
+   * Built on the line attribution that already exists for the gutter markers.
+   * Each record carries who changed the line and, crucially, `oldLine` — what
+   * it held before that person started on it — so reverting is a lookup rather
+   * than a reconstruction.
+   *
+   * The alternative was Yjs's own UndoManager, which would have meant changing
+   * how the shared document is created (per-user origins, history kept forever
+   * rather than compacted). That is surgery on the one part of the app whose
+   * failure mode is silent divergence between collaborators, for the same
+   * user-facing result. This touches nothing shared until it writes.
+   */
+  fileContributors: (path) => {
+    const changes = get().remoteLineChanges[path] || {};
+    const byUser = new Map();
+
+    Object.values(changes).forEach((rec) => {
+      const entry = byUser.get(rec.userId) || {
+        userId: rec.userId,
+        username: rec.username,
+        color: rec.color,
+        lines: 0,
+        latest: 0,
+      };
+      entry.lines += 1;
+      entry.latest = Math.max(entry.latest, rec.timestamp || 0);
+      byUser.set(rec.userId, entry);
+    });
+
+    return [...byUser.values()].sort((a, b) => b.latest - a.latest);
+  },
+
+  undoUserChanges: async (path, userId) => {
+    const { remoteLineChanges, files, isReplaying } = get();
+    if (isReplaying) return { ok: false, reason: 'Exit replay mode first.' };
+
+    const content = files[path];
+    if (typeof content !== 'string') {
+      return { ok: false, reason: 'That file is not loaded.' };
+    }
+
+    const records = Object.entries(remoteLineChanges[path] || {})
+      .map(([line, rec]) => ({ line: Number(line), ...rec }))
+      .filter((r) => r.userId === userId);
+
+    if (records.length === 0) return { ok: false, reason: 'Nothing of theirs to undo here.' };
+
+    const lines = content.split('\n');
+
+    /* Only lines that still hold exactly what was recorded. If someone has
+     * since edited the same line, it is no longer purely this person's work and
+     * reverting it would quietly discard the other person's edit — the precise
+     * thing this feature exists to avoid. */
+    const applicable = records.filter((r) => lines[r.line - 1] === r.newLine);
+    if (applicable.length === 0) {
+      return { ok: false, reason: 'Those lines have been edited since — nothing safe to undo.' };
+    }
+
+    // Restoring is itself a change worth being able to take back.
+    get().captureRewindPoint({ force: true });
+
+    /* Descending, so removing a line cannot shift the ones not yet handled. */
+    applicable.sort((a, b) => b.line - a.line).forEach((r) => {
+      const idx = r.line - 1;
+      if (r.type === 'added' || r.oldLine === '(line added)') lines.splice(idx, 1);
+      else lines[idx] = r.oldLine;
+    });
+
+    const reverted = lines.join('\n');
+
+    if (path === get().activePath) {
+      get().setCode(reverted);
+    } else {
+      const propagated = replaceFileText(path, reverted);
+      if (!propagated) set((s) => ({ files: { ...s.files, [path]: reverted } }));
+    }
+    if (get().workspaceRoot) {
+      await get().writeLocalFile(path, reverted).catch(() => { /* surfaced below */ });
+    }
+
+    // Those lines are no longer theirs, so drop the markers with them.
+    set((s) => {
+      const forPath = { ...(s.remoteLineChanges[path] || {}) };
+      applicable.forEach((r) => delete forPath[r.line]);
+      return { remoteLineChanges: { ...s.remoteLineChanges, [path]: forPath } };
+    });
+
+    // Tell the room, so a change vanishing from their screen has a reason.
+    const { sessionId, currentUser } = get();
+    if (sessionId && currentUser) {
+      sendRevert(sessionId, currentUser.id, path, currentUser.username, records[0].username);
+    }
+
+    const skipped = records.length - applicable.length;
+    set({
+      rewindNotice: `Undid ${applicable.length} line${applicable.length === 1 ? '' : 's'} from `
+        + `${records[0].username} in ${path}`
+        + (skipped ? ` — ${skipped} left alone because someone edited them since.` : '.'),
+    });
+
+    return { ok: true, reverted: applicable.length, skipped };
+  },
+
+  setRewindOpen: (rewindOpen) => set({ rewindOpen, rewindNotice: null }),
+  setRewindIndex: (rewindIndex) => set({ rewindIndex }),
+  clearRewindNotice: () => set({ rewindNotice: null }),
+
+  /* ── Session Rewind: restore ──
+   *
+   * Puts every file back to how it stood, for everyone. Deliberately routed
+   * through the same channels a human edit uses, so collaborators converge on
+   * the result instead of quietly drifting out of step with the host.
+   */
+  restoreRewindPoint: async (index) => {
+    const { rewindLog, isReplaying, sessionId, userRole, connectedUsers, currentUser } = get();
+    if (index < 0 || index >= rewindLog.length) return { ok: false, reason: 'That point is no longer in history.' };
+    if (isReplaying) return { ok: false, reason: 'Exit replay mode before restoring.' };
+
+    const canEdit = !sessionId || userRole === 'owner'
+      || connectedUsers.find((u) => u.id === currentUser?.id)?.permission !== 'viewer';
+    if (!canEdit) return { ok: false, reason: 'You have view-only access to this session.' };
+
+    set({ rewindBusy: true });
+
+    try {
+      /* Snapshot the present first, so restoring is itself undoable. Going back
+       * an hour by mistake must not be the one action with no way out. */
+      get().captureRewindPoint({ force: true });
+
+      const target = get().projectAtRewind(index);
+      const currentFiles = get().files || {};
+      const activePath = get().activePath;
+
+      const changed = [];
+      const removed = [];
+
+      // Files that existed then — put their content back.
+      for (const [path, content] of Object.entries(target)) {
+        if (currentFiles[path] === content) continue;
+        changed.push(path);
+
+        if (path === activePath) {
+          // Through setCode so Monaco, the CRDT and the collaborators all move
+          // together, exactly as if it had been typed.
+          get().setCode(content);
+        } else {
+          const propagated = replaceFileText(path, content);
+          if (!propagated) {
+            // No live session (or no shared text yet) — update in place.
+            set((s) => ({ files: { ...s.files, [path]: content } }));
+          }
+        }
+        if (get().workspaceRoot) {
+          await get().writeLocalFile(path, content).catch(() => { /* reported below */ });
+        }
+      }
+
+      /* Files created after that moment — restoring means they were not there.
+       * removeFile is reused rather than deleting the map entry directly: it
+       * also clears the save metadata and moves the active tab if the open file
+       * is the one going away. */
+      for (const path of Object.keys(currentFiles)) {
+        if (path in target) continue;
+        removed.push(path);
+        get().removeFile(path);
+      }
+
+      const when = new Date(rewindLog[index].at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      set({
+        rewindBusy: false,
+        rewindIndex: null,
+        rewindNotice: `Restored the project to ${when} — ${changed.length} file${changed.length === 1 ? '' : 's'} changed`
+          + (removed.length ? `, ${removed.length} removed` : '') + '.',
+      });
+      return { ok: true };
+    } catch (err) {
+      set({ rewindBusy: false, rewindNotice: `Restore failed: ${err.message}` });
+      return { ok: false, reason: err.message };
+    }
+  },
+
   // Go to a specific snapshot (replay mode)
   goToSnapshot: (index) => {
     const { snapshots } = get();
@@ -1419,6 +1929,128 @@ const useEditorStore = create(persist((set, get) => ({
   // ---- Actions: Root Cause ----
   setRootCause: (rootCause) => set({ rootCause }),
   clearRootCause: () => set({ rootCause: null }),
+
+  /* ---- Actions: Auto-Fix Agent ----
+   *
+   * Three steps, deliberately separate: ask, apply, undo. The agent never
+   * reaches the file on its own — requestAutoFix only fetches a proposal, and
+   * applyAutoFix is the one place a fix becomes real.
+   */
+
+  /** Ask the agent to repair the current error. Leaves the file untouched. */
+  requestAutoFix: async () => {
+    const { code, language, sessionId, activePath, rootCause, autoFixState } = get();
+    if (autoFixState === 'working') return;
+    if (!code || !rootCause) return;
+
+    set({ autoFixState: 'working', autoFix: null });
+
+    try {
+      const result = await fetchAutoFix({
+        sessionId: sessionId || '',
+        code,
+        language,
+        filePath: activePath || '',
+        errorType: rootCause.errorType,
+        errorMessage: rootCause.errorMessage,
+        errorLine: rootCause.errorLine,
+        suspectedVariable: rootCause.suspectedVariable,
+        semanticContext: rootCause.semanticContext || null,
+      });
+
+      set({
+        autoFix: {
+          ...result,
+          // Pin the proposal to what it was generated against. Without this a
+          // fix could be applied minutes later onto edited code, and its line
+          // numbers would land somewhere else entirely.
+          targetPath: activePath,
+          basedOnCode: code,
+          applied: false,
+          previousCode: null,
+        },
+        autoFixState: result && result.fixedCode ? 'ready' : 'failed',
+      });
+    } catch (err) {
+      set({
+        autoFix: {
+          status: 'ERROR',
+          message: err.request?.status === 0
+            ? 'Backend server unavailable.'
+            : (err.response?.data?.message || err.message || 'The auto-fix agent failed.'),
+        },
+        autoFixState: 'failed',
+      });
+    }
+  },
+
+  /**
+   * Write the proposed fix into the file.
+   *
+   * Goes through setCode so the change travels the same road a human edit does:
+   * into Monaco, out through the CRDT binding to every collaborator, and onto
+   * the debounced save. Anything that bypassed that would leave the agent's fix
+   * visible on one screen only.
+   *
+   * @returns {{ok: boolean, reason?: string}}
+   */
+  applyAutoFix: () => {
+    const { autoFix, files, activePath, userRole, connectedUsers, currentUser, isReplaying } = get();
+
+    if (!autoFix || !autoFix.fixedCode) return { ok: false, reason: 'There is no fix to apply.' };
+    if (autoFix.applied) return { ok: false, reason: 'This fix has already been applied.' };
+    if (isReplaying) return { ok: false, reason: 'Exit replay mode before applying a fix.' };
+
+    // Viewers get a read-only editor; the agent must not be a way around that.
+    const canEdit = userRole === 'owner'
+      || connectedUsers.find((u) => u.id === currentUser?.id)?.permission !== 'viewer';
+    if (!canEdit) return { ok: false, reason: 'You have view-only access to this session.' };
+
+    // setCode is a no-op without an active file, which would leave us reporting
+    // a success that never touched anything.
+    if (!activePath) return { ok: false, reason: 'Open the file before applying a fix.' };
+
+    if (autoFix.targetPath && autoFix.targetPath !== activePath) {
+      return { ok: false, reason: `This fix was written for ${autoFix.targetPath}. Open that file to apply it.` };
+    }
+
+    const current = files[activePath] ?? '';
+    if (autoFix.basedOnCode != null && current !== autoFix.basedOnCode) {
+      return { ok: false, reason: 'The file changed after this fix was generated. Run again for a fresh fix.' };
+    }
+
+    const previousCode = current;
+    get().setCode(autoFix.fixedCode);
+
+    // setCode clears rootCause — the old diagnosis describes code that no longer
+    // exists. The proposal is re-set afterwards so the panel can still show what
+    // was applied and offer the undo.
+    set({
+      autoFix: { ...autoFix, applied: true, previousCode },
+      autoFixState: 'ready',
+    });
+
+    return { ok: true };
+  },
+
+  /** Put the file back the way it was before the agent touched it. */
+  undoAutoFix: () => {
+    const { autoFix, files, activePath } = get();
+    if (!autoFix || !autoFix.applied || autoFix.previousCode == null) return { ok: false };
+
+    // Only revert what the agent actually wrote. If the user has typed since,
+    // their work outranks the undo.
+    const current = files[activePath] ?? '';
+    if (current !== autoFix.fixedCode) {
+      return { ok: false, reason: 'You have edited the file since the fix was applied.' };
+    }
+
+    get().setCode(autoFix.previousCode);
+    set({ autoFix: null, autoFixState: 'idle' });
+    return { ok: true };
+  },
+
+  clearAutoFix: () => set({ autoFix: null, autoFixState: 'idle' }),
 
   // ---- Actions: Causality Graph ----
   setCausalityGraph: (causalityGraph) => set({ causalityGraph }),
@@ -1615,6 +2247,9 @@ const useEditorStore = create(persist((set, get) => ({
       error: finalError,
       isRunning: false,
       rootCause: finalRootCause,
+      // A new run supersedes any fix the agent was offering for the old one.
+      autoFix: null,
+      autoFixState: 'idle',
       causalityGraph: finalGraph,
       commitSuggestion: result.commitSuggestion || null,
       // Auto-open terminal on result
@@ -1622,6 +2257,11 @@ const useEditorStore = create(persist((set, get) => ({
       terminalActiveTab: 'output',
       terminalLayoutMode: 'normal'
     });
+    /* Runs are the checkpoints that matter most: they are the only moments we
+     * know whether the project actually worked, which is what makes "last
+     * working build" answerable. */
+    get().captureRewindPoint({ run: finalError ? 'fail' : 'ok', force: true });
+
     if (result.snapshot) {
       const files = get().files;
       const isStaticWebProject = files && Object.keys(files).some(p => p.toLowerCase().endsWith('.html'));
@@ -1792,10 +2432,20 @@ const useEditorStore = create(persist((set, get) => ({
           snapshots: [],
         };
 
+    // A pending countdown must not outlive the session and lock a local file.
+    clearTimeout(connectionLostTimer);
+    connectionLostTimer = null;
+
     set({
       sessionId: null,
       sessionName: '',
       joinCode: '',
+      joinCodeStale: false,
+      rewindLog: [],
+      rewindOpen: false,
+      rewindIndex: null,
+      rewindNotice: null,
+      connectionState: 'connected',
       tunnelState: 'off',
       tunnelError: null,
       currentUser: null,
