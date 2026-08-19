@@ -49,8 +49,15 @@ const VERDICT = {
   ERROR:      { color: '#FF4F56', label: 'GAME OVER',        sub: 'the agent could not run' },
 };
 
-/* ── Idle: the plumber waits under an unopened block ── */
-const StartScene = ({ onStart }) => (
+/* ── Idle: the plumber waits under an unopened block ──
+ *
+ * The promise printed here has to match what will actually happen, because it
+ * is what the user is agreeing to. Repairing a single file ends in running it;
+ * repairing a project ends in restarting the dev server and watching it boot.
+ * Saying "runs the patched code" in the second case would be a small lie about
+ * the only thing that makes the verdict worth anything.
+ */
+const StartScene = ({ onStart, isProject }) => (
   <div className="afx-scene">
     <div className="afx-sky">
       <div className="afx-cloud afx-cloud-1" />
@@ -71,8 +78,9 @@ const StartScene = ({ onStart }) => (
       <div className="afx-hud-text">
         <div className="afx-hud-title">FIX IT FOR ME</div>
         <div className="afx-hud-sub">
-          The agent rewrites the failing lines, runs the patched code, and retries
-          until it passes. You review the diff before anything is saved.
+          {isProject
+            ? 'The agent finds the failing file, rewrites the offending lines, restarts the dev server and checks it boots clean. You review the diff before anything is saved.'
+            : 'The agent rewrites the failing lines, runs the patched code, and retries until it passes. You review the diff before anything is saved.'}
         </div>
       </div>
       <button className="afx-start-btn" onClick={onStart}>
@@ -303,18 +311,42 @@ const AutoFixPanel = () => {
   const undoAutoFix = useEditorStore((s) => s.undoAutoFix);
   const clearAutoFix = useEditorStore((s) => s.clearAutoFix);
   const runCode = useEditorStore((s) => s.runCode);
+  const devServers = useEditorStore((s) => s.devServers);
+
+  const workspaceRoot = useEditorStore((s) => s.workspaceRoot);
+
+  /* A dev server that has fallen over is a failure worth offering to repair,
+     even though nothing has produced a rootCause for it. */
+  const serverFailing = Object.values(devServers || {}).some((s) => s?.state === 'ERROR');
+
+  /* Which kind of repair this will be — the same test the store uses to pick a
+     mode, so the promise on screen matches the work that follows. */
+  const isProjectFix = Boolean(workspaceRoot) && !rootCause;
 
   const [notice, setNotice] = useState(null);
   const [showTrail, setShowTrail] = useState(false);
 
-  // Needs a diagnosis to act on, or a proposal to show. The second case matters
-  // after a fix is applied: that clears the diagnosis (it described code that
-  // no longer exists) while the confirmation and undo must survive.
-  // Checked after the hooks so hook order stays stable.
-  if (!rootCause && !autoFix) return null;
+  /* Something to act on, or something to show.
+   *
+   * A diagnosis is the original trigger, and a proposal keeps the panel alive
+   * after a fix is applied — applying clears the diagnosis, because it
+   * described code that no longer exists, while the confirmation and the undo
+   * still have to be reachable.
+   *
+   * A failing dev server is the third case and produces neither: nothing
+   * parses a server log into a rootCause. Gating on that alone is what kept
+   * the agent away from projects, so a crashed server counts as a reason to
+   * offer him too.
+   *
+   * Checked after the hooks so hook order stays stable.
+   */
+  if (!rootCause && !autoFix && !serverFailing) return null;
 
-  const handleApply = () => {
-    const result = applyAutoFix();
+  /* Async now: a project-mode fix can be for a file that is not open, and
+     applying it opens that file first — which in local mode means reading it
+     off disk before the write can land. */
+  const handleApply = async () => {
+    const result = await applyAutoFix();
     setNotice(result.ok ? null : result.reason);
   };
 
@@ -373,7 +405,14 @@ const AutoFixPanel = () => {
 
   /* ── Idle ── */
   if (!autoFix) {
-    return <div className="afx-panel is-bare"><StartScene onStart={requestAutoFix} /></div>;
+    /* onStart is wired to a click, which hands requestAutoFix the event as its
+       options argument. Harmless — it reads only `instruction`, which an event
+       does not have — but passed explicitly so it stays harmless. */
+    return (
+      <div className="afx-panel is-bare">
+        <StartScene onStart={() => requestAutoFix()} isProject={isProjectFix} />
+      </div>
+    );
   }
 
   /* ── A proposal came back ── */

@@ -45,6 +45,16 @@ public class AutoFixResponse {
     /** Human-readable status line for the UI. */
     private String message;
 
+    /**
+     * Which file this patch is for, project-relative.
+     *
+     * In file mode the caller already knew. In project mode the agent worked it
+     * out from a stack trace, so it has to say — the frontend needs it both to
+     * label the diff and to open the right file before applying, and the user
+     * needs it because "here is a fix" means nothing without "to what".
+     */
+    private String targetPath;
+
     public AutoFixResponse() {}
 
     public String getStatus() { return status; }
@@ -71,6 +81,8 @@ public class AutoFixResponse {
     public void setVerificationSupported(boolean verificationSupported) { this.verificationSupported = verificationSupported; }
     public String getMessage() { return message; }
     public void setMessage(String message) { this.message = message; }
+    public String getTargetPath() { return targetPath; }
+    public void setTargetPath(String targetPath) { this.targetPath = targetPath; }
 
     /**
      * One contiguous line-range replacement.

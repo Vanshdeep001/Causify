@@ -64,6 +64,37 @@ export const connectWebSocket = (sessionId, userInfo, callbacks = {}) => {
         }
       );
 
+      // Subscribe to the owner's file locks. Sent on every join as well as on
+      // every change, so a client that arrives late still learns what is frozen.
+      subscriptions.locks = stompClient.subscribe(
+        `/topic/session/${sessionId}/locks`,
+        (message) => {
+          const data = JSON.parse(message.body);
+          if (callbacks.onLocksChange) callbacks.onLocksChange(data);
+        }
+      );
+
+      // Subscribe to the owner's checkpoints, so one press puts the same point
+      // in everyone's history.
+      subscriptions.checkpoint = stompClient.subscribe(
+        `/topic/session/${sessionId}/checkpoint`,
+        (message) => {
+          const data = JSON.parse(message.body);
+          if (callbacks.onCheckpoint) callbacks.onCheckpoint(data);
+        }
+      );
+
+      // Subscribe to the lobby — who is waiting to be let in. Only the owner's
+      // client renders it, but the list is broadcast to the session like
+      // everything else here.
+      subscriptions.admission = stompClient.subscribe(
+        `/topic/session/${sessionId}/admission`,
+        (message) => {
+          const data = JSON.parse(message.body);
+          if (callbacks.onAdmissionChange) callbacks.onAdmissionChange(data);
+        }
+      );
+
       // Subscribe to execution results
       subscriptions.execution = stompClient.subscribe(
         `/topic/session/${sessionId}/execution`,
@@ -293,6 +324,46 @@ export const sendSetPermission = (sessionId, userId, permission) => {
     stompClient.publish({
       destination: `/app/session/${sessionId}/permission`,
       body: JSON.stringify({ userId, permission }),
+    });
+  }
+};
+
+/* Owner action: save the project's state as a point in the session's history.
+ *
+ * Metadata only — the label, who pressed it, the run verdict and the credit
+ * list. Every client already holds the same files, so each one captures its own
+ * copy locally; putting the project on the wire per checkpoint would be a full
+ * duplicate of it for every participant. */
+export const sendCheckpoint = (sessionId, meta) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/checkpoint`,
+      body: JSON.stringify(meta),
+    });
+  }
+};
+
+// Owner action: answer someone waiting in the lobby. decision: 'admit' | 'deny'
+export const sendAdmissionDecision = (sessionId, requestId, decision) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/admission`,
+      body: JSON.stringify({ requestId, decision }),
+    });
+  }
+};
+
+// Owner action: freeze or release a single file for everyone else.
+export const sendFileLock = (sessionId, path, locked, user) => {
+  if (stompClient && stompClient.connected) {
+    stompClient.publish({
+      destination: `/app/session/${sessionId}/lock`,
+      body: JSON.stringify({
+        path,
+        locked,
+        userId: user?.id || '',
+        username: user?.username || 'the owner',
+      }),
     });
   }
 };

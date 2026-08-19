@@ -24,9 +24,27 @@ public class AutoFixController {
 
     @PostMapping("/auto-fix")
     public ResponseEntity<AutoFixResponse> autoFix(@RequestBody AutoFixRequest request) {
-        if (request == null || request.getCode() == null || request.getCode().isBlank()) {
+        if (request == null) {
             return ResponseEntity.badRequest().build();
         }
+
+        /* Only file mode can be rejected for having no code. In project mode the
+         * code is the thing being looked for — the caller sends a log and a
+         * folder, and the agent finds the file itself. Rejecting on a blank
+         * `code` here would make project mode unreachable.
+         *
+         * A project request still has to say WHERE, so that is checked instead;
+         * anything past that is the service's to answer, including "I couldn't
+         * work out which file this is about", which is a real answer and not a
+         * bad request. */
+        if (request.isProjectMode()) {
+            if (request.getProjectPath() == null || request.getProjectPath().isBlank()) {
+                return ResponseEntity.badRequest().build();
+            }
+        } else if (request.getCode() == null || request.getCode().isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+
         return ResponseEntity.ok(autoFixService.generateFix(request));
     }
 }

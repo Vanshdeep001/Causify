@@ -34,6 +34,12 @@ let sessionId = null;
 let userId = null;
 let sendFn = null;                 // (message) => void — publishes over STOMP
 const seededPaths = new Set();     // paths we've already tried to seed this session
+/* Whether a peer has actually handed us their state since we joined.
+ * Seeding used to wait a flat 700ms and then assume the answer had arrived —
+ * a guess, not a fact. When the sync landed later than that, this client
+ * inserted its own copy of a file the host had already put in the document,
+ * and Yjs merged the two insertions exactly as it should: one file, twice. */
+let syncReceived = false;
 const persistTimers = {};          // { [path]: timeoutId } — debounced backend saves
 
 const textKey = (path) => `file:${path}`;
@@ -74,10 +80,20 @@ export function initCollab(sid, uid, send) {
 
   // Outgoing: broadcast every LOCAL change as an incremental update.
   // Updates we applied from the network carry origin.remote — never re-broadcast those.
+  //
+  // `bulk` travels with the message because the receiver cannot infer it. A
+  // seeded file is one update carrying an entire file, and it is indistinguish-
+  // able on the wire from somebody having typed that file. Without the flag the
+  // seeder is recorded as the author of every line in it.
   doc.on('update', (update, origin) => {
     if (origin && origin.remote) return;
     if (!sendFn) return;
-    sendFn({ kind: 'update', senderId: userId, payload: toB64(update) });
+    sendFn({
+      kind: 'update',
+      senderId: userId,
+      payload: toB64(update),
+      bulk: Boolean(origin && (origin.bulk || origin.seed)),
+    });
   });
 
   // Report remote edits wherever they land, not only in the open file.
@@ -94,6 +110,7 @@ export function destroyCollab() {
   Object.values(persistTimers).forEach(clearTimeout);
   for (const k in persistTimers) delete persistTimers[k];
   seededPaths.clear();
+  syncReceived = false;
   if (doc) {
     try { doc.off('afterTransaction', handleAfterTransaction); } catch (e) { /* ignore */ }
     try { doc.destroy(); } catch (e) { /* ignore */ }
@@ -152,10 +169,15 @@ export function replaceFileText(path, text) {
   const next = text || '';
   if (ytext.toString() === next) return false;
 
+  /* Tagged bulk. Every caller of this is a history operation — restoring a
+   * checkpoint, reverting a change, undoing a person — and a wholesale file
+   * replacement is never someone typing. Untagged, peers recorded the initiator
+   * as the author of every line in every file a rewind touched, so restoring
+   * the project made the restorer look like they had just rewritten it. */
   doc.transact(() => {
     ytext.delete(0, ytext.length);
     if (next) ytext.insert(0, next);
-  });
+  }, { bulk: true });
   return true;
 }
 
@@ -229,6 +251,7 @@ function handleAfterTransaction(transaction) {
   if (paths.length === 0) return;
 
   const author = origin.userId || null;
+  const bulk = Boolean(origin.bulk);
 
   /* Reading the text means calling getText(), which upgrades a placeholder
    * root type in place — not something to do while the transaction that
@@ -241,7 +264,7 @@ function handleAfterTransaction(transaction) {
       if (ytext) edits.push({ path, text: ytext.toString() });
     });
     if (edits.length > 0) {
-      useEditorStore.getState().applyRemoteFileEdits(edits, author);
+      useEditorStore.getState().applyRemoteFileEdits(edits, author, bulk);
     }
   });
 }
@@ -258,7 +281,17 @@ export function handleYjsMessage(msg) {
     case 'update':
     case 'sync-state': {
       if (!msg.payload) return;
-      Y.applyUpdate(doc, fromB64(msg.payload), { remote: true, userId: msg.senderId });
+      /* Arriving is not authoring.
+       *
+       * `sync-state` is the entire project handed to somebody who has just
+       * joined, and a `bulk` update is a file being seeded for the first time.
+       * Both land as one large remote transaction, which the attribution layer
+       * would otherwise read as the sender having typed every line of every
+       * file — so joining a session made whoever answered the sync look like
+       * the author of the whole project, and offered to "undo" it. */
+      if (msg.kind === 'sync-state') syncReceived = true;
+      const bulk = msg.kind === 'sync-state' || Boolean(msg.bulk);
+      Y.applyUpdate(doc, fromB64(msg.payload), { remote: true, userId: msg.senderId, bulk });
       break;
     }
     case 'sync-request': {
@@ -299,10 +332,29 @@ export function maybeSeed(path) {
   const others = (state.connectedUsers || []).length;
   if (others <= 1) {
     doSeed(); // we're effectively alone — safe to seed immediately (no flash)
-  } else {
-    // Give peers a moment to answer our sync-request before deciding it's empty.
-    setTimeout(doSeed, 700);
+    return;
   }
+
+  /* Somebody else is here, so this document may already hold the file. Wait for
+   * the fact rather than for a duration: poll until a peer's state has actually
+   * merged, then seed only if the text is still empty afterwards.
+   *
+   * The owner goes first. If two clients both hold the file and both find the
+   * document empty, both would seed and the merge would double it again — so
+   * the host claims the right to seed, and everyone else allows an extra beat
+   * for that to land. A tie is impossible when only one player may move first.
+   */
+  const isOwner = state.userRole === 'owner';
+  const graceMs = isOwner ? 0 : 1500;
+  const deadline = Date.now() + 8000;
+
+  const attempt = () => {
+    if (ytext.length > 0) { seededPaths.add(path); return; }   // someone got there
+    if (syncReceived) { setTimeout(doSeed, graceMs); return; } // we know it is empty
+    if (Date.now() > deadline) { doSeed(); return; }           // no peer ever answered
+    setTimeout(attempt, 250);
+  };
+  attempt();
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -400,8 +452,15 @@ export function createBinding(ytext, model, monaco, { path, onLocalChange, onRem
 
     const text = ytext.toString();
     const remoteUid = transaction.origin && transaction.origin.remote ? transaction.origin.userId : null;
+    /* Seeding is this client pushing already-existing content into an empty
+       shared document — an upload, or a file opened for the first time. It runs
+       as a local transaction, so without this flag the attribution layer reads
+       it as the local user having typed the entire file, and a freshly uploaded
+       project shows its opener as the author of every line in it. maybeSeed
+       tags the transaction; this is where that tag has to be honoured. */
+    const seed = Boolean(transaction.origin && transaction.origin.seed);
     if (remoteUid) onRemoteChange?.(path, text, remoteUid);
-    else onLocalChange?.(path, text); // e.g. seed applied locally
+    else onLocalChange?.(path, text, { seed });
   };
   ytext.observe(yObserver);
 

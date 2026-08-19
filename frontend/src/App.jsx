@@ -14,8 +14,9 @@ import { connectWebSocket, disconnectWebSocket } from './services/socket';
 import { buildCollabCallbacks, reconnectOnConnected } from './services/collabCallbacks';
 import { saveFile, getSession, touchSession, leaveSession } from './services/api';
 import { setOrigin, buildJoinCode } from './services/backendHost';
+import { publishSession } from './services/rendezvous';
 import MigrateWorkspaceModal from './components/Editor/MigrateWorkspaceModal';
-import causifyLogo from './assets/causify-logo.png';
+import causifyLogo from './assets/causify-mark.png';
 
 // Module-level so React StrictMode's double-mount can't run the bootstrap twice
 let sessionRehydrateAttempted = false;
@@ -176,6 +177,10 @@ const App = () => {
       if (store.sessionId) {
         store.setJoinCode(buildJoinCode(store.sessionId, url));
         store.setJoinCodeStale(true);
+        // The address on every invite already sent is now wrong, and this is
+        // the only place that knows the right one. Republishing under the same
+        // session id repairs those invites for anyone who looks the code up.
+        publishSession(store.sessionId, url);
       }
       console.warn('[Causify] Tunnel address changed — the previous invite link is dead.');
     });
@@ -183,14 +188,9 @@ const App = () => {
     return unsubscribe;
   }, []);
 
-  /* ── Session Rewind sampling ──
-   * One timer for the whole app. Checkpoints are taken here rather than at each
-   * place a file can change, so no existing edit path had to be touched. */
-  useEffect(() => {
-    const store = useEditorStore.getState();
-    store.startRewindSampler();
-    return () => useEditorStore.getState().stopRewindSampler();
-  }, []);
+  /* Rewind used to sample on a 15s timer from here. It does not any more:
+     checkpoints are saved when the owner decides to save one, so there is
+     nothing for the app to do in the background. See captureCheckpoint. */
 
   // ── Deep-link navigation handler (Electron causify:// protocol) ──
   useEffect(() => {

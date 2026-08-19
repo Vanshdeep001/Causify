@@ -6,6 +6,7 @@
  */
 package com.debugsync.websocket;
 
+import com.debugsync.service.AdmissionService;
 import com.debugsync.service.CollaborationService;
 import com.debugsync.service.WhiteboardService;
 import org.slf4j.Logger;
@@ -23,11 +24,13 @@ public class CollaborationHandler {
     private final CollaborationService collaborationService;
     private final SimpMessagingTemplate messagingTemplate;
     private final WhiteboardService whiteboardService;
+    private final AdmissionService admissionService;
 
-    public CollaborationHandler(CollaborationService collaborationService, SimpMessagingTemplate messagingTemplate, WhiteboardService whiteboardService) {
+    public CollaborationHandler(CollaborationService collaborationService, SimpMessagingTemplate messagingTemplate, WhiteboardService whiteboardService, AdmissionService admissionService) {
         this.collaborationService = collaborationService;
         this.messagingTemplate = messagingTemplate;
         this.whiteboardService = whiteboardService;
+        this.admissionService = admissionService;
     }
 
     @MessageMapping("/session/{sessionId}/code")
@@ -63,6 +66,14 @@ public class CollaborationHandler {
     public void handleFileDelete(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
         log.info("File deleted in session {}: {}", sessionId, payload.get("path"));
         messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/file-delete", payload);
+
+        // A lock on a path that no longer exists has no way to be lifted, and
+        // would silently re-freeze the file if the path were ever recreated.
+        Object path = payload.get("path");
+        if (path != null) {
+            collaborationService.clearFileLock(sessionId, String.valueOf(path));
+            broadcastLocks(sessionId, collaborationService.getFileLocks(sessionId));
+        }
     }
 
     /**
@@ -91,6 +102,17 @@ public class CollaborationHandler {
         Map<String, Object> response = new HashMap<>();
         response.put("users", users);
         messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/users", response);
+
+        // Whoever just arrived has no idea which files are frozen. Re-broadcast
+        // the lock map on every join: the newcomer gets the current state, and
+        // everyone else harmlessly re-applies what they already have.
+        broadcastLocks(sessionId, collaborationService.getFileLocks(sessionId));
+
+        // Same for the lobby: an owner who just reconnected needs to be told
+        // that somebody is still standing outside.
+        Map<String, Object> lobby = new HashMap<>();
+        lobby.put("pending", admissionService.pendingFor(sessionId));
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/admission", lobby);
     }
 
     @MessageMapping("/session/{sessionId}/cursor")
@@ -123,6 +145,66 @@ public class CollaborationHandler {
         Map<String, Object> response = new HashMap<>();
         response.put("users", users);
         messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/users", response);
+    }
+
+    /**
+     * A checkpoint the owner asked for. Pure relay.
+     *
+     * Only metadata crosses the wire — label, author, run verdict, credit list.
+     * Every client holds the same project already, so each captures its own copy
+     * of the files locally; broadcasting them would put a full duplicate of the
+     * project on the wire once per participant, per save.
+     */
+    @MessageMapping("/session/{sessionId}/checkpoint")
+    public void handleCheckpoint(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
+        log.info("Checkpoint saved in session {} by {}", sessionId, payload.get("by"));
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/checkpoint", payload);
+    }
+
+    /**
+     * Owner-controlled file lock. The owner sends { path, locked, userId, username }
+     * and every client receives the session's complete lock map back.
+     *
+     * Like the permission handler above, this trusts the sender: the socket
+     * carries no identity the server can check, so "only the owner may lock" is
+     * enforced where the button lives. The server's job here is to be the one
+     * copy of the truth that survives a refresh, not a bouncer.
+     */
+    @MessageMapping("/session/{sessionId}/lock")
+    public void handleFileLock(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
+        String path = String.valueOf(payload.get("path"));
+        boolean locked = Boolean.TRUE.equals(payload.get("locked"));
+        String userId = payload.get("userId") != null ? String.valueOf(payload.get("userId")) : null;
+        String username = payload.get("username") != null ? String.valueOf(payload.get("username")) : null;
+
+        broadcastLocks(sessionId, collaborationService.setFileLock(sessionId, path, locked, userId, username));
+    }
+
+    /**
+     * The owner's answer to someone waiting in the lobby:
+     * { requestId, decision: "admit" | "deny" }.
+     *
+     * The waiting client is not in this session's topics yet — that is the whole
+     * point — so it learns the outcome by polling /session/{id}/knock/{req}.
+     * What goes out here is the refreshed pending list, which is what the
+     * owner's own list is drawn from.
+     */
+    @MessageMapping("/session/{sessionId}/admission")
+    public void handleAdmission(@DestinationVariable String sessionId, @Payload Map<String, Object> payload) {
+        String requestId = payload.get("requestId") != null ? String.valueOf(payload.get("requestId")) : null;
+        boolean admit = "admit".equals(payload.get("decision"));
+
+        admissionService.decide(requestId, admit);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("pending", admissionService.pendingFor(sessionId));
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/admission", response);
+    }
+
+    private void broadcastLocks(String sessionId, Map<String, Map<String, String>> locks) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("locks", locks);
+        messagingTemplate.convertAndSend("/topic/session/" + sessionId + "/locks", response);
     }
 
     @MessageMapping("/session/{sessionId}/whiteboard")

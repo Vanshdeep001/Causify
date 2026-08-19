@@ -37,12 +37,16 @@ api.interceptors.request.use((config) => {
 //   LONG  — git push/pull/commit and code execution
 //   AI    — LLM round-trips (root-cause, key verification)
 /* AGENT is deliberately the longest. The auto-fix agent makes up to three
- * propose → patch → execute cycles in one request, each capped at 90s for the
- * model plus 10s for the run, so its true ceiling is ~300s. At the 120s AI
- * deadline a slow multi-attempt run was being aborted by the client while the
- * backend was still working — the user saw a network error and every attempt
- * already made was thrown away. */
-const TIMEOUT = { HEAVY: 300000, LONG: 120000, AI: 120000, AGENT: 310000 };
+ * propose → patch → verify cycles in one request, each capped at 90s for the
+ * model. At the 120s AI deadline a slow multi-attempt run was being aborted by
+ * the client while the backend was still working — the user saw a network error
+ * and every attempt already made was thrown away.
+ *
+ * Verifying costs more since project mode arrived: a single-file run is capped
+ * at 10s, but proving a project fix restarts the dev server and waits for it to
+ * boot (up to ~28s an attempt). Three attempts of model + restart is ~355s, so
+ * the ceiling is raised to clear that with room rather than sit just under it. */
+const TIMEOUT = { HEAVY: 300000, LONG: 120000, AI: 120000, AGENT: 420000 };
 
 // If the local database becomes unusable, every request fails and Axios reports
 // only its generic "Request failed with status code 500", which tells the user
@@ -67,8 +71,29 @@ export const createSession = async (name, username, password) => {
   return response.data;
 };
 
-export const joinSession = async (id, password, username) => {
-  const response = await api.post('/session/join', { id, password, username });
+/* Knock, wait, then join.
+ *
+ * The password alone no longer opens the door — it earns a place in the queue.
+ * knockSession returns a requestId and nothing else; joinSession will not hand
+ * back files or a token until that request has been admitted by the owner. */
+export const knockSession = async (id, password, username) => {
+  const response = await api.post('/session/knock', { id, password, username });
+  return response.data;
+};
+
+// 'pending' | 'admitted' | 'denied' | 'expired'
+export const getAdmissionStatus = async (id, requestId) => {
+  const response = await api.get(`/session/${id}/knock/${requestId}`);
+  return response.data;
+};
+
+export const cancelKnock = async (id, requestId) => {
+  const response = await api.post('/session/knock/cancel', { id, requestId });
+  return response.data;
+};
+
+export const joinSession = async (id, password, username, requestId) => {
+  const response = await api.post('/session/join', { id, password, username, requestId });
   return response.data;
 };
 

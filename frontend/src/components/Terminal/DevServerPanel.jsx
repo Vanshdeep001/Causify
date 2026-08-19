@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import useEditorStore from '../../store/useEditorStore';
-import causifyLogo from '../../assets/causify-logo.png';
+import causifyLogo from '../../assets/causify-mark.png';
 import {
   detectProject,
   startDevServer,

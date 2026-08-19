@@ -37,3 +37,8 @@ frontend/resources/backend/*.jar
 # frontend/scripts/fetch-cloudflared.js, not committed (~30MB each).
 frontend/resources/bin/*/cloudflared
 frontend/resources/bin/*/cloudflared.exe
+
+# Bundled Java runtime — built at build time by
+# frontend/scripts/fetch-jre.js (~70MB, and platform-specific, so it would be
+# wrong in the repo as often as it was right).
+frontend/resources/jre/

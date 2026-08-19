@@ -18,7 +18,7 @@ import { persist } from 'zustand/middleware';
 import { executeCode, createSnapshot, getTimeline, getDeployments, requestAutoFix as fetchAutoFix, createSession, uploadProject } from '../services/api';
 import { analyzeImpact, summarizeImpacts } from '../utils/impactAnalyzer';
 import { clearSymbolCache } from '../utils/impact/symbols';
-import { sendCodeChange, sendRevert, sendFollowStart, sendFollowStop } from '../services/socket';
+import { sendCodeChange, sendRevert, sendFollowStart, sendFollowStop, sendCheckpoint } from '../services/socket';
 import { replaceFileText } from '../services/collabDoc';
 import { resetOrigin, setSessionToken, clearSessionToken } from '../services/backendHost';
 
@@ -31,9 +31,75 @@ const CONNECTION_GRACE_MS = 15000;
  * project and the rest are deltas, so this bounds memory at roughly one project
  * plus the churn since — not one copy per checkpoint. At the sampling interval
  * below this is several hours of history, which covers a hackathon. */
+/* Written once here because a literal newline escape is easy to lose when this
+ * file is edited by tooling, and losing it silently corrupts stored history. */
+const NL = '\n';
+
+/* Depth counter, not a boolean: restoring walks many files and each one may
+ * take a different route into the store, so the guard has to survive nesting.
+ *
+ * A history operation rewrites files wholesale. Attributing that to whoever
+ * pressed the button turns every rewind into "you changed 58 lines", which the
+ * panel then offers to undo — history editing itself into the history. */
+let historyOps = 0;
+const asHistoryOp = async (fn) => {
+  historyOps++;
+  try { return await fn(); } finally { historyOps--; }
+};
+
+/* Checkpoints are deliberate now, so the ceiling is about memory rather than
+ * about a timer outrunning it. 240 owner-pressed saves is a very long session. */
 const MAX_REWIND_POINTS = 240;
-const REWIND_SAMPLE_MS = 15000;
-let rewindSampler = null;
+/* Per author, per checkpoint. Enough to see what happened without turning a
+   summary into a diff viewer, and without putting an unbounded payload on the
+   wire for every participant. */
+const MAX_CREDIT_EDITS = 12;
+
+/**
+ * The credit list a checkpoint carries, in one known shape.
+ *
+ * changesSince already flattens each author's file Map into an array of
+ * { path, count } before returning — spreading .entries() over that array a
+ * second time yielded [index, value] pairs, so every path became the number 0,
+ * 1, 2 and the panel died on path.split(). Converted in exactly one place now.
+ *
+ * It also runs over data arriving from another participant's client, which may
+ * be a different build of the app. Nothing here trusts the sender: a malformed
+ * credit is dropped rather than allowed to throw inside a render, because a
+ * crash in the rewind panel takes the whole editor down with it.
+ */
+const normalizeCredits = (list) => {
+  if (!Array.isArray(list)) return [];
+  return list.map((c) => ({
+    userId: String(c?.userId ?? ''),
+    username: String(c?.username ?? 'Someone'),
+    color: typeof c?.color === 'string' ? c.color : '#FFFFFF',
+    lines: Number(c?.lines) || 0,
+    files: Array.isArray(c?.files)
+      ? c.files
+        .filter((f) => f && typeof f.path === 'string')
+        // changesSince calls it `count`; a checkpoint calls it `lines`.
+        .map((f) => ({ path: f.path, lines: Number(f.lines ?? f.count) || 0 }))
+      : [],
+    /* The lines themselves, capped. "64 lines in app.js" is a number nobody can
+     * check; "app.js:42  totalPrice -> total" is a fact someone can agree or
+     * disagree with. Capped because a checkpoint is a summary, and because this
+     * crosses the wire to every participant. */
+    edits: Array.isArray(c?.edits)
+      ? c.edits
+        .filter((e) => e && typeof e.path === 'string')
+        .slice(0, MAX_CREDIT_EDITS)
+        .map((e) => ({
+          kind: e.kind === 'added' || e.kind === 'removed' ? e.kind : 'modified',
+          path: e.path,
+          line: Number(e.line) || 0,
+          oldLine: typeof e.oldLine === 'string' ? e.oldLine.slice(0, 200) : '',
+          newLine: typeof e.newLine === 'string' ? e.newLine.slice(0, 200) : '',
+          removedText: typeof e.removedText === 'string' ? e.removedText.slice(0, 400) : '',
+        }))
+      : [],
+  }));
+};
 let connectionLostTimer = null;
 
 const parseExecutionGraph = (code, language) => {
@@ -243,6 +309,26 @@ const useEditorStore = create(persist((set, get) => ({
   remoteCursors: {},        // { [userId]: { line, column, path, username, color } }
   changeNotifications: [],  // [ { id, username, path, linesChanged, timestamp, color } ]
   remoteLineChanges: {},    // { [path]: { [lineNumber]: { userId, username, color, timestamp, oldLine, newLine } } }
+  /* Deletions cannot live in remoteLineChanges: that map is keyed by a line in
+   * the CURRENT file, and a deleted line has no such key. So removing the
+   * <script> tag from index.html produced no record anywhere — it was invisible
+   * to the gutter, uncounted by "changed since", and impossible to revert.
+   * Anchored instead to the line that closed over the gap. */
+  remoteLineDeletions: {}, // { [path]: [{ id, anchor, anchorAfter, removedText, userId, username, color, timestamp }] }
+
+  /* Files the owner has frozen: { [path]: { by, byId, at } }.
+   *
+   * Distinct from the per-user `permission` flag, which is about a person —
+   * "you may not write anywhere". This is about a file: everyone else keeps
+   * full access to the project and loses exactly one file, which is what you
+   * want when the schema or the config is mid-surgery and the rest of the team
+   * should carry on. Server-held, so it survives a refresh; see
+   * CollaborationService.sessionLocks. */
+  lockedFiles: {},
+
+  /* People waiting at the door: [{ requestId, username, createdAt }].
+   * Broadcast to the whole session, rendered only for the owner. */
+  pendingAdmissions: [],
 
   // ---- Editor State ----
   files: {},                // Map of { path: content }
@@ -271,6 +357,7 @@ const useEditorStore = create(persist((set, get) => ({
   // ---- Execution State ----
   output: '',               // Stdout from last execution
   error: '',                // Stderr from last execution
+  missingTool: null,        // 'gcc' | 'g++' | 'python' | 'node' — toolchain the last run needed and could not find
   isRunning: false,         // Whether code is currently executing
   executionHistory: [],     // History of all executions
 
@@ -297,10 +384,21 @@ const useEditorStore = create(persist((set, get) => ({
    * full copy per checkpoint would have grown without limit — a few hundred
    * copies of a real project is hundreds of megabytes.
    *
-   * Each entry: { id, at, files: { path: content | null }, run: 'ok'|'fail'|null }
-   * A null content means the file did not exist at that point.
+   * Each entry:
+   *   { id, at, files: { path: content | null }, run: 'ok'|'fail'|null,
+   *     kind: 'manual'|'auto', label, by: { id, username, color },
+   *     credits: [{ userId, username, color, lines, files: [{ path, lines }] }] }
+   *
+   * A null content means the file did not exist at that point. `kind` separates
+   * the checkpoints the owner asked for from the protective ones taken before a
+   * revert or restore. `credits` is the account of who changed what since the
+   * previous checkpoint, frozen at capture time — attribution keeps moving, and
+   * a record of a moment has to stop moving with it.
    */
   rewindLog: [],
+  /* Verdict of the most recent run, waiting to be stamped onto the next
+     checkpoint. Not history in itself. */
+  lastRunStatus: null,
   rewindOpen: false,
   rewindIndex: null,     // which checkpoint is being previewed
   rewindBusy: false,
@@ -349,6 +447,28 @@ const useEditorStore = create(persist((set, get) => ({
    * } */
   autoFix: null,
   autoFixState: 'idle',   // 'idle' | 'working' | 'ready' | 'failed'
+
+  /* ── Mario ──
+   *
+   * The agent used to live inside the terminal's output panel, which only
+   * exists after a run — so the one thing that can repair a project was
+   * unreachable until something had already been run and failed. He is a
+   * floating companion now: summoned from the header, dragged wherever he is
+   * least in the way, and available whether or not anything has run.
+   *
+   * The position is remembered because it is a physical preference, like where
+   * you leave a tool on a desk; resetting it every launch would be a small
+   * daily annoyance. It is clamped back into view on mount, so a window that
+   * shrinks since last time cannot strand him off-screen.
+   */
+  marioOpen: false,
+  marioPos: null,          // { x, y } from the top-left; null = the default corner
+  marioCollapsed: false,   // collapsed shows just the sprite
+
+  setMarioOpen: (marioOpen) => set({ marioOpen }),
+  toggleMario: () => set((s) => ({ marioOpen: !s.marioOpen, marioCollapsed: false })),
+  setMarioPos: (marioPos) => set({ marioPos }),
+  toggleMarioCollapsed: () => set((s) => ({ marioCollapsed: !s.marioCollapsed })),
 
   // ---- Causality Graph State ----
   causalityGraph: null,
@@ -569,6 +689,10 @@ const useEditorStore = create(persist((set, get) => ({
         remoteCursors: {},
         filePresence: {},
         remoteLineChanges: {},
+        remoteLineDeletions: {},
+        // A brand new session inherits nothing, locks and lobby included.
+        lockedFiles: {},
+        pendingAdmissions: [],
         connectionState: 'connected',
         joinCodeStale: false,
       });
@@ -617,6 +741,22 @@ const useEditorStore = create(persist((set, get) => ({
       },
     },
   })),
+
+  setLockedFiles: (locks) => set({ lockedFiles: locks || {} }),
+
+  setPendingAdmissions: (pending) => set({ pendingAdmissions: pending || [] }),
+
+  /* Is this file closed to me right now?
+   *
+   * The owner is never locked out — the lock is theirs, and a control you
+   * cannot escape from your own side is a trap rather than a tool. Outside a
+   * session there is nobody to lock anything, so a local folder is unaffected.
+   */
+  isPathLockedForMe: (path) => {
+    const { sessionId, userRole, lockedFiles } = get();
+    if (!sessionId || !path || userRole === 'owner') return false;
+    return Boolean(lockedFiles[path]);
+  },
 
   // Can the current user edit? Owner always can; collaborators can unless the
   // owner set them to "viewer". Absent permission defaults to editable.
@@ -683,6 +823,14 @@ const useEditorStore = create(persist((set, get) => ({
       code: firstContent,
       language,
       savedContents: savedMap,
+      /* A project arriving is a new baseline: nobody has changed anything in it
+       * yet. These maps used to survive it, so records about files that were
+       * replaced — or about an entirely different project opened earlier in the
+       * same window — were still sitting here when the first checkpoint asked
+       * "what has changed?". That is how uploading a folder produced a
+       * checkpoint crediting somebody with deleting a file they never saw. */
+      remoteLineChanges: {},
+      remoteLineDeletions: {},
       output: '',
       error: '',
       rootCause: null,
@@ -838,6 +986,7 @@ const useEditorStore = create(persist((set, get) => ({
       // Attribution from a session that was open beforehand would otherwise
       // linger in this folder's gutter, pointing at lines it never described.
       remoteLineChanges: {},
+      remoteLineDeletions: {},
       // Cleared here and repopulated below if this folder has been opened before.
       snapshots: [],
       currentSnapshotIndex: -1,
@@ -1145,9 +1294,38 @@ const useEditorStore = create(persist((set, get) => ({
      * and both callers (local typing via setCode, collaborators via
      * updateRemoteFile) behave exactly as before inside one. */
     if (!get().sessionId) return;
+    // Restoring, reverting and undoing are not authorship — see asHistoryOp.
+    if (historyOps > 0) return;
 
-    const oldLines = (oldContent || '').split('\n');
-    const newLines = (newContent || '').split('\n');
+    /* A file appearing or blanking wholesale is the editor, not a person.
+     *
+     * Opening a file binds an empty CRDT document, mirrors it into the store,
+     * then fills it — so the store briefly goes "whole file" -> "" -> "whole
+     * file". Recorded literally, that is a deletion of every line followed by
+     * an addition of every line, credited to whoever opened it. It is why a
+     * checkpoint taken straight after an upload listed the two files somebody
+     * had merely clicked on.
+     *
+     * The trade is deliberate and worth stating: a human who really does select
+     * all and delete a file's contents is not credited either. That is rare, it
+     * is undoable in the editor, and the file still changes for everyone — an
+     * occasional missing record is a far smaller lie than routinely inventing
+     * one for every file anybody opens. */
+    const before = String(oldContent || '');
+    const after = String(newContent || '');
+    if (before.trim() === '' || after.trim() === '') return;
+
+    /* Line endings are not edits.
+     *
+     * A project uploaded from a Windows disk arrives with CRLF; Monaco
+     * normalises its model to LF. Splitting on \n alone left a stray \r on every
+     * line of the stored copy, so the first comparison found all of them
+     * different and credited whoever opened the file with authoring the whole
+     * thing — text that looked identical on screen, because the difference was
+     * an invisible character. Nobody typed a line ending; it is not a fact about
+     * a person and must not be recorded as one. */
+    const oldLines = String(oldContent || '').replace(/\r\n/g, '\n').split('\n');
+    const newLines = String(newContent || '').replace(/\r\n/g, '\n').split('\n');
     const now = Date.now();
     const existingPathChanges = { ...(get().remoteLineChanges[path] || {}) };
 
@@ -1167,21 +1345,39 @@ const useEditorStore = create(persist((set, get) => ({
     for (let i = top; i <= bottomNew; i++) {
       const lineNum = i + 1;
       const prevRecord = existingPathChanges[lineNum];
-      const sameUser = prevRecord && prevRecord.userId === (userId || 'local');
 
-      // Preserve initial baseline oldLine if same user is continuing to edit this line
       const rawOldLine = i <= bottomOld ? oldLines[i] : undefined;
-      const initialOldLine = sameUser ? prevRecord.oldLine : (rawOldLine ?? '(line added)');
       const newLineVal = newLines[i] ?? '';
 
-      // Determine change type relative to original baseline line
-      let changeType = sameUser ? prevRecord.type : (rawOldLine === undefined ? 'added' : (i > bottomOld ? 'added' : 'modified'));
-      if (!sameUser && (rawOldLine === '' || rawOldLine === undefined)) {
-        changeType = 'added';
-      }
+      /* The baseline is what this line held before ANYONE started on it, and it
+       * is carried across authors rather than only across repeat edits by the
+       * same one. Without that, person B putting person A's line back reads as
+       * a fresh change BY B — from A's text to the original — so undoing work
+       * left a record behind under a different name, and the panel went on
+       * reporting changes that no longer existed. It also means a revert
+       * returns the line to how it really started, not to an intermediate
+       * state somebody else passed through. */
+      const initialOldLine = prevRecord ? prevRecord.oldLine : (rawOldLine ?? '(line added)');
 
-      // If user reverted/cleared the line back to its original baseline content, clear change record
-      if (sameUser && (newLineVal === initialOldLine || (initialOldLine === '(line added)' && newLineVal === ''))) {
+      /* Identical on both sides: this line sits inside the changed region but
+       * was not touched by the edit. [top, bottomNew] spans the FIRST to the
+       * LAST differing line, so editing the top of a file and the bottom of it
+       * swept every untouched line between them into the record — producing
+       * entries whose "was" and "is" were the same text, and inflating one
+       * small edit into a claim on most of the file. */
+      if (rawOldLine === newLineVal && !prevRecord) continue;
+
+      // The type belongs to the baseline too: a line someone else added and
+      // this person then edited is still, against the baseline, an addition.
+      let changeType;
+      if (prevRecord) changeType = prevRecord.type;
+      else if (rawOldLine === undefined || rawOldLine === '' || i > bottomOld) changeType = 'added';
+      else changeType = 'modified';
+
+      /* Back to what it was, so there is nothing left to attribute or revert.
+       * This used to require the same author, so a change and its undo arriving
+       * under different identities left the record standing for good. */
+      if (newLineVal === initialOldLine || (initialOldLine === '(line added)' && newLineVal === '')) {
         delete existingPathChanges[lineNum];
         continue;
       }
@@ -1197,24 +1393,82 @@ const useEditorStore = create(persist((set, get) => ({
       };
     }
 
-    // Cleanup logic for stale line numbers beyond current file length
+    /* Every record claims "line N currently holds newLine". Inserting or
+     * deleting a line shifts everything below it, so records left pointing at
+     * text that has moved are simply wrong: they still count toward the totals
+     * and fill the panel, yet both revert paths refuse them — they check this
+     * very condition before touching anything. Dropped here, so the number the
+     * panel reports is the number of changes it can actually act on. */
     Object.keys(existingPathChanges).forEach((ln) => {
-      if (parseInt(ln, 10) > newLines.length) {
+      const n = parseInt(ln, 10);
+      const rec = existingPathChanges[ln];
+      /* `oldLine === newLine` is a record of nothing having happened. It passes
+       * the check above — its newLine does match the file — so it survived every
+       * sweep and went on being counted. */
+      const noop = rec.oldLine === rec.newLine;
+      if (n > newLines.length || rec.newLine !== newLines[n - 1] || noop) {
         delete existingPathChanges[ln];
       }
     });
 
+    /* ── Deletions ──
+     *
+     * The loop above walks [top, bottomNew] — a range in the NEW file — so a
+     * line that no longer exists is never visited. Deleting one `<script>` tag
+     * therefore produced no record of any kind, and "who changed what" reported
+     * nothing at all for the edit most likely to have broken the page.
+     *
+     * The removed text is kept whole and anchored to the line that closed over
+     * the gap, which is what a revert needs: put these lines back, here.
+     */
+    const oldCount = bottomOld - top + 1;
+    const newCount = Math.max(0, bottomNew - top + 1);
+    let deletions = get().remoteLineDeletions[path] || [];
+
+    if (oldCount > newCount) {
+      const cutFrom = top + newCount;
+      const removed = oldLines.slice(cutFrom, bottomOld + 1);
+
+      // A trailing newline reads as one empty line vanishing. Not worth a card.
+      if (removed.some((l) => l.trim() !== '')) {
+        deletions = [...deletions, {
+          id: `del-${now}-${Math.random().toString(36).slice(2, 7)}`,
+          anchor: cutFrom + 1,                       // 1-based line it collapsed onto
+          anchorAfter: newLines[cutFrom] ?? null,    // what sits there now (null = EOF)
+          removedText: removed.join(NL),
+          userId: userId || 'local',
+          username: username || 'You',
+          color: color || '#FFB224',
+          timestamp: now,
+        }];
+      }
+    }
+
     set((s) => ({
-      remoteLineChanges: { ...s.remoteLineChanges, [path]: existingPathChanges }
+      remoteLineChanges: { ...s.remoteLineChanges, [path]: existingPathChanges },
+      remoteLineDeletions: { ...s.remoteLineDeletions, [path]: deletions },
     }));
   },
 
-  setCode: (code, remote = false) => {
+  /* @param opts.attribute  false when the text arrived rather than being
+   *   written — a CRDT seed, or mirroring the shared document into the store
+   *   after binding. The content is still stored and still persisted; it simply
+   *   has no author. Recording it as one is what made an uploaded project look
+   *   like it had been typed, line by line, by whoever opened it first. */
+  setCode: (code, opts = {}) => {
+    const attribute = opts.attribute !== false;
     const { activePath, language, isReplaying, files, currentUser } = get();
     if (isReplaying || !activePath) return;
 
+    /* The read-only editor stops typing, but not every write comes from a
+     * keystroke. Everything a collaborator can do to a file funnels through
+     * here, so this is the one place that has to hold. Remote edits arrive via
+     * updateRemoteFile and are unaffected — the owner can still work in the
+     * file they locked, and everyone still sees it. */
+    if (get().isPathLockedForMe(activePath)) return;
+
     const oldContent = files[activePath] || '';
-    if (oldContent !== code) {
+    if (attribute && oldContent !== code) {
       get().recordLineDiff(
         activePath,
         oldContent,
@@ -1242,8 +1496,13 @@ const useEditorStore = create(persist((set, get) => ({
 
   setCollisionWarning: (warning) => set({ collisionWarning: warning }),
 
-  // Update a specific file from a remote event
-  updateRemoteFile: (path, content, userId) => {
+  // Update a specific file from a remote event.
+  //
+  // `bulk` marks content that ARRIVED rather than content someone typed: the
+  // project handed to a joiner, a file seeded into the shared doc for the first
+  // time, an upload. It still updates the file — it just does not make anyone
+  // its author.
+  updateRemoteFile: (path, content, userId, bulk = false) => {
     if (!userId) return; // Ignore own changes echoed back from socket to prevent typing glitch
 
     // A collaborator's edit has to reach this machine's disk too, or the folder
@@ -1255,7 +1514,7 @@ const useEditorStore = create(persist((set, get) => ({
     const newContent = content || '';
 
     // ── Compute line-level diff (Anchor-based search) ──
-    if (oldContent !== newContent) {
+    if (oldContent !== newContent && !bulk) {
       const user = connectedUsers.find((u) => u.id === userId);
       get().recordLineDiff(
         path,
@@ -1340,24 +1599,26 @@ const useEditorStore = create(persist((set, get) => ({
    * @param {{path: string, text: string}[]} edits
    * @param {string|null} userId author of the change
    */
-  applyRemoteFileEdits: (edits, userId) => {
+  applyRemoteFileEdits: (edits, userId, bulk = false) => {
     const { activePath } = get();
     edits.forEach(({ path, text }) => {
       // The open file is already mirrored by the binding's own observer;
       // repeating it here would raise a second impact warning for one change.
       if (path === activePath) return;
       if (get().files[path] === text) return;
-      get().updateRemoteFile(path, text, userId);
+      get().updateRemoteFile(path, text, userId, bulk);
     });
-    get().markRemoteTyping(userId);
+    if (!bulk) get().markRemoteTyping(userId);
   },
 
   // Clear remote line changes for a specific path
   clearRemoteLineChanges: (path) => {
     set((s) => {
       const updated = { ...s.remoteLineChanges };
+      const updatedDeletions = { ...s.remoteLineDeletions };
       delete updated[path];
-      return { remoteLineChanges: updated };
+      delete updatedDeletions[path];
+      return { remoteLineChanges: updated, remoteLineDeletions: updatedDeletions };
     });
   },
 
@@ -1568,13 +1829,19 @@ const useEditorStore = create(persist((set, get) => ({
 
   /* ── Session Rewind: capture ──
    *
-   * Sampled on a timer rather than wired into every place a file can change.
-   * There are a dozen such places — typing, a collaborator's edit, a new file,
-   * a delete, a disk write, an applied AI fix — and hooking each one would mean
-   * touching a dozen working code paths for a feature that only needs to know
-   * "did anything change since last time".
+   * A checkpoint is now something the owner decides, not something a clock
+   * decides. The timer version produced a history nobody had an opinion about:
+   * a hundred indistinguishable points fifteen seconds apart, none of which
+   * meant "this is the state that worked". Restoring meant guessing which
+   * anonymous moment you wanted.
+   *
+   * So the entries here are the ones somebody chose, each carrying what it was
+   * for and who had contributed since the last one. The only automatic captures
+   * left are protective: reverting, undoing a person's work and restoring all
+   * snapshot the present first, because otherwise those three would be the only
+   * operations in the app with no way back.
    */
-  captureRewindPoint: ({ run = null, force = false } = {}) => {
+  captureRewindPoint: ({ run = null, force = false, kind = 'auto', label = null, by = null, credits = null } = {}) => {
     const { files, rewindLog } = get();
 
     // Only real, loaded content. Local mode leaves unopened files as null, and
@@ -1593,6 +1860,10 @@ const useEditorStore = create(persist((set, get) => ({
           at: Date.now(),
           files: current,
           run,
+          kind,
+          label,
+          by,
+          credits,
         }],
       });
       return;
@@ -1616,6 +1887,10 @@ const useEditorStore = create(persist((set, get) => ({
       at: Date.now(),
       files: delta,
       run,
+      kind,
+      label,
+      by,
+      credits,
     }];
 
     /* Fold the oldest delta into the keyframe rather than dropping it, or the
@@ -1657,128 +1932,410 @@ const useEditorStore = create(persist((set, get) => ({
     return -1;
   },
 
-  /* Sampling runs only while the app is mounted, and is idempotent so React's
-   * double-mount in development cannot end up with two timers appending
-   * duplicate checkpoints. */
-  startRewindSampler: () => {
-    if (rewindSampler) return;
-    rewindSampler = setInterval(() => {
-      useEditorStore.getState().captureRewindPoint();
-    }, REWIND_SAMPLE_MS);
-  },
-
-  stopRewindSampler: () => {
-    clearInterval(rewindSampler);
-    rewindSampler = null;
-  },
-
-  /* ── Undo one person's changes ──
+  /* ── The owner saves the state ──
    *
-   * The thing git structurally cannot do. Git reverts commits, which bundle
-   * everyone's work together — you cannot take back what one person did to a
-   * file over the last twenty minutes while keeping what someone else did to
-   * the same file.
+   * One press, one point in the history, for everybody in the room.
    *
-   * Built on the line attribution that already exists for the gutter markers.
-   * Each record carries who changed the line and, crucially, `oldLine` — what
-   * it held before that person started on it — so reverting is a lookup rather
-   * than a reconstruction.
+   * The credit list is computed here rather than on each client so the whole
+   * session reads the same account of who did what — attribution is per-client
+   * bookkeeping, and two clients that joined at different times hold slightly
+   * different amounts of it. The owner's copy is the one that has seen the whole
+   * session, so the owner's copy is the record.
    *
-   * The alternative was Yjs's own UndoManager, which would have meant changing
-   * how the shared document is created (per-user origins, history kept forever
-   * rather than compacted). That is surgery on the one part of the app whose
-   * failure mode is silent divergence between collaborators, for the same
-   * user-facing result. This touches nothing shared until it writes.
+   * The file contents are NOT broadcast. Everyone already holds the same
+   * project — that is what the CRDT is for — so each client captures its own
+   * delta locally and only the metadata travels. A checkpoint of a large project
+   * would otherwise put a full copy of it on the wire for every participant.
    */
-  fileContributors: (path) => {
-    const changes = get().remoteLineChanges[path] || {};
+  captureCheckpoint: ({ label = '', run } = {}) => {
+    const { sessionId, currentUser, rewindLog, lastRunStatus } = get();
+
+    if (sessionId && !get().canRewind()) {
+      return { ok: false, reason: 'Only the session owner can save a checkpoint.' };
+    }
+    if (get().isReplaying) {
+      return { ok: false, reason: 'Exit replay mode before saving a checkpoint.' };
+    }
+
+    const since = rewindLog.length ? rewindLog[rewindLog.length - 1].at : 0;
+    const credits = normalizeCredits(get().changesSince(since));
+
+    const meta = {
+      at: Date.now(),
+      label: (label || '').trim().slice(0, 120) || null,
+      by: currentUser
+        ? { id: currentUser.id, username: currentUser.username, color: currentUser.color }
+        : null,
+      /* The verdict this point carries. The owner's own mark wins when they
+         made one — they know whether the state works, and may be flagging a
+         broken point deliberately so it can be found again. Absent a mark, the
+         last run's result stands in, which keeps "last working build"
+         answerable without anyone having to think about it. */
+      run: run !== undefined ? run : lastRunStatus,
+      credits,
+    };
+
+    get().captureRewindPoint({ ...meta, kind: 'manual', force: true });
+
+    if (sessionId) sendCheckpoint(sessionId, meta);
+
+    return { ok: true, at: meta.at };
+  },
+
+  /* The same checkpoint, on everyone else's screen. Their own files, the
+   * owner's account of who changed them. */
+  applyRemoteCheckpoint: (meta) => {
+    if (!meta) return;
+    get().captureRewindPoint({
+      kind: 'manual',
+      force: true,
+      label: meta.label || null,
+      by: meta.by || null,
+      run: meta.run || null,
+      // Sanitised at the boundary: this arrived over the network from a client
+      // whose version we do not control.
+      credits: normalizeCredits(meta.credits),
+    });
+  },
+
+  /* ── Who changed what, since a point in time ──
+   *
+   * The question worth answering is not "who has touched this file" — it is
+   * "the build was fine at 12:52, so what has happened since?". Anchoring to a
+   * checkpoint turns a vague list of contributors into a short, reviewable set
+   * of suspects, and makes reverting a decision rather than a guess.
+   *
+   * Built on the line attribution that already drives the gutter markers: each
+   * record carries its author, its timestamp, and `oldLine` — what the line
+   * held before that person started on it — so a revert is a lookup.
+   */
+  changesSince: (since) => {
+    const { remoteLineChanges, remoteLineDeletions } = get();
     const byUser = new Map();
 
-    Object.values(changes).forEach((rec) => {
+    const bucket = (rec) => {
       const entry = byUser.get(rec.userId) || {
         userId: rec.userId,
         username: rec.username,
         color: rec.color,
         lines: 0,
         latest: 0,
+        files: new Map(),
+        edits: [],
       };
-      entry.lines += 1;
-      entry.latest = Math.max(entry.latest, rec.timestamp || 0);
       byUser.set(rec.userId, entry);
+      return entry;
+    };
+
+    Object.entries(remoteLineChanges).forEach(([path, lines]) => {
+      Object.entries(lines).forEach(([lineNo, rec]) => {
+        if ((rec.timestamp || 0) < since) return;
+        // Says the line went from X to X. Nothing changed, nothing to revert.
+        if (rec.oldLine === rec.newLine) return;
+        const entry = bucket(rec);
+        entry.lines += 1;
+        entry.latest = Math.max(entry.latest, rec.timestamp || 0);
+        entry.files.set(path, (entry.files.get(path) || 0) + 1);
+        /* The edit itself travels with the summary. Answering "who changed
+         * something" and then making you go hunting for WHAT they changed is
+         * half an answer — and the half that matters least. */
+        entry.edits.push({
+          kind: rec.type === 'added' || rec.oldLine === '(line added)' ? 'added' : 'modified',
+          path,
+          line: Number(lineNo),
+          oldLine: rec.oldLine,
+          newLine: rec.newLine,
+          timestamp: rec.timestamp || 0,
+        });
+      });
     });
 
-    return [...byUser.values()].sort((a, b) => b.latest - a.latest);
+    Object.entries(remoteLineDeletions).forEach(([path, dels]) => {
+      (dels || []).forEach((rec) => {
+        if ((rec.timestamp || 0) < since) return;
+        const entry = bucket(rec);
+        const count = rec.removedText.split(NL).length;
+        entry.lines += count;
+        entry.latest = Math.max(entry.latest, rec.timestamp || 0);
+        entry.files.set(path, (entry.files.get(path) || 0) + count);
+        entry.edits.push({
+          kind: 'removed',
+          path,
+          id: rec.id,
+          line: rec.anchor,
+          removedText: rec.removedText,
+          count,
+          timestamp: rec.timestamp || 0,
+        });
+      });
+    });
+
+    return [...byUser.values()]
+      .map((u) => ({
+        ...u,
+        files: [...u.files.entries()]
+          .map(([path, count]) => ({ path, count }))
+          .sort((a, b) => b.count - a.count),
+        // Newest first: the change most likely to have broken things is the
+        // one that just happened.
+        edits: u.edits.sort((a, b) => b.timestamp - a.timestamp),
+      }))
+      .sort((a, b) => b.lines - a.lines);
   },
 
-  undoUserChanges: async (path, userId) => {
-    const { remoteLineChanges, files, isReplaying } = get();
-    if (isReplaying) return { ok: false, reason: 'Exit replay mode first.' };
+  /* ── Permission to change history ──
+   *
+   * Rewinding rewrites every participant's files at once, so it is the session
+   * owner's call and nobody else's. Collaborators keep the whole panel: they
+   * can scrub, preview any past moment, and read exactly who changed what.
+   * They simply cannot make it happen — which is the difference between a
+   * shared history and a shared undo button.
+   *
+   * Outside a session there is no one to ask, so local work is never blocked.
+   */
+  canRewind: () => {
+    const { sessionId, userRole } = get();
+    if (!sessionId) return true;
+    return userRole === 'owner';
+  },
 
-    const content = files[path];
-    if (typeof content !== 'string') {
-      return { ok: false, reason: 'That file is not loaded.' };
+  /* ── Revert exactly one change ──
+   *
+   * The missing rung on the ladder. Restoring a checkpoint takes back the whole
+   * project and undoing a person takes back everything they did — but the thing
+   * that actually happens is "someone deleted the script tag and the page went
+   * blank", and neither of those is the right size for it.
+   */
+  revertEdit: async (edit) => asHistoryOp(async () => {
+    if (!edit || !edit.path) return { ok: false, reason: 'Nothing to revert.' };
+    if (get().isReplaying) return { ok: false, reason: 'Exit replay mode first.' };
+    if (!get().canRewind()) {
+      return { ok: false, reason: 'Only the session owner can change the project’s history.' };
     }
 
-    const records = Object.entries(remoteLineChanges[path] || {})
-      .map(([line, rec]) => ({ line: Number(line), ...rec }))
-      .filter((r) => r.userId === userId);
+    const content = get().files[edit.path];
+    if (typeof content !== 'string') return { ok: false, reason: 'That file is not open here.' };
 
-    if (records.length === 0) return { ok: false, reason: 'Nothing of theirs to undo here.' };
+    // Reverting is itself a change worth being able to take back.
+    get().captureRewindPoint({ force: true });
 
-    const lines = content.split('\n');
+    const split = content.split(NL);
+    let summary = '';
 
-    /* Only lines that still hold exactly what was recorded. If someone has
-     * since edited the same line, it is no longer purely this person's work and
-     * reverting it would quietly discard the other person's edit — the precise
-     * thing this feature exists to avoid. */
-    const applicable = records.filter((r) => lines[r.line - 1] === r.newLine);
-    if (applicable.length === 0) {
-      return { ok: false, reason: 'Those lines have been edited since — nothing safe to undo.' };
+    if (edit.kind === 'removed') {
+      const idx = edit.line - 1;
+      const anchorNow = split[idx];
+      const dels = get().remoteLineDeletions[edit.path] || [];
+      const rec = dels.find((d) => d.id === edit.id);
+      if (!rec) return { ok: false, reason: 'That deletion is no longer on record.' };
+
+      /* The gap has to still be where it was. If the surrounding lines have
+       * moved on, putting the text back blind would drop it into the middle of
+       * somebody else's work. */
+      const anchorMatches = rec.anchorAfter === null
+        ? idx >= split.length
+        : anchorNow === rec.anchorAfter;
+      if (!anchorMatches) {
+        return { ok: false, reason: 'The lines around that deletion have changed since — put it back by hand so nothing else is disturbed.' };
+      }
+
+      const restored = rec.removedText.split(NL);
+      split.splice(idx, 0, ...restored);
+      summary = `Put back ${restored.length} line${restored.length === 1 ? '' : 's'} in ${edit.path.split('/').pop()}`;
+
+      set((st) => ({
+        remoteLineDeletions: {
+          ...st.remoteLineDeletions,
+          [edit.path]: (st.remoteLineDeletions[edit.path] || []).filter((d) => d.id !== edit.id),
+        },
+      }));
+    } else {
+      const idx = edit.line - 1;
+      if (split[idx] !== edit.newLine) {
+        return { ok: false, reason: 'That line has been edited since — reverting it now would discard the newer change.' };
+      }
+      if (edit.kind === 'added') {
+        split.splice(idx, 1);
+        summary = `Removed the added line ${edit.line} in ${edit.path.split('/').pop()}`;
+      } else {
+        split[idx] = edit.oldLine;
+        summary = `Reverted line ${edit.line} in ${edit.path.split('/').pop()}`;
+      }
+
+      set((st) => {
+        const forPath = { ...(st.remoteLineChanges[edit.path] || {}) };
+        delete forPath[edit.line];
+        return { remoteLineChanges: { ...st.remoteLineChanges, [edit.path]: forPath } };
+      });
+    }
+
+    const next = split.join(NL);
+    if (edit.path === get().activePath) {
+      get().setCode(next);
+    } else {
+      const propagated = replaceFileText(edit.path, next);
+      if (!propagated) set((st) => ({ files: { ...st.files, [edit.path]: next } }));
+    }
+    if (get().workspaceRoot) {
+      await get().writeLocalFile(edit.path, next).catch(() => { /* surfaced below */ });
+    }
+
+    set({ rewindNotice: summary + '.' });
+    return { ok: true };
+  }),
+
+  /**
+   * Take back one person's work since a moment, across every file they touched.
+   *
+   * The thing git structurally cannot do: a revert undoes commits, which bundle
+   * everyone together. This undoes a person.
+   */
+  undoChangesSince: async (userId, since) => asHistoryOp(async () => {
+    const { remoteLineChanges, remoteLineDeletions, files, isReplaying } = get();
+    if (isReplaying) return { ok: false, reason: 'Exit replay mode first.' };
+    // This had no permission check of any kind: any collaborator could take
+    // back any other collaborator's work, including the owner's.
+    if (!get().canRewind()) {
+      return { ok: false, reason: 'Only the session owner can undo someone’s changes.' };
     }
 
     // Restoring is itself a change worth being able to take back.
     get().captureRewindPoint({ force: true });
 
-    /* Descending, so removing a line cannot shift the ones not yet handled. */
-    applicable.sort((a, b) => b.line - a.line).forEach((r) => {
-      const idx = r.line - 1;
-      if (r.type === 'added' || r.oldLine === '(line added)') lines.splice(idx, 1);
-      else lines[idx] = r.oldLine;
-    });
+    let reverted = 0;
+    let skipped = 0;
+    const touched = [];
+    let username = '';
 
-    const reverted = lines.join('\n');
+    /* The union, not just the edited files: a file whose only change was a
+     * deletion has no entry in remoteLineChanges to iterate over. */
+    const paths = new Set([
+      ...Object.keys(remoteLineChanges),
+      ...Object.keys(remoteLineDeletions),
+    ]);
 
-    if (path === get().activePath) {
-      get().setCode(reverted);
-    } else {
-      const propagated = replaceFileText(path, reverted);
-      if (!propagated) set((s) => ({ files: { ...s.files, [path]: reverted } }));
+    for (const path of paths) {
+      const lines = remoteLineChanges[path] || {};
+      const content = files[path];
+      if (typeof content !== 'string') continue;
+
+      const records = Object.entries(lines)
+        .map(([line, rec]) => ({ line: Number(line), ...rec }))
+        .filter((r) => r.userId === userId && (r.timestamp || 0) >= since);
+      const hasDeletions = (remoteLineDeletions[path] || [])
+        .some((d) => d.userId === userId && (d.timestamp || 0) >= since);
+      if (records.length === 0 && !hasDeletions) continue;
+      if (records.length) username = records[0].username || username;
+
+      const split = content.split('\n');
+
+      /* Only lines that still hold exactly what was recorded. If someone has
+       * edited the same line since, it is no longer purely this person's work
+       * and reverting it would discard the other person's edit — the precise
+       * thing this feature exists to prevent. */
+      const applicable = records.filter((r) => split[r.line - 1] === r.newLine);
+      skipped += records.length - applicable.length;
+
+      // Descending, so removing a line cannot shift the ones not yet handled.
+      applicable.sort((a, b) => b.line - a.line).forEach((r) => {
+        const idx = r.line - 1;
+        if (r.type === 'added' || r.oldLine === '(line added)') split.splice(idx, 1);
+        else split[idx] = r.oldLine;
+      });
+
+      /* Their deletions too, or "undo everything this person did" quietly means
+       * "everything except the part where they deleted your code" — the one
+       * kind of change most worth taking back. Descending for the same reason,
+       * and only where the gap is still where they left it. */
+      const theirDeletions = (remoteLineDeletions[path] || [])
+        .filter((d) => d.userId === userId && (d.timestamp || 0) >= since)
+        .sort((a, b) => b.anchor - a.anchor);
+      const restoredIds = [];
+      theirDeletions.forEach((d) => {
+        const idx = d.anchor - 1;
+        const fits = d.anchorAfter === null ? idx >= split.length : split[idx] === d.anchorAfter;
+        if (!fits) { skipped += 1; return; }
+        const lines = d.removedText.split(NL);
+        split.splice(idx, 0, ...lines);
+        reverted += lines.length;
+        restoredIds.push(d.id);
+        username = d.username || username;
+      });
+      if (restoredIds.length) {
+        set((st) => ({
+          remoteLineDeletions: {
+            ...st.remoteLineDeletions,
+            [path]: (st.remoteLineDeletions[path] || []).filter((d) => !restoredIds.includes(d.id)),
+          },
+        }));
+      }
+
+      if (applicable.length === 0 && restoredIds.length === 0) continue;
+
+      const next = split.join(NL);
+      if (path === get().activePath) {
+        get().setCode(next);
+      } else {
+        const propagated = replaceFileText(path, next);
+        if (!propagated) set((st) => ({ files: { ...st.files, [path]: next } }));
+      }
+      if (get().workspaceRoot) {
+        await get().writeLocalFile(path, next).catch(() => { /* surfaced below */ });
+      }
+
+      // Those lines are no longer theirs, so the markers go with them.
+      set((st) => {
+        const forPath = { ...(st.remoteLineChanges[path] || {}) };
+        applicable.forEach((r) => delete forPath[r.line]);
+        return { remoteLineChanges: { ...st.remoteLineChanges, [path]: forPath } };
+      });
+
+      reverted += applicable.length;
+      touched.push(path);
     }
-    if (get().workspaceRoot) {
-      await get().writeLocalFile(path, reverted).catch(() => { /* surfaced below */ });
+
+    if (reverted === 0) {
+      return { ok: false, reason: 'Those lines have been edited since — nothing safe to undo.' };
     }
 
-    // Those lines are no longer theirs, so drop the markers with them.
-    set((s) => {
-      const forPath = { ...(s.remoteLineChanges[path] || {}) };
-      applicable.forEach((r) => delete forPath[r.line]);
-      return { remoteLineChanges: { ...s.remoteLineChanges, [path]: forPath } };
-    });
-
-    // Tell the room, so a change vanishing from their screen has a reason.
+    // Tell the room, so work vanishing from their screen has a reason.
     const { sessionId, currentUser } = get();
     if (sessionId && currentUser) {
-      sendRevert(sessionId, currentUser.id, path, currentUser.username, records[0].username);
+      sendRevert(sessionId, currentUser.id, touched[0], currentUser.username, username);
     }
 
-    const skipped = records.length - applicable.length;
     set({
-      rewindNotice: `Undid ${applicable.length} line${applicable.length === 1 ? '' : 's'} from `
-        + `${records[0].username} in ${path}`
+      rewindNotice: `Undid ${reverted} line${reverted === 1 ? '' : 's'} from ${username} `
+        + `across ${touched.length} file${touched.length === 1 ? '' : 's'}`
         + (skipped ? ` — ${skipped} left alone because someone edited them since.` : '.'),
     });
 
-    return { ok: true, reverted: applicable.length, skipped };
+    return { ok: true, reverted, skipped, files: touched.length };
+  }),
+
+  /* Attribution accumulates for the life of a session, so a client that has
+   * been open since before a fix to recordLineDiff keeps serving whatever it
+   * recorded back then. Run once when the panel mounts: drop records that
+   * describe no change, or that point at text no longer on their line. */
+  pruneAttribution: () => {
+    const { remoteLineChanges, files } = get();
+    let removed = 0;
+    const next = {};
+
+    Object.entries(remoteLineChanges).forEach(([path, lines]) => {
+      const content = files[path];
+      const split = typeof content === 'string' ? content.split(NL) : null;
+      const kept = {};
+      Object.entries(lines).forEach(([ln, rec]) => {
+        if (rec.oldLine === rec.newLine) { removed++; return; }
+        if (split && split[Number(ln) - 1] !== rec.newLine) { removed++; return; }
+        kept[ln] = rec;
+      });
+      next[path] = kept;
+    });
+
+    if (removed > 0) set({ remoteLineChanges: next });
+    return removed;
   },
 
   setRewindOpen: (rewindOpen) => set({ rewindOpen, rewindNotice: null }),
@@ -1791,14 +2348,18 @@ const useEditorStore = create(persist((set, get) => ({
    * through the same channels a human edit uses, so collaborators converge on
    * the result instead of quietly drifting out of step with the host.
    */
-  restoreRewindPoint: async (index) => {
-    const { rewindLog, isReplaying, sessionId, userRole, connectedUsers, currentUser } = get();
+  restoreRewindPoint: async (index) => asHistoryOp(async () => {
+    const { rewindLog, isReplaying } = get();
     if (index < 0 || index >= rewindLog.length) return { ok: false, reason: 'That point is no longer in history.' };
     if (isReplaying) return { ok: false, reason: 'Exit replay mode before restoring.' };
 
-    const canEdit = !sessionId || userRole === 'owner'
-      || connectedUsers.find((u) => u.id === currentUser?.id)?.permission !== 'viewer';
-    if (!canEdit) return { ok: false, reason: 'You have view-only access to this session.' };
+    /* Owner-only. This rewrites every file on every participant's screen at
+     * once, so a collaborator with edit rights is still the wrong person to
+     * decide it — edit rights mean "you may change your own work", not "you may
+     * replace everyone's". */
+    if (!get().canRewind()) {
+      return { ok: false, reason: 'Only the session owner can restore the project. You can still preview any moment.' };
+    }
 
     set({ rewindBusy: true });
 
@@ -1857,7 +2418,7 @@ const useEditorStore = create(persist((set, get) => ({
       set({ rewindBusy: false, rewindNotice: `Restore failed: ${err.message}` });
       return { ok: false, reason: err.message };
     }
-  },
+  }),
 
   // Go to a specific snapshot (replay mode)
   goToSnapshot: (index) => {
@@ -1937,26 +2498,87 @@ const useEditorStore = create(persist((set, get) => ({
    * applyAutoFix is the one place a fix becomes real.
    */
 
-  /** Ask the agent to repair the current error. Leaves the file untouched. */
-  requestAutoFix: async () => {
-    const { code, language, sessionId, activePath, rootCause, autoFixState } = get();
+  /**
+   * Ask the agent to repair the current error, or to make a change you describe.
+   * Leaves the file untouched either way — this only fetches a proposal.
+   *
+   * Two modes, and which one runs is decided here rather than by the caller:
+   *
+   *   FILE     a single program was run, it failed, and we have the diagnosis.
+   *            Verified by re-running it. This is the original behaviour and is
+   *            chosen whenever its exact preconditions hold, so nothing about
+   *            the existing flow changes.
+   *
+   *   PROJECT  everything else inside an opened folder: a dev server crashed, or
+   *            the user asked for something in a project. The agent finds the
+   *            failing file from the server log itself and verifies by booting
+   *            the server rather than by running one file.
+   *
+   * @param {{instruction?: string}} [options] free-form request typed by the user
+   */
+  requestAutoFix: async (options = {}) => {
+    const {
+      code, language, sessionId, activePath, rootCause, autoFixState,
+      workspaceRoot, devServers,
+    } = get();
     if (autoFixState === 'working') return;
-    if (!code || !rootCause) return;
+
+    const instruction = (options.instruction || '').trim();
+
+    /* The classic path, kept exactly as it was: a diagnosis in hand and no
+       instruction to complicate it. Anything else falls through to project
+       mode, which needs a folder on disk to read and verify against. */
+    const isClassicFileFix = Boolean(rootCause) && !instruction;
+
+    if (isClassicFileFix && !code) return;
+    if (!isClassicFileFix && !workspaceRoot && !(code && activePath)) {
+      set({
+        autoFix: {
+          status: 'NO_FIX',
+          message: 'Open a project folder or a file first — the agent needs something to work on.',
+        },
+        autoFixState: 'failed',
+      });
+      return;
+    }
+
+    const useProject = !isClassicFileFix && Boolean(workspaceRoot);
+
+    /* Which server is complaining. A failed one is the interesting one; falling
+       back to whichever is running keeps "restart and see" available when the
+       user is asking for a change rather than reporting a crash. */
+    const servers = Object.entries(devServers || {});
+    const failing = servers.find(([, s]) => s?.state === 'ERROR')
+      || servers.find(([, s]) => s?.state === 'RUNNING')
+      || servers[0];
+    const [serverType, serverState] = failing || [null, null];
+    const serverLog = serverState
+      ? (serverState.recentLogs || serverState.logs || []).slice(-120).join('\n')
+      : '';
 
     set({ autoFixState: 'working', autoFix: null });
 
     try {
       const result = await fetchAutoFix({
+        mode: useProject ? 'PROJECT' : 'FILE',
         sessionId: sessionId || '',
         code,
         language,
         filePath: activePath || '',
-        errorType: rootCause.errorType,
-        errorMessage: rootCause.errorMessage,
-        errorLine: rootCause.errorLine,
-        suspectedVariable: rootCause.suspectedVariable,
-        semanticContext: rootCause.semanticContext || null,
+        userInstruction: instruction || null,
+        projectPath: useProject ? workspaceRoot : null,
+        serverType: useProject ? serverType : null,
+        errorLog: useProject ? serverLog : null,
+        errorType: rootCause?.errorType,
+        errorMessage: rootCause?.errorMessage,
+        errorLine: rootCause?.errorLine,
+        suspectedVariable: rootCause?.suspectedVariable,
+        semanticContext: rootCause?.semanticContext || null,
       });
+
+      /* In project mode the agent chose the file, so it is the one that says
+         which. Falling back to activePath keeps file mode identical. */
+      const targetPath = result?.targetPath || activePath;
 
       set({
         autoFix: {
@@ -1964,10 +2586,15 @@ const useEditorStore = create(persist((set, get) => ({
           // Pin the proposal to what it was generated against. Without this a
           // fix could be applied minutes later onto edited code, and its line
           // numbers would land somewhere else entirely.
-          targetPath: activePath,
-          basedOnCode: code,
+          targetPath,
+          /* What the patch was computed from. In project mode the agent read
+             the file off disk, so the copy in `files` may not match — and
+             comparing against the wrong text is what would make a good fix look
+             stale. Only claim a baseline when we know it is the right one. */
+          basedOnCode: targetPath === activePath ? code : null,
           applied: false,
           previousCode: null,
+          instruction: instruction || null,
         },
         autoFixState: result && result.fixedCode ? 'ready' : 'failed',
       });
@@ -1994,8 +2621,8 @@ const useEditorStore = create(persist((set, get) => ({
    *
    * @returns {{ok: boolean, reason?: string}}
    */
-  applyAutoFix: () => {
-    const { autoFix, files, activePath, userRole, connectedUsers, currentUser, isReplaying } = get();
+  applyAutoFix: async () => {
+    const { autoFix, userRole, connectedUsers, currentUser, isReplaying } = get();
 
     if (!autoFix || !autoFix.fixedCode) return { ok: false, reason: 'There is no fix to apply.' };
     if (autoFix.applied) return { ok: false, reason: 'This fix has already been applied.' };
@@ -2006,15 +2633,43 @@ const useEditorStore = create(persist((set, get) => ({
       || connectedUsers.find((u) => u.id === currentUser?.id)?.permission !== 'viewer';
     if (!canEdit) return { ok: false, reason: 'You have view-only access to this session.' };
 
+    /* The fix may be for a file the user never opened — in project mode the
+       agent picked it out of a stack trace. Open it rather than refusing:
+       "this fix is for a file you don't have open" is a chore, not a safeguard,
+       and the checks that actually matter are all applied below either way.
+       Opening also loads the contents in local mode, which the compare needs. */
+    const wanted = autoFix.targetPath;
+    if (wanted && wanted !== get().activePath) {
+      if (!get().files || !(wanted in get().files)) {
+        return { ok: false, reason: `${wanted} is no longer in this project.` };
+      }
+      get().openFile(wanted);
+      /* In local mode openFile only *starts* the read, so `code` is still the
+         previous file for a tick. Awaiting the same load it kicked off is what
+         makes the write below land on the file we actually mean. */
+      if (get().workspaceRoot && !get().loadedPaths?.[wanted]) {
+        await get().loadLocalFile(wanted);
+      }
+    }
+
+    const activePath = get().activePath;
+
+    // Same reasoning for a locked file: the agent writes through setCode, so
+    // without this it becomes the one hand that can still edit a frozen file.
+    if (get().isPathLockedForMe(activePath)) {
+      const by = get().lockedFiles[activePath]?.by || 'the owner';
+      return { ok: false, reason: `${activePath} is locked by ${by}.` };
+    }
+
     // setCode is a no-op without an active file, which would leave us reporting
     // a success that never touched anything.
     if (!activePath) return { ok: false, reason: 'Open the file before applying a fix.' };
 
-    if (autoFix.targetPath && autoFix.targetPath !== activePath) {
-      return { ok: false, reason: `This fix was written for ${autoFix.targetPath}. Open that file to apply it.` };
+    if (wanted && wanted !== activePath) {
+      return { ok: false, reason: `Could not open ${wanted} to apply this fix.` };
     }
 
-    const current = files[activePath] ?? '';
+    const current = get().files[activePath] ?? '';
     if (autoFix.basedOnCode != null && current !== autoFix.basedOnCode) {
       return { ok: false, reason: 'The file changed after this fix was generated. Run again for a fresh fix.' };
     }
@@ -2154,7 +2809,9 @@ const useEditorStore = create(persist((set, get) => ({
       terminalHeight: isStaticWebProject ? 400 : 280,
       terminalActiveTab: 'output',
       layoutMode: 'default',
-      error: ''
+      error: '',
+      // A new run re-asks the question; the last answer must not linger.
+      missingTool: null
     });
 
     try {
@@ -2245,7 +2902,16 @@ const useEditorStore = create(persist((set, get) => ({
     set({
       output: finalOutput,
       error: finalError,
+      /* Not an error, and deliberately not folded into one: the code never ran,
+         because the compiler it needs is not on this machine. The panel renders
+         its own explanation rather than a stack trace. */
+      missingTool: result.missingTool || null,
       isRunning: false,
+      /* Remembered rather than checkpointed. A run is the only moment we learn
+         whether the project actually works, and the next checkpoint stamps that
+         verdict onto itself — so "last working build" survives even though runs
+         no longer create history of their own. */
+      lastRunStatus: result.missingTool ? null : (finalError ? 'fail' : 'ok'),
       rootCause: finalRootCause,
       // A new run supersedes any fix the agent was offering for the old one.
       autoFix: null,
@@ -2257,10 +2923,10 @@ const useEditorStore = create(persist((set, get) => ({
       terminalActiveTab: 'output',
       terminalLayoutMode: 'normal'
     });
-    /* Runs are the checkpoints that matter most: they are the only moments we
-     * know whether the project actually worked, which is what makes "last
-     * working build" answerable. */
-    get().captureRewindPoint({ run: finalError ? 'fail' : 'ok', force: true });
+    /* No checkpoint here. Pressing Run is not a decision to save the project,
+     * and treating it as one is what filled the history with points nobody
+     * chose. The verdict is kept in lastRunStatus for the next real checkpoint
+     * to carry. */
 
     if (result.snapshot) {
       const files = get().files;
@@ -2455,7 +3121,12 @@ const useEditorStore = create(persist((set, get) => ({
       remoteTyping: {},
       changeNotifications: [],
       remoteLineChanges: {},
+      remoteLineDeletions: {},
       filePresence: {},
+      // Locks belong to the session. Keeping them would leave a file frozen in
+      // a local folder with no owner left to unfreeze it.
+      lockedFiles: {},
+      pendingAdmissions: [],
       impactWarnings: [],
       revertNotification: null,
       ...keepWorkspace,
@@ -2599,6 +3270,11 @@ const useEditorStore = create(persist((set, get) => ({
     savedContents: state.savedContents,
     fileSavedPaths: state.fileSavedPaths,
     activeView: state.activeView,
+    /* Where the user parked Mario. A placement preference, like where a tool is
+       left on a desk — worth remembering, and clamped back on screen on mount
+       in case the window is smaller this time. `marioOpen` is deliberately not
+       persisted: he is summoned when wanted, not waiting on every launch. */
+    marioPos: state.marioPos,
     whiteboardElements: state.whiteboardElements,
     whiteboardPan: state.whiteboardPan,
     whiteboardZoom: state.whiteboardZoom,

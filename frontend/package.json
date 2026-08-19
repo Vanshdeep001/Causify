@@ -9,8 +9,9 @@
     "preview": "vite preview",
     "electron:dev": "node scripts/electron-dev.js",
     "electron:dev:nobackend": "node scripts/electron-dev.js --no-backend",
-    "electron:build": "node scripts/fetch-cloudflared.js && npx vite build && npx electron-builder",
+    "electron:build": "node scripts/fetch-cloudflared.js && node scripts/fetch-jre.js && npx vite build && npx electron-builder",
     "electron:preview": "npx vite build && npx electron .",
+    "fetch-jre": "node scripts/fetch-jre.js",
     "fetch-cloudflared": "node scripts/fetch-cloudflared.js",
     "fetch-cloudflared:all": "node scripts/fetch-cloudflared.js --all"
   },
@@ -67,6 +68,10 @@
       {
         "from": "resources/backend",
         "to": "backend"
+      },
+      {
+        "from": "resources/jre",
+        "to": "jre"
       }
     ],
     "win": {
@@ -85,6 +90,10 @@
         {
           "from": "resources/bin/LICENSE-cloudflared.txt",
           "to": "bin/LICENSE-cloudflared.txt"
+        },
+        {
+          "from": "resources/jre",
+          "to": "jre"
         }
       ]
     },
@@ -104,6 +113,10 @@
         {
           "from": "resources/bin/LICENSE-cloudflared.txt",
           "to": "bin/LICENSE-cloudflared.txt"
+        },
+        {
+          "from": "resources/jre",
+          "to": "jre"
         }
       ]
     },
@@ -121,6 +134,10 @@
         {
           "from": "resources/bin/LICENSE-cloudflared.txt",
           "to": "bin/LICENSE-cloudflared.txt"
+        },
+        {
+          "from": "resources/jre",
+          "to": "jre"
         }
       ]
     },
