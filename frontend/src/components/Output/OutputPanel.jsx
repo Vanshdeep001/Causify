@@ -8,7 +8,8 @@ import HtmlPreview from '../Preview/HtmlPreview';
 import DevServerPanel from '../Terminal/DevServerPanel';
 import AiKeySetupCard, { AiProviderChip } from './AiKeySetupCard';
 import ToolchainMissing from './ToolchainMissing';
-import { PixelSprite, MARIO_PAL, MARIO_ROWS } from '../common/pixelArt';
+import { PixelSprite } from '../common/pixelArt';
+import { AGENT_PAL, AGENT_IDLE } from '../Mario/sprites';
 
 /**
  * The handoff to Mario.
@@ -37,7 +38,7 @@ const AskMarioStrip = () => {
   return (
     <button className="ask-mario-strip" onClick={summon} disabled={busy}>
       <span className="ask-mario-sprite">
-        <PixelSprite rows={MARIO_ROWS} palette={MARIO_PAL} px={2} />
+        <PixelSprite rows={AGENT_IDLE} palette={AGENT_PAL} px={1.5} />
       </span>
       <span className="ask-mario-text">
         <span className="ask-mario-title">

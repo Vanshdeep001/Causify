@@ -7,6 +7,7 @@ import EditorPage from './pages/EditorPage';
 import UserPresence from './components/Session/UserPresence';
 import VoiceRoom from './components/Session/VoiceRoom';
 import NotificationSystem from './components/Session/NotificationSystem';
+import ScreenCapture from './components/Capture/ScreenCapture';
 import CodeShotModal from './components/CodeShot/CodeShotModal';
 import { parseCodeShotLink } from './utils/codeShotDeepLink';
 import useEditorStore from './store/useEditorStore';
@@ -356,6 +357,23 @@ const App = () => {
               {sessionId.substring(0, 8)}
             </span>
           )}
+
+          {/* Screen recording. Up here rather than in the editor toolbar
+              because what it captures is the window, not the file you happen to
+              have open — beside RUN it read as another action you perform on
+              your code. The divider keeps it out of the identity block: the
+              logo, the project and the session id say what this is; this is the
+              first thing you can do to it.
+
+              Its own flex group with a tighter gap, because the button is a
+              28px box around a 15px icon — it carries about 6px of padding of
+              its own. Inheriting the row's 12px would put ~18px of air between
+              the divider and the icon against 12px on the other side, which is
+              what made it look adrift rather than attached to the rule. */}
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ width: '1px', height: '18px', background: 'var(--line-strong)' }} />
+            <ScreenCapture />
+          </span>
         </div>
 
         {/* Right: collaboration + session status */}

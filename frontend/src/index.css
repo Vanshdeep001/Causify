@@ -1,20 +1,20 @@
-/* ============================================================
-   DEBUGSYNC — Design System: "INTELLIGENCE"
+﻿/* ============================================================
+   DEBUGSYNC â€” Design System: "INTELLIGENCE"
    A software intelligence command center.
    Mission control for understanding how software behaves.
 
-   Surfaces : deep matte black → graphite → carbon, layered.
+   Surfaces : deep matte black â†’ graphite â†’ carbon, layered.
    Accents  : electric lime (#FFFFFF) + intelligent cyan (#B3B3B3).
    Borders  : thin, technical, 1px.
-   Type     : Space Grotesk (headings) · Inter (interface)
-              · JetBrains Mono (code & data readouts).
-   Motion   : sparing — smooth transitions, subtle pulses.
+   Type     : Space Grotesk (headings) Â· Inter (interface)
+              Â· JetBrains Mono (code & data readouts).
+   Motion   : sparing â€” smooth transitions, subtle pulses.
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=VT323&family=Silkscreen:wght@400;700&family=Syne:wght@700;800&family=Unbounded:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Fraunces:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&display=swap');
 
 :root {
-  /* ── Surfaces (legacy names kept, values remapped) ── */
+  /* â”€â”€ Surfaces (legacy names kept, values remapped) â”€â”€ */
   --bg-creme: #0A0A0A;
   /* app background               */
   --bg-paper: #111111;
@@ -26,19 +26,19 @@
   --color-white: #0A0A0A;
   /* inverse text (on accents)    */
 
-  /* ── Surface scale ── */
+  /* â”€â”€ Surface scale â”€â”€ */
   --s0: #0A0A0A;
-  /* matte black — canvas         */
+  /* matte black â€” canvas         */
   --s1: #111111;
-  /* graphite — panels            */
+  /* graphite â€” panels            */
   --s2: #171717;
-  /* carbon — nested surfaces     */
+  /* carbon â€” nested surfaces     */
   --s3: #1A1A1A;
   /* raised                       */
   --s4: #202020;
   /* highest                      */
 
-  /* ── Text scale ── */
+  /* â”€â”€ Text scale â”€â”€ */
   --t1: #EDEDED;
   /* primary                      */
   --t2: #A0A0A0;
@@ -48,7 +48,7 @@
   --t4: #484848;
   /* faint / disabled             */
 
-  /* ── Borders ── */
+  /* â”€â”€ Borders â”€â”€ */
   --line: #232323;
   /* default hairline             */
   --line-strong: #2E2E2E;
@@ -56,7 +56,7 @@
   --line-faint: #1C1C1C;
   /* subtle separation            */
 
-  /* ── Accents ── */
+  /* â”€â”€ Accents â”€â”€ */
   --lime: #FFFFFF;
   /* primary accent               */
   --lime-dim: rgba(255, 255, 255, 0.06);
@@ -73,21 +73,21 @@
   /* error                        */
   --crimson-dim: rgba(229, 72, 77, 0.10);
 
-  /* ── Legacy accent names (remapped) ── */
+  /* â”€â”€ Legacy accent names (remapped) â”€â”€ */
   --accent-electric-blue: #B3B3B3;
   --accent-toxic-green: #FFFFFF;
   --accent-crimson: #E5484D;
   --accent-gold: #FFB224;
   --accent-violet: #B3B3B3;
 
-  /* ── Structure (legacy names, new values) ── */
+  /* â”€â”€ Structure (legacy names, new values) â”€â”€ */
   --border-thick: 1px solid var(--line-strong);
   --border-thin: 1px solid var(--line);
   --shadow-brutal: 0 16px 40px rgba(0, 0, 0, 0.45);
   --shadow-brutal-sm: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-brutal-hover: 0 16px 48px rgba(0, 0, 0, 0.55);
 
-  /* ── Typography ── */
+  /* â”€â”€ Typography â”€â”€ */
   --font-header: 'Unbounded', sans-serif;
   --font-number: 'JetBrains Mono', monospace;
   --font-body: 'Sora', sans-serif;
@@ -125,7 +125,7 @@ body {
 }
 
 /* ============================================================
-   CANVAS — blueprint-inspired, almost invisible
+   CANVAS â€” blueprint-inspired, almost invisible
    ============================================================ */
 
 .cockpit-env {
@@ -139,7 +139,7 @@ body {
     var(--s0);
 }
 
-/* faint engineering grid — barely there */
+/* faint engineering grid â€” barely there */
 .cockpit-grid {
   position: absolute;
   inset: 0;
@@ -163,7 +163,7 @@ body {
   display: none;
 }
 
-/* legacy overlay hook — neutralized */
+/* legacy overlay hook â€” neutralized */
 .organic-texture {
   display: none;
 }
@@ -266,7 +266,7 @@ body {
 
 /* ---------- Typography Utilities ---------- */
 
-/* Syne hollow wordmark — heavy, oblique, transparent fill with white stroke */
+/* Syne hollow wordmark â€” heavy, oblique, transparent fill with white stroke */
 .logo-text {
   font-family: 'Syne', sans-serif;
   font-weight: 800;
@@ -280,7 +280,7 @@ body {
   text-stroke: 1.5px rgba(255, 255, 255, 0.7);
 }
 
-/* Cyan letterspaced caption under the wordmark (à la "MICROSOFT BUILD") */
+/* Cyan letterspaced caption under the wordmark (Ã  la "MICROSOFT BUILD") */
 .logo-sub {
   font-family: var(--font-number);
   font-weight: 500;
@@ -344,7 +344,7 @@ body {
   transition: padding-bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ── Primary workspace panel ── */
+/* â”€â”€ Primary workspace panel â”€â”€ */
 .bento-tile {
   background: rgba(17, 17, 17, 0.65);
   backdrop-filter: blur(16px);
@@ -617,7 +617,10 @@ body {
 /* Redesigned Run Button matching the brand logo */
 .run-button {
   height: 28px;
-  padding: 0 16px;
+  /* Tightened from 16px now that the border is gone. With a box around it that
+     padding read as breathing room; without one it is just empty space holding
+     the label away from whatever sits beside it. */
+  padding: 0 11px;
   font-family: 'Silkscreen', var(--font-number);
   font-weight: 700;
   font-size: 0.72rem;
@@ -626,7 +629,10 @@ body {
   background: transparent;
   color: var(--t1) !important;
   -webkit-text-fill-color: var(--t1) !important;
-  border: 1px solid rgba(255, 255, 255, 0.75);
+  /* No outline at rest. The hover fill below is what marks it as a button —
+     the box was doing the same job twice and boxing in a header that is
+     otherwise all bare controls. */
+  border: none;
   border-radius: 3px;
   cursor: pointer;
   display: flex;
@@ -639,15 +645,19 @@ body {
 
 .run-button:hover:not(:disabled) {
   background: var(--t1);
-  border-color: var(--t1);
   color: var(--s0) !important;
   -webkit-text-fill-color: var(--s0) !important;
   box-shadow: 0 0 12px rgba(255, 255, 255, 0.2);
 }
 
+/* Keyboard users lose the resting box too, so focus has to draw its own. */
+.run-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55);
+}
+
 .run-button:disabled {
   background: var(--s2);
-  border-color: var(--line);
   color: var(--t4) !important;
   -webkit-text-fill-color: var(--t4) !important;
   cursor: not-allowed;
@@ -949,7 +959,7 @@ body {
   animation: ees-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Welcome wordmark — pixel type, black interior with bright outline */
+/* Welcome wordmark â€” pixel type, black interior with bright outline */
 .empty-editor-brand {
   font-family: 'Silkscreen', var(--font-number);
   font-weight: 700;
@@ -964,12 +974,12 @@ body {
   text-stroke: 1.5px rgba(237, 237, 237, 0.92);
 }
 
-/* sidebar collapsed → extra width, keep the wordmark on one line */
+/* sidebar collapsed â†’ extra width, keep the wordmark on one line */
 .empty-editor-state.is-sidebar-collapsed .empty-editor-brand {
   white-space: nowrap;
 }
 
-/* ── Index — the editorial spec-sheet of entry actions ── */
+/* â”€â”€ Index â€” the editorial spec-sheet of entry actions â”€â”€ */
 .ees-index {
   width: 100%;
   max-width: 620px;
@@ -1030,7 +1040,7 @@ body {
   height: 62%;
 }
 
-/* oversized outlined numeral — rhymes with the pixel wordmark */
+/* oversized outlined numeral â€” rhymes with the pixel wordmark */
 .ees-entry-num {
   position: relative;
   flex-shrink: 0;
@@ -1062,7 +1072,7 @@ body {
   flex: 1;
 }
 
-/* title — grotesk structure with serif-italic emphasis */
+/* title â€” grotesk structure with serif-italic emphasis */
 .ees-entry-title {
   font-family: 'Space Grotesk', 'Inter', sans-serif;
   font-size: clamp(1.15rem, 2.1vw, 1.45rem);
@@ -1079,7 +1089,7 @@ body {
   color: #FFFFFF;
 }
 
-/* description — mono, technical, quiet */
+/* description â€” mono, technical, quiet */
 .ees-entry-desc {
   font-family: var(--font-number), monospace;
   font-size: 0.64rem;
@@ -1244,10 +1254,10 @@ body {
   font-size: 1.2rem;
 }
 
-/* ========== Root Cause Analysis — Intelligence Cards ========== */
+/* ========== Root Cause Analysis â€” Intelligence Cards ========== */
 
-/* ===== Diagnostic Report — editorial, card-less ===== */
-/* ===== Diagnostic Report — Premium Typographic Flat Redesign (Black & Red) ===== */
+/* ===== Diagnostic Report â€” editorial, card-less ===== */
+/* ===== Diagnostic Report â€” Premium Typographic Flat Redesign (Black & Red) ===== */
 .rca2-divider {
   border-top: 1px dashed rgba(255, 79, 86, 0.25);
   margin: 24px 0 16px;
@@ -1266,7 +1276,7 @@ body {
 }
 
 /* Which provider is live, parked on the report's toggle row where it is always
-   visible. Quiet by default — it is a readout first and a control second. */
+   visible. Quiet by default â€” it is a readout first and a control second. */
 .rca2-provider-chip {
   margin-left: auto;
   flex-shrink: 0;
@@ -1309,7 +1319,7 @@ body {
 }
 
 /* Now sits below the agent panel rather than above it, so it needs its own
-   separation — otherwise the trigger reads as part of the panel's footer. */
+   separation â€” otherwise the trigger reads as part of the panel's footer. */
 .rca2-trigger-after {
   margin-top: 20px;
   padding-top: 16px;
@@ -1323,7 +1333,7 @@ body {
   transition: transform 0.15s ease;
 }
 
-/* JetBrains Mono — the same face the terminal and its log lines use, so the
+/* JetBrains Mono â€” the same face the terminal and its log lines use, so the
    heading belongs to the output pane it sits in rather than announcing itself
    in the display font.
    Weight drops from 900 to 700 because this family stops there, and the size
@@ -1691,12 +1701,12 @@ body {
   letter-spacing: 0.04em;
 }
 
-/* ── AI Key Setup card (shown when no OpenRouter key is configured) ── */
-/* ── Key setup card ──
+/* â”€â”€ AI Key Setup card (shown when no OpenRouter key is configured) â”€â”€ */
+/* â”€â”€ Key setup card â”€â”€
  * The premium feel here comes from layering, not ornament. Three things do the
  * work, and they are the same three on every surface in this panel:
  *
- *   1. a background that is never one flat fill — a soft corner light over a
+ *   1. a background that is never one flat fill â€” a soft corner light over a
  *      vertical gradient, so the surface has a direction
  *   2. a 1px inset highlight along the top edge, which is what reads as a
  *      physical bevel catching light
@@ -1721,7 +1731,7 @@ body {
     0 14px 36px rgba(0, 0, 0, 0.5);
 }
 
-/* Accent seam. Fades at both ends rather than cutting off — a hard stop is
+/* Accent seam. Fades at both ends rather than cutting off â€” a hard stop is
    what made the old one look like a progress bar that had stalled. */
 .rca2-keysetup::before {
   content: '';
@@ -1733,12 +1743,12 @@ body {
   background: linear-gradient(90deg, transparent, rgba(255, 79, 86, 0.75) 22%, rgba(255, 79, 86, 0.18) 62%, transparent);
 }
 
-/* ── Active provider readout ──
+/* â”€â”€ Active provider readout â”€â”€
  * An instrument panel, not a card with a headline. It reports two facts and
  * offers two actions, so it is laid out as a readout: a micro label, the value
  * in the terminal's own face, and the controls held to one side.
  *
- * Type is deliberately all JetBrains Mono — the same face as the diagnostic
+ * Type is deliberately all JetBrains Mono â€” the same face as the diagnostic
  * heading, the section labels and the terminal itself. The display/body pairing
  * it used before belonged to a marketing card and read as imported.
  */
@@ -1769,7 +1779,7 @@ body {
 
 /* Four corner brackets instead of a border: eight hairlines positioned at the
    corners, so the frame is implied rather than drawn. Reads as instrumentation,
-   and it is the green that carries "this is live" — no tick required. */
+   and it is the green that carries "this is live" â€” no tick required. */
 .ai-status::before {
   content: '';
   position: absolute;
@@ -1829,7 +1839,7 @@ body {
   line-height: 1.2;
 }
 
-/* Prefixed rather than boxed — a chip here would reintroduce the rounded
+/* Prefixed rather than boxed â€” a chip here would reintroduce the rounded
    surface the readout just got rid of. */
 .ai-status-model {
   margin-top: 8px;
@@ -1843,7 +1853,7 @@ body {
 }
 
 .ai-status-model::before {
-  content: '▸ ';
+  content: 'â–¸ ';
   color: rgba(61, 214, 140, 0.8);
 }
 
@@ -1919,7 +1929,7 @@ body {
   color: #FF9A9E;
 }
 
-/* ── A key is already in place ──
+/* â”€â”€ A key is already in place â”€â”€
    Green seam, same as success: this is a working state, not a prompt. */
 .rca2-keysetup.is-connected::before,
 .rca2-keysetup.is-success::before {
@@ -1941,7 +1951,7 @@ body {
   color: #FFFFFF;
 }
 
-/* The tick gets a ring instead of sitting loose in the text flow — it becomes
+/* The tick gets a ring instead of sitting loose in the text flow â€” it becomes
    a deliberate status object rather than a stray character. */
 .rca2-keysetup-check {
   flex-shrink: 0;
@@ -1981,7 +1991,7 @@ body {
   margin-top: 4px;
 }
 
-/* The destructive action stays quiet — findable, never hit by momentum. */
+/* The destructive action stays quiet â€” findable, never hit by momentum. */
 .rca2-keysetup-btn.is-ghost {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.015) 100%);
   border-color: rgba(255, 255, 255, 0.12);
@@ -2033,7 +2043,7 @@ body {
   border-bottom-color: #FF8085;
 }
 
-/* ── Provider picker and its optional fields ── */
+/* â”€â”€ Provider picker and its optional fields â”€â”€ */
 
 .rca2-keysetup-field {
   margin-bottom: 10px;
@@ -2050,7 +2060,7 @@ body {
   color: var(--t3);
 }
 
-/* Matches the key field exactly — the two are read as one form, so a differently
+/* Matches the key field exactly â€” the two are read as one form, so a differently
    shaped select would make the provider look like a separate control. */
 .rca2-keysetup-select {
   width: 100%;
@@ -2088,7 +2098,7 @@ body {
   color: #FFFFFF;
 }
 
-/* Model override — a disclosure, because almost nobody needs it. */
+/* Model override â€” a disclosure, because almost nobody needs it. */
 .rca2-keysetup-advanced {
   margin-top: 12px;
 }
@@ -2146,7 +2156,7 @@ body {
   height: 42px;
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  /* Matches the button beside it — a rounded field against a squared button
+  /* Matches the button beside it â€” a rounded field against a squared button
      makes the pair read as two unrelated controls. */
   border-radius: 3px;
   padding: 0 14px;
@@ -2174,7 +2184,7 @@ body {
     0 0 0 3px rgba(255, 255, 255, 0.07);
 }
 
-/* ── Primary button ──
+/* â”€â”€ Primary button â”€â”€
  * A pressable object: gradient body so it has a lit top and a shaded base,
  * a bright inset seam along the top edge, and a shadow that shortens as the
  * button travels down on press. */
@@ -2253,7 +2263,7 @@ body {
   background: linear-gradient(180deg, #0C0C0E 0%, #090909 100%);
   border: 1px solid rgba(255, 255, 255, 0.075);
   /* Square throughout. Pixel sprites and rounded chrome are the same mismatch
-     as pixel type with a soft glow — the corners give the illusion away. */
+     as pixel type with a soft glow â€” the corners give the illusion away. */
   border-radius: 0;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.035),
@@ -2261,11 +2271,11 @@ body {
   animation: rca2-content-in 0.25s ease forwards;
 }
 
-/* The applied state is a confirmation, not a document — it holds one line of
+/* The applied state is a confirmation, not a document â€” it holds one line of
    text and two buttons. Framing that in a card gives weight to something the
    user has already finished reading, so it sits bare on the panel instead. */
 /* The level draws its own frame. Whenever it is the only thing in the panel,
-   the panel's frame is a second box drawn around the first — so the outer one
+   the panel's frame is a second box drawn around the first â€” so the outer one
    steps aside and the scene becomes the card. */
 .afx-panel.is-bare {
   background: none;
@@ -2283,7 +2293,7 @@ body {
   padding: 4px 2px 10px;
 }
 
-/* ── The level ──
+/* â”€â”€ The level â”€â”€
  * A side-scrolling strip: sky, a row of ? blocks, ground. The plumber's
  * horizontal position is driven from React (one step per stage of the agent
  * loop) and eased here, so movement reads as running rather than teleporting.
@@ -2291,7 +2301,7 @@ body {
 
 /* The sky is deliberately NOT cartoon blue. A saturated navy fights the IDE's
    neutral surface scale and reads cheap next to it; a near-black base lifted by
-   two faint coloured glows — warm high, cool at the horizon — gives depth
+   two faint coloured glows â€” warm high, cool at the horizon â€” gives depth
    without introducing a colour the rest of the app never uses. */
 .afx-scene {
   position: relative;
@@ -2314,7 +2324,7 @@ body {
 }
 
 /* Fine CRT scanlines + a soft vignette. Both sit far below the threshold of
-   "effect" — they read as material, not as decoration. */
+   "effect" â€” they read as material, not as decoration. */
 .afx-sky::after {
   content: '';
   position: absolute;
@@ -2334,11 +2344,11 @@ body {
 }
 
 /* A clear used to tint the whole scene green. It flattened the background into
-   one muddy wash and undid the neutral palette the panel is built on — the
+   one muddy wash and undid the neutral palette the panel is built on â€” the
    flag, the verdict colour and the coins already say "cleared" without
    repainting the sky. */
 
-/* Clouds — pure decoration, deliberately slow so they never pull the eye
+/* Clouds â€” pure decoration, deliberately slow so they never pull the eye
    away from the status text below. */
 .afx-cloud {
   position: absolute;
@@ -2368,7 +2378,7 @@ body {
   100% { transform: translateX(-160px); }
 }
 
-/* Ground: a brick strip in dark bronze rather than toy brown — it still reads
+/* Ground: a brick strip in dark bronze rather than toy brown â€” it still reads
    as ground, but sits in the same tonal family as the rest of the IDE. The
    warm hairline on top is what separates it from the sky; the inner shadow
    underneath gives the strip weight. The scrolling variant runs only while the
@@ -2395,7 +2405,7 @@ body {
   100% { background-position: -14px 0; }
 }
 
-/* ── Idle scene ── */
+/* â”€â”€ Idle scene â”€â”€ */
 
 .afx-idle-block {
   position: absolute;
@@ -2421,7 +2431,7 @@ body {
   94%           { transform: translateY(-3px); }
 }
 
-/* ── Run scene ── */
+/* â”€â”€ Run scene â”€â”€ */
 
 .afx-blocks {
   position: absolute;
@@ -2463,7 +2473,7 @@ body {
 
 /* The runner travels inside the same insets the blocks use, so he arrives
    under the block he is bumping. He used to be positioned straight off the
-   scene's full width, which put him at left:100% on the final stage — his
+   scene's full width, which put him at left:100% on the final stage â€” his
    whole body past the right edge, erased by the sky's overflow:hidden. The
    level then animated with no character in it, which read as frozen. */
 .afx-runner-track {
@@ -2480,7 +2490,7 @@ body {
   transition: left 0.75s cubic-bezier(0.32, 0.72, 0.35, 1);
 }
 
-/* ── Result scene ── */
+/* â”€â”€ Result scene â”€â”€ */
 
 .afx-flagpole {
   position: absolute;
@@ -2538,12 +2548,12 @@ body {
   color: #FFB224;
 }
 
-/* ── HUD / scoreboard ── */
+/* â”€â”€ HUD / scoreboard â”€â”€ */
 
 /* Type rule for this panel: pixel face for LABELS (they are game chrome and
    never longer than a few words), the app's body face for SENTENCES. Silkscreen
-   is the app's existing pixel voice — the Run button and welcome wordmark
-   already use it — so this stays in-family instead of importing kitsch.
+   is the app's existing pixel voice â€” the Run button and welcome wordmark
+   already use it â€” so this stays in-family instead of importing kitsch.
    It ships 400/700 only, so nothing here asks for a heavier weight. */
 
 .afx-hud {
@@ -2617,11 +2627,11 @@ body {
   color: var(--t3);
 }
 
-/* ── START ──
+/* â”€â”€ START â”€â”€
  * Standalone rather than a modifier on .afx-btn. As a modifier its Silkscreen
  * was silently lost: .afx-btn is declared later in this file at the same
  * specificity, so its font-family won and the button rendered in the display
- * face — the one element in the level not speaking pixel.
+ * face â€” the one element in the level not speaking pixel.
  *
  * Same construction as the coin button: flat fill, square corners, a hard
  * four-sided bevel, and a solid drop that is the button's thickness rather
@@ -2706,7 +2716,7 @@ body {
 }
 
 /* Motion is the whole idea here, but it must never be the price of using the
-   feature — honour the OS setting and let the level sit still. */
+   feature â€” honour the OS setting and let the level sit still. */
 @media (prefers-reduced-motion: reduce) {
   .afx-cloud-1, .afx-cloud-2,
   .afx-idle-block, .afx-idle-mario,
@@ -2717,10 +2727,10 @@ body {
   .afx-runner, .afx-flag { transition: none; }
 }
 
-/* ── Verdict ── */
+/* â”€â”€ Verdict â”€â”€ */
 
 /* No glow on pixel type anywhere in this panel. A halo bleeds past the pixel
-   grid and softens the very edges that make the sprite work — the letterforms
+   grid and softens the very edges that make the sprite work â€” the letterforms
    go from crisp to smeared at exactly the sizes used here. Colour alone
    carries the verdict. */
 .afx-verdict-label {
@@ -2738,7 +2748,7 @@ body {
   margin: 10px 0;
 }
 
-/* ── What the agent did, in words ──
+/* â”€â”€ What the agent did, in words â”€â”€
  * Held in its own block with generous breathing room, so the headline and its
  * explanation read as one unit rather than two stacked paragraphs. */
 .afx-brief {
@@ -2779,7 +2789,7 @@ body {
   white-space: nowrap;
 }
 
-/* ── Section joints ──
+/* â”€â”€ Section joints â”€â”€
  * A label, a rule that fills the gap, and optional right-aligned meta. Cheap
  * to render and it turns one long column into legible chapters. */
 .afx-section {
@@ -2814,7 +2824,7 @@ body {
   color: var(--t4);
 }
 
-/* ── The diff ── */
+/* â”€â”€ The diff â”€â”€ */
 .afx-diffs {
   display: flex;
   flex-direction: column;
@@ -2829,7 +2839,7 @@ body {
   overflow: hidden;
 }
 
-/* The marker is drawn in CSS rather than typed as a box-drawing glyph — that
+/* The marker is drawn in CSS rather than typed as a box-drawing glyph â€” that
    character rendered as a stray artifact and depended on the font having it. */
 .afx-diff-head {
   display: flex;
@@ -2908,9 +2918,9 @@ body {
   opacity: 0.6;
 }
 
-/* ── Evidence: what the patched code actually printed ──
+/* â”€â”€ Evidence: what the patched code actually printed â”€â”€
  * The section head above it already names it, so the block itself is just the
- * output — one framed surface instead of a captioned box inside a box. */
+ * output â€” one framed surface instead of a captioned box inside a box. */
 .afx-evidence-pre {
   margin: 0 0 14px;
   padding: 12px 14px;
@@ -2936,7 +2946,7 @@ body {
   color: #E8B4B6;
 }
 
-/* ── Agent log ── */
+/* â”€â”€ Agent log â”€â”€ */
 .afx-trail-toggle {
   font-family: var(--font-number);
   font-size: 0.56rem;
@@ -3018,7 +3028,7 @@ body {
   color: rgba(61, 214, 140, 0.7);
 }
 
-/* ── Applied ── */
+/* â”€â”€ Applied â”€â”€ */
 /* Header row of the applied state. The rule under it separates "what happened"
    from "what changed" without needing a card around either. */
 .afx-applied {
@@ -3065,7 +3075,7 @@ body {
   flex-shrink: 0;
 }
 
-/* ── The coin slot ──
+/* â”€â”€ The coin slot â”€â”€
  * The front of the cabinet: joined to the level above it, same materials, and
  * carrying no heading of its own because the scene already says INSERT COIN.
  */
@@ -3075,17 +3085,93 @@ body {
   border-bottom: none;
 }
 
+/* The cabinet face.
+ *
+ * Not a form on a dark background — the front panel of a machine. Three things
+ * carry that: a metal ground that is lit from above, hard square corners
+ * everywhere, and CRT scanlines laid over the whole face. Every control below
+ * is drawn as something physical set into this panel.
+ */
 .afx-slot {
+  position: relative;
   margin-bottom: 4px;
-  padding: 13px 15px 12px;
-  background: rgba(6, 7, 9, 0.72);
+  padding: 15px 15px 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 0;
+  overflow: hidden;
+  /* Brushed metal: a top-down sheen over near-black, so the panel has a
+     direction of light and the recesses cut into it read as recesses. */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055) 0%, rgba(255, 255, 255, 0.012) 22%, transparent 55%),
+    linear-gradient(180deg, #0E1013 0%, #06070A 100%);
+}
+
+/* Scanlines. 3px pitch is the point where they read as a CRT rather than as a
+   moiré pattern — finer and they shimmer, coarser and they look like blinds. */
+.afx-slot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.22) 0px,
+    rgba(0, 0, 0, 0.22) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  opacity: 0.5;
+}
+
+/* ── Marquee ──
+ * The panel's one heading, and the credit readout that answers "did that
+ * register?" before you press anything.
+ *
+ * Everything here is white or grey. Gold appears exactly twice on this card —
+ * on the coin, and on the button once it can be pressed — so it means "this is
+ * the live thing" rather than being the card's decoration. */
+.afx-slot-marquee {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 5px;
+}
+
+.afx-slot-title {
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 700;
+  font-size: 0.86rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #FFFFFF;
+}
+
+.afx-slot-credit {
+  flex-shrink: 0;
+  font-family: 'Silkscreen', var(--font-number);
+  font-size: 0.56rem;
+  letter-spacing: 0.1em;
+  color: var(--t4);
+  transition: color 0.15s ease;
+}
+/* Ticks over the moment a key is in the field. */
+.afx-slot-credit.is-live { color: #FFB224; }
+
+.afx-slot-sub {
+  margin: 0 0 13px;
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--t3);
+  max-width: 46ch;
 }
 
 /* A control panel keeps its size regardless of how wide the terminal is. */
 .afx-slot-inner {
+  position: relative;   /* above the scanlines and the bloom */
+  z-index: 1;
   max-width: 620px;
   margin: 0 auto;
 }
@@ -3112,7 +3198,7 @@ body {
   color: var(--t3);
 }
 
-/* Recessed slots in a cabinet face: square corners and a hard two-tone bevel —
+/* Recessed slots in a cabinet face: square corners and a hard two-tone bevel â€”
    dark on the top/left where the panel casts into them, light on the
    bottom/right. Rounded corners with a soft glow read as a web form. */
 .afx-slot-select,
@@ -3168,16 +3254,23 @@ body {
 
 /* The coin sits where a cabinet's slot would be — left of the key field. */
 .afx-slot-row.is-coin {
-  gap: 8px;
+  gap: 10px;
+  margin-bottom: 11px;
 }
 
+/* Narrower than the old 62px label column: that width existed to line up with
+   form labels that are no longer on this row, and it was pushing the key field
+   into a corner. The coin only needs to be beside the slot, not aligned to a
+   grid that left with the labels. */
 .afx-slot-coin {
+  position: relative;
   flex-shrink: 0;
-  width: 62px;
+  width: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
   animation: afx-coin-spin 2.4s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px rgba(255, 178, 36, 0.45));
 }
 
 @keyframes afx-coin-spin {
@@ -3185,16 +3278,31 @@ body {
   50%      { transform: scaleX(0.25); }
 }
 
-/* ── The coin button ──
+/* Submitting drops it into the slot: it spins faster, falls, and is gone.
+   `forwards` matters — without it the coin springs back out of the machine the
+   instant the animation ends, which is the opposite of what just happened. */
+.afx-slot-coin.is-dropping {
+  animation: afx-coin-drop 0.5s ease-in forwards;
+}
+
+@keyframes afx-coin-drop {
+  0%   { transform: translateY(0) scaleX(1);     opacity: 1; }
+  40%  { transform: translateY(4px) scaleX(0.2); opacity: 1; }
+  100% { transform: translateY(26px) scaleX(0.7); opacity: 0; }
+}
+
+/* â”€â”€ The coin button â”€â”€
  * Built the way an NES button is drawn rather than the way a web button is:
  * flat coin-gold fill, no gradient, square corners, and a hard four-sided
- * bevel made of solid inset shadows — bright top-left, dark bottom-right. The
+ * bevel made of solid inset shadows â€” bright top-left, dark bottom-right. The
  * drop underneath is the button's thickness, so pressing it moves the face
  * down onto the panel and the thickness disappears.
  */
 .afx-coin-btn {
-  flex-shrink: 0;
-  height: 34px;
+  position: relative;
+  display: block;
+  width: 100%;          /* its own row now, so it takes the whole panel */
+  height: 38px;
   padding: 0 16px;
   border: none;
   border-radius: 0;
@@ -3202,9 +3310,10 @@ body {
   color: #2A1A00;
   font-family: 'Silkscreen', var(--font-number);
   font-weight: 700;
-  font-size: 0.58rem;
-  letter-spacing: 0.06em;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
   cursor: pointer;
+  overflow: hidden;
   box-shadow:
     inset 3px 3px 0 rgba(255, 255, 255, 0.5),
     inset -3px -3px 0 rgba(0, 0, 0, 0.28),
@@ -3212,8 +3321,67 @@ body {
   transition: background 0.12s ease, transform 0.08s ease, box-shadow 0.08s ease;
 }
 
+.afx-coin-btn-label { position: relative; z-index: 1; }
+
+/* A shine that sweeps the face on hover — the light moving across a plastic
+   button as you reach for it. Skewed so it reads as a reflection rather than
+   as a loading bar. */
+.afx-coin-btn::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  bottom: -50%;
+  left: -60%;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.45s ease;
+}
+.afx-coin-btn:hover:not(:disabled)::after { left: 130%; }
+
 .afx-coin-btn:hover:not(:disabled) {
   background: #FFC658;
+}
+
+/* ── Attract mode ──
+ * With no key typed there is nothing to press, and the button is a flat plate
+ * with no gold and no thickness — pressable things are gold here, so an unlit
+ * one has to look inert. It blinks its label the way a cabinet's attract screen
+ * does, which is the one cue that it is waiting rather than broken. */
+.afx-coin-btn.is-attract:disabled {
+  animation: afx-attract 1.7s steps(1, end) infinite;
+}
+
+@keyframes afx-attract {
+  0%, 62%   { color: #5E5E5E; }
+  63%, 100% { color: #9A9A9A; }
+}
+
+/* The key field IS the slot: a dark opening cut into the panel. Taller than the
+   other inputs because an API key is the one thing you paste here.
+   Kept colourless — a gold-rimmed field competing with a gold button gave the
+   card two things both shouting that they were the important one. */
+.afx-slot-input.is-key {
+  height: 38px;
+  letter-spacing: 0.08em;
+}
+
+.afx-slot-input.is-key:focus {
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.9),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.07),
+    0 0 0 2px rgba(255, 255, 255, 0.55);
+}
+
+/* The cabinet stops performing. The controls keep every state they need —
+   focus, hover, disabled — they just stop moving on their own. */
+@media (prefers-reduced-motion: reduce) {
+  .afx-slot::after,
+  .afx-slot-coin,
+  .afx-slot-coin.is-dropping,
+  .afx-coin-btn.is-attract:disabled { animation: none; }
+  .afx-coin-btn::after { display: none; }
+  .afx-slot-coin.is-dropping { opacity: 0; }
 }
 
 .afx-coin-btn:active:not(:disabled) {
@@ -3321,7 +3489,7 @@ body {
   color: #FFD08A;
 }
 
-/* Confirmation that the key was recognised — replaces the form row that used
+/* Confirmation that the key was recognised â€” replaces the form row that used
    to ask the same question. */
 .afx-slot-hint.is-detected {
   color: #FFB224;
@@ -3342,7 +3510,7 @@ body {
   text-align: right;
 }
 
-/* ── Coin accepted ── */
+/* â”€â”€ Coin accepted â”€â”€ */
 .afx-slot.is-success {
   display: flex;
   align-items: center;
@@ -3379,7 +3547,7 @@ body {
   .afx-slot-coin, .afx-slot-sprite { animation: none; }
 }
 
-/* ── Notices and buttons ── */
+/* â”€â”€ Notices and buttons â”€â”€ */
 .afx-notice {
   margin-top: 12px;
   padding: 10px 13px;
@@ -3398,14 +3566,14 @@ body {
   margin-top: 12px;
 }
 
-/* ── Panel buttons ──
+/* â”€â”€ Panel buttons â”€â”€
  * Same construction as START and INSERT COIN, so every control in this feature
  * is visibly the same object: flat fill, square corners, a hard four-sided
  * bevel, and a solid drop that is the button's thickness. Pressing sinks the
  * face onto the panel.
  *
  * Silkscreen, because these sit inside the level. The diff itself stays
- * monospace and plain — the code you review is the serious part; a short
+ * monospace and plain â€” the code you review is the serious part; a short
  * button label is not.
  */
 .afx-btn {
@@ -3443,7 +3611,7 @@ body {
     inset -3px -3px 0 rgba(0, 0, 0, 0.25);
 }
 
-/* The secondary action stays quiet on purpose — Reject and Undo should be easy
+/* The secondary action stays quiet on purpose â€” Reject and Undo should be easy
    to find and impossible to hit by momentum. */
 .afx-btn-ghost {
   background: #232323;
@@ -3473,40 +3641,42 @@ body {
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.22);
 }
 
-/* ── Invoke Mario, in the header ──
- * Sits beside RUN and is deliberately quieter than it: RUN is the primary
- * action, this is the one you reach for when RUN has told you bad news. */
+/* â”€â”€ Mario, standing in the header â”€â”€
+ * No chrome and no label: he is a sprite sitting on the bar, not a button
+ * pretending to be one. The frame appears on hover so it is still obviously
+ * clickable, and he lifts slightly â€” the smallest possible hint that he is
+ * about to get up. */
 .mario-invoke {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 12px;
+  justify-content: center;
+  padding: 4px 6px;
   height: 30px;
   background: transparent;
-  border: 1px solid var(--line-strong);
+  /* Transparent, and stays that way on hover. It exists only so
+     :focus-visible below has something to colour in — keyboard users get no
+     hover lift, so the border is the one cue left for them. */
+  border: 1px solid transparent;
   border-radius: 6px;
-  color: var(--t2);
-  font-family: var(--font-header);
-  font-size: 0.58rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
   cursor: pointer;
-  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+  image-rendering: pixelated;
+  transition: border-color 0.14s ease, transform 0.12s ease;
 }
+/* He lifts, and that is all. No plate appearing behind him: a card on hover
+   frames him as a button icon, and the whole point is that he is a character
+   standing on the bar. The lift reads as him noticing you, which is a better
+   affordance here than a box would be — and it is the same movement he makes
+   when you approach him out in the editor. */
 .mario-invoke:hover {
-  color: var(--t1);
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.04);
+  transform: translateY(-2px);
 }
-/* While he is out, the button reads as a toggle that is currently on. */
-.mario-invoke.is-on {
-  color: #FFFFFF;
+.mario-invoke:active { transform: translateY(0); }
+.mario-invoke:focus-visible {
+  outline: none;
   border-color: rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.08);
 }
-.mario-invoke-sprite { display: flex; align-items: flex-end; image-rendering: pixelated; }
 
-/* ── The handoff, in the terminal ──
+/* â”€â”€ The handoff, in the terminal â”€â”€
  * Where the agent's panel used to be. It is a doorway, not a panel: it says
  * what he will do and gets out of the way. */
 .ask-mario-strip {
@@ -3556,89 +3726,359 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════
- * Mario — the agent, floating free of the terminal
+ * Mario — a character standing in the editor
  *
- * A window that sits above the app and can be put anywhere. It has to read as
- * "on top of everything" without becoming the loudest thing on screen, so it
- * carries a hard border and a deep shadow rather than a bright fill.
+ * Not a window. There is no frame, no title bar and no chrome around him: he
+ * is a sprite on the page, and the command line is something that comes OUT of
+ * him when you approach. Everything below serves that one illusion, so the
+ * rules are mostly about what is absent.
+ *
+ * The two easings do all the work:
+ *   --mario-spring  overshoots slightly, for things that unfurl
+ *   --mario-ease    plain and quick, for things that only fade
  * ═══════════════════════════════════════════════════════ */
 
-.mario-companion {
+/* The wrapper is exactly Mario and nothing else — a 32px box at the position
+ * he was dragged to. Everything that opens is positioned absolutely against
+ * it, never in flow.
+ *
+ * That is the whole trick. Laying the bar out beside him in a flex row would
+ * make the row wider as it opened, and since the box is pinned by its left
+ * edge, HE would slide sideways to make room — the one thing that would break
+ * the illusion that the bar is coming out of him. Anchored absolutely, he does
+ * not move by a pixel.
+ */
+.mario-agent {
+  --mario-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --mario-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
   position: fixed;
-  z-index: 900;              /* above the editor, below modals */
-  display: flex;
-  flex-direction: column;
-  max-height: min(72vh, 720px);
-  background: var(--s0);
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
-  overflow: hidden;
+  z-index: 900;
+  width: 64px;    /* 16 sprite columns at px=4 */
+  height: 80px;   /* 20 sprite rows    at px=4 */
+  /* No background and no border: this is scaffolding, not a surface. */
+  background: none;
+  /* Only he and the bar are targets — the empty space around them must not eat
+     clicks meant for the editor underneath. */
+  pointer-events: none;
 }
+.mario-agent > * { pointer-events: auto; }
 
-/* While dragging: no text selection anywhere, and no transition fighting the
-   pointer. Both are what make a hand-rolled drag feel bought rather than built. */
-.mario-companion.is-dragging {
-  user-select: none;
-  cursor: grabbing;
-  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08);
-}
-
-.mario-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 8px 8px 12px;
-  background: var(--s1);
-  border-bottom: 1px solid var(--line);
+/* ── The character ── */
+.mario-char {
+  position: relative;
   cursor: grab;
-  flex-shrink: 0;
-  touch-action: none;        /* the pointer belongs to the drag, not to scrolling */
-}
-.mario-companion.is-dragging .mario-bar { cursor: grabbing; }
-
-.mario-sprite {
-  display: flex;
-  align-items: flex-end;
-  flex-shrink: 0;
+  touch-action: none;
   image-rendering: pixelated;
+  /* A drag must not paint him blue mid-move. */
+  user-select: none;
+  -webkit-user-drag: none;
+  /* A 32px sprite is a small thing to hit with a mouse. The padding grows the
+     target for hovering and grabbing; the equal negative margin takes the space
+     straight back, so he does not visually shift by a pixel. */
+  padding: 7px;
+  margin: -7px;
 }
-/* He hops while the agent is thinking — the one piece of motion that is
-   reporting something rather than decorating. */
-.mario-sprite.is-busy { animation: mario-hop 0.85s steps(2, end) infinite; }
+.mario-agent.is-dragging .mario-char { cursor: grabbing; }
 
-@keyframes mario-hop {
+/* He breathes.
+ *
+ * An earlier pass had this at six seconds and one pixel, which is invisible —
+ * and an invisible idle animation is the same as none, so he read as a sticker
+ * somebody had left on the screen. Two and a half seconds and two pixels is the
+ * point where it registers as breathing from the corner of your eye without
+ * ever asking to be looked at. The blink and the occasional hop do the rest. */
+.mario-sprite {
+  display: block;
+  animation: mario-breathe 2.5s ease-in-out infinite;
+}
+@keyframes mario-breathe {
   0%, 100% { transform: translateY(0); }
-  40%      { transform: translateY(-5px); }
+  50%      { transform: translateY(-2px); }
 }
 
-.mario-title {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-family: var(--font-header);
-  font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  color: var(--t1);
+/* ── The hop ──
+ * Asymmetric on purpose: fast up, hang, slower down, then a squash on landing.
+ * An even up-and-down reads as a floating icon; the hang and the squash are
+ * what make it read as weight. The component swaps to the jump frame for
+ * exactly as long as this runs, so the pose and the arc agree. */
+.mario-agent.is-hopping .mario-sprite {
+  animation: mario-hop 0.42s var(--mario-ease);
+}
+@keyframes mario-hop {
+  0%   { transform: translateY(0)     scaleY(0.9)  scaleX(1.1); }
+  18%  { transform: translateY(-16px) scaleY(1.08) scaleX(0.94); }
+  46%  { transform: translateY(-19px) scaleY(1)    scaleX(1); }
+  78%  { transform: translateY(0)     scaleY(0.86) scaleX(1.14); }
+  100% { transform: translateY(0)     scaleY(1)    scaleX(1); }
 }
 
-/* What he is pointed at right now. Truncates rather than pushing the window
-   controls off the edge. */
-.mario-scope {
+/* Walking. The vertical bob is small because the FRAMES carry the motion —
+   doubling up with a big CSS bounce makes him look like he is on a trampoline. */
+.mario-agent.is-busy .mario-sprite {
+  animation: mario-step 0.28s steps(2, end) infinite;
+}
+@keyframes mario-step {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-2px); }
+}
+
+/* Held off the ground while being carried. */
+.mario-agent.is-dragging .mario-sprite {
+  animation: none;
+  transform: translateY(-3px) rotate(-5deg);
+}
+
+/* The ground he stands on. A soft ellipse that shrinks and darkens as he
+   rises — the cheapest possible cue that he is a thing in space rather than an
+   image pasted on the page. */
+.mario-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 48px;
+  height: 9px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.7), transparent 70%);
+  filter: blur(2px);
+  transition: width 0.2s var(--mario-ease), opacity 0.2s var(--mario-ease);
+  pointer-events: none;
+}
+.mario-agent.is-hopping .mario-shadow,
+.mario-agent.is-dragging .mario-shadow { width: 28px; opacity: 0.5; }
+
+/* ── Speech ──
+ * A hard-edged pixel bubble, near-white on a dark editor so it actually reads
+ * as speech rather than as one more grey panel. It is the only bright surface
+ * he has, which is what makes the rare moments he uses it land. */
+.mario-bubble {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  z-index: 2;
+  padding: 7px 11px;
+  background: #F5F5F5;
+  color: #0A0A0A;
   font-family: var(--font-code);
-  font-size: 0.58rem;
-  font-weight: 500;
-  letter-spacing: 0;
-  color: var(--t3);
+  font-size: 0.72rem;
+  font-weight: 600;
   white-space: nowrap;
+  border-radius: 4px;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35), 0 10px 26px rgba(0, 0, 0, 0.5);
+  transform-origin: bottom center;
+  animation: mario-pop 0.28s var(--mario-spring);
+  pointer-events: none;
+  /* Centred on him with `translate` rather than inside `transform`, so the pop
+     animation can own `transform` outright without having to restate the
+     centring in every keyframe. */
+  translate: -50% 0;
+  max-width: 60vw;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.mario-bar-btn {
+/* The tail. A rotated square rather than a border triangle, so it inherits the
+   bubble's colour and its shadow without a second hard-coded value. */
+.mario-bubble-tail {
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  background: #F5F5F5;
+  transform: rotate(45deg);
+}
+
+@keyframes mario-pop {
+  0%   { opacity: 0; transform: translateY(6px) scale(0.7); }
+  60%  { opacity: 1; transform: translateY(0)   scale(1.06); }
+  100% { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+/* ── The command line ──
+ * Unfurls from his side: width first, so it reads as something extending out
+ * of him, with the contents fading in a beat later. Animating width rather
+ * than transform is deliberate — a scaleX would squash the text as it grew. */
+.mario-bar {
+  position: absolute;
+  top: 50%;
+  overflow: hidden;
+  border-radius: 999px;
+  max-width: 0;
+  opacity: 0;
+  /* Starts nudged toward him and settles outward, so it reads as extending out
+     of him rather than sliding in from nowhere. The sign follows the direction
+     it will grow. */
+  transform: translateY(-50%) translateX(8px);
+  transition:
+    max-width 0.34s var(--mario-spring),
+    opacity 0.2s var(--mario-ease),
+    transform 0.34s var(--mario-spring);
+}
+
+/* Grows away from the nearer edge. The anchored side is the one touching him,
+   so the box extends outward from his shoulder as max-width opens up.
+ *
+ * The 10px separating him from the pill is transparent PADDING on this element
+ * rather than a gap between two elements. That matters: the bar opens on hover
+ * and closes when the pointer leaves, and a real gap is dead space that fires
+ * mouseleave halfway to the thing you are reaching for. Padding keeps the whole
+ * run from his shoulder to the pill inside one element, so the journey never
+ * leaves it. */
+.mario-bar { box-sizing: border-box; }
+
+.mario-agent:not(.opens-right) .mario-bar {
+  right: 100%;
+  padding-right: 10px;
+}
+.mario-agent.opens-right .mario-bar {
+  left: 100%;
+  padding-left: 10px;
+  transform: translateY(-50%) translateX(-8px);
+}
+
+.mario-agent.is-open .mario-bar,
+.mario-agent.opens-right.is-open .mario-bar {
+  max-width: 350px;   /* 340 of pill + the 10 of padding */
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.mario-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 6px 0 14px;
+  background: rgba(17, 17, 17, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+
+/* A hairline of light along the top edge — the one flourish, and what stops
+   the pill reading as a flat grey lozenge. */
+.mario-bar-inner {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 40%);
+}
+
+.mario-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--t1);
+  font-family: var(--font-code);
+  font-size: 0.74rem;
+  letter-spacing: 0.01em;
+}
+.mario-input::placeholder { color: var(--t4); }
+
+.mario-send {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #FFFFFF;
+  border: none;
+  border-radius: 999px;
+  color: #0A0A0A;
+  font-size: 0.55rem;
+  cursor: pointer;
+  transition: opacity 0.16s var(--mario-ease), transform 0.16s var(--mario-spring);
+}
+.mario-send:hover:not(:disabled) { transform: scale(1.1); }
+/* Fades rather than disappears: the button keeps its place, so the bar does not
+   reflow the moment you type your first character. */
+.mario-send:disabled { opacity: 0.2; cursor: default; }
+
+/* ── Working ── */
+.mario-status {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-code);
+  font-size: 0.72rem;
+  color: var(--t2);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.mario-status-text { overflow: hidden; text-overflow: ellipsis; }
+
+.mario-status-dots { display: flex; gap: 3px; flex-shrink: 0; }
+.mario-status-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--t2);
+  animation: mario-dot 1.1s ease-in-out infinite;
+}
+.mario-status-dots i:nth-child(2) { animation-delay: 0.15s; }
+.mario-status-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes mario-dot {
+  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+  30%           { opacity: 1;    transform: translateY(-2px); }
+}
+
+/* ── The proposal ──
+ * Rises from where he stands. Anchored to his bottom edge so it grows upward,
+ * which keeps him fixed on the spot the user put him rather than shoving him
+ * around as the diff changes size. */
+.mario-result {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  width: 380px;
+  max-height: min(60vh, 560px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(10, 10, 10, 0.97);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.66);
+  overflow: hidden;
+  transform-origin: bottom center;
+  animation: mario-rise 0.3s var(--mario-spring);
+}
+/* Anchored under him rather than under the bar, so it opens into the screen
+   from whichever corner he is parked in. */
+.mario-agent:not(.opens-right) .mario-result { right: 0; }
+.mario-agent.opens-right .mario-result { left: 0; }
+
+@keyframes mario-rise {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+/* Clamped so a diff opening next to a narrow window cannot push itself off the
+   edge — the panel is wider than he is, and he can be parked anywhere. */
+.mario-result { max-width: calc(100vw - 24px); }
+
+.mario-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px 9px 14px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-code);
+  font-size: 0.68rem;
+  color: var(--t2);
+  flex-shrink: 0;
+}
+.mario-result-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mario-result-head button {
   width: 22px;
   height: 22px;
   flex-shrink: 0;
@@ -3650,74 +4090,27 @@ body {
   border-radius: 4px;
   color: var(--t3);
   font-size: 0.7rem;
-  line-height: 1;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
-.mario-bar-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--t1); }
+.mario-result-head button:hover { background: rgba(255, 255, 255, 0.08); color: var(--t1); }
 
-.mario-body {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;             /* lets the scroll area actually shrink */
-  overflow-y: auto;
-}
+.mario-result-body { overflow-y: auto; min-height: 0; }
+.mario-result-body .afx-panel { border: none; margin: 0; }
 
-/* ── The ask box ── */
-.mario-ask {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 10px 12px 12px;
-  border-top: 1px solid var(--line);
-  background: var(--s0);
-  position: sticky;
-  bottom: 0;                 /* stays reachable however long the panel above gets */
-}
-
-.mario-ask-input {
-  flex: 1;
-  resize: none;
-  padding: 8px 10px;
-  background: var(--s1);
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  color: var(--t1);
-  font-family: var(--font-code);
-  font-size: 0.72rem;
-  line-height: 1.45;
-  outline: none;
-  transition: border-color 0.12s ease;
-}
-.mario-ask-input::placeholder { color: var(--t4); }
-.mario-ask-input:focus { border-color: rgba(255, 255, 255, 0.28); }
-.mario-ask-input:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.mario-ask-send {
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #FFFFFF;
-  border: none;
-  border-radius: 6px;
-  color: #0A0A0A;
-  font-size: 0.7rem;
-  cursor: pointer;
-  transition: opacity 0.12s ease, transform 0.08s ease;
-}
-.mario-ask-send:hover:not(:disabled) { transform: translateY(-1px); }
-.mario-ask-send:disabled { opacity: 0.25; cursor: not-allowed; }
-
-/* Inside the companion the panel is the whole content, so it drops the padding
-   it needed when it was one card among several in the terminal. */
-.mario-body .afx-panel { border: none; margin: 0; }
-
+/* Everything above is motion for its own sake as far as this reader is
+   concerned. The sprite still swaps frames while he works — that is state, not
+   decoration, and it is the only signal that anything is happening. */
 @media (prefers-reduced-motion: reduce) {
-  .mario-sprite.is-busy { animation: none; }
-  .mario-ask-send:hover:not(:disabled) { transform: none; }
+  .mario-sprite,
+  .mario-agent.is-busy .mario-sprite,
+  .mario-agent.is-hopping .mario-sprite { animation: none; transform: none; }
+  .mario-bubble { animation: none; }
+  .mario-result { animation: none; }
+  .mario-bar { transition: opacity 0.15s linear, max-width 0.15s linear; }
+  .mario-send:hover:not(:disabled) { transform: none; }
+  .mario-status-dots i { animation: none; opacity: 0.6; }
+  .mario-invoke:hover { transform: none; }
 }
 
 /* --- Diagnostic FX --- */
@@ -3943,7 +4336,7 @@ body {
 }
 
 /* ==========================================================
-   Causality / Dependency Graph — system architecture view
+   Causality / Dependency Graph â€” system architecture view
    ========================================================== */
 
 .dep-graph-container {
@@ -4135,7 +4528,7 @@ body {
   margin-top: 2px;
 }
 
-/* ── Graph Nodes ── */
+/* â”€â”€ Graph Nodes â”€â”€ */
 .dep-node {
   background: var(--s2);
   border: 1px solid var(--line-strong);
@@ -4433,7 +4826,7 @@ body {
   color: var(--t3);
 }
 
-/* ── React Flow overrides for the graph wrapper ── */
+/* â”€â”€ React Flow overrides for the graph wrapper â”€â”€ */
 .dep-flow-wrapper .react-flow__background {
   background: #FFFFFF !important;
 }
@@ -4468,7 +4861,7 @@ body {
 }
 
 /* ==========================================================
-   Setup Wizard — onboarding
+   Setup Wizard â€” onboarding
    ========================================================== */
 
 @keyframes setup-fade-in {
@@ -5013,14 +5406,14 @@ body {
   background: #E0E0E0;
 }
 
-/* ══════════════════════════════════════════════════════════
- *  Deploy HQ — Frontend / Backend target switcher
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ *  Deploy HQ â€” Frontend / Backend target switcher
  *  A restrained segmented control: an inset track holds two
  *  segments; a solid neutral thumb slides under the active one.
  *  Brand identity is carried only by a thin accent rail on the
- *  thumb and the segment's glyph + provider tag — no glow.
+ *  thumb and the segment's glyph + provider tag â€” no glow.
  *  Per-segment accent is passed in as --dhub-accent.
- * ══════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 .dhub-switcher {
   flex-shrink: 0;
   padding: 12px 14px;
@@ -5124,17 +5517,17 @@ body {
   color: var(--dhub-accent);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * WORLD 1-1 — terminal chrome
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * WORLD 1-1 â€” terminal chrome
  *
  * Black and white only. With colour off the table the character has to come
  * from somewhere else, so it comes from surface and type: a CRT with scanlines
  * and a soft bloom, hollow pixel lettering borrowed from the welcome screen,
  * and Mario standing where the cursor is.
  *
- * Every layer is a static gradient or border — nothing animates per frame, and
+ * Every layer is a static gradient or border â€” nothing animates per frame, and
  * nothing sits between you and the text.
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .sigbay {
   position: relative;
@@ -5149,7 +5542,7 @@ body {
     radial-gradient(120% 120% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.55));
 }
 
-/* Scanlines. Tighter and stronger than a subtle nod — with no colour to carry
+/* Scanlines. Tighter and stronger than a subtle nod â€” with no colour to carry
    the theme, the surface has to. */
 .sigbay-scanlines {
   position: absolute;
@@ -5189,13 +5582,13 @@ body {
 }
 
 /* Phosphor bloom, white. A CRT halates, and this is what stops the greys
-   reading as flat web colours. One small shadow only — text-shadow is
+   reading as flat web colours. One small shadow only â€” text-shadow is
    per-glyph work, so anything heavier would show as jank on fast output. */
 .sigbay-screen .xterm-rows {
   text-shadow: 0 0 4px rgba(255, 255, 255, 0.22);
 }
 
-/* ── Mario, as the cursor ──
+/* â”€â”€ Mario, as the cursor â”€â”€
  * Positioned from JS against the panel root. Inert to the pointer so text
  * selection still passes straight through him.
  */
@@ -5204,14 +5597,14 @@ body {
   pointer-events: none;
   z-index: 4;
   /* Desaturated to keep the screen strictly black and white. He reads perfectly
-     well as a silhouette — the shape is what makes him recognisable, not the
+     well as a silhouette â€” the shape is what makes him recognisable, not the
      red. Drop this filter and he becomes the single spot of colour, which is a
      good look too if you ever want one. */
   filter: grayscale(1) contrast(1.35) brightness(1.25);
   animation: sigbay-mario-idle 1.4s steps(2, end) infinite;
 }
 
-/* Two frames, not an eased bob — an NES sprite snaps between poses. */
+/* Two frames, not an eased bob â€” an NES sprite snaps between poses. */
 @keyframes sigbay-mario-idle {
   0%, 49%   { transform: translateY(0); }
   50%, 100% { transform: translateY(-1px); }
@@ -5221,7 +5614,7 @@ body {
   .sigbay-mario { animation: none; }
 }
 
-/* ── Level HUD ──
+/* â”€â”€ Level HUD â”€â”€
  * Hollow pixel lettering, the same treatment as the welcome screen's wordmark:
  * Silkscreen with a stroke and no fill.
  */
@@ -5298,7 +5691,7 @@ body {
   .sigbay-coin { animation: none; }
 }
 
-/* ── Level tabs ── */
+/* â”€â”€ Level tabs â”€â”€ */
 .sigbay-chan {
   display: inline-flex;
   align-items: center;
@@ -5320,7 +5713,7 @@ body {
   border-color: rgba(255, 255, 255, 0.55);
 }
 
-/* The active shell is a lit block — inverted, the way an 8-bit UI shows focus. */
+/* The active shell is a lit block â€” inverted, the way an 8-bit UI shows focus. */
 .sigbay-chan.is-active {
   color: #000000;
   background: #FFFFFF;
@@ -5354,7 +5747,7 @@ body {
   text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
 }
 
-/* ── Dependency graph zoom controls ──
+/* â”€â”€ Dependency graph zoom controls â”€â”€
  * Replaces React Flow's default cluster. Larger tap targets and the app's own
  * surface treatment, so it reads as part of the panel rather than a library
  * default dropped on top of it.
@@ -5486,7 +5879,7 @@ body {
   .conn-banner-pulse { animation: none; }
 }
 
-/* ══════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * Session Rewind
  *
  * Three parts with real edges between them, because the previous version was
@@ -5498,7 +5891,7 @@ body {
  *
  * Set entirely in the terminal's own face. This panel is instrumentation, and
  * the body typeface used elsewhere made it read like an article.
- * ══════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .rw-panel,
 .rw-empty {
@@ -5508,7 +5901,7 @@ body {
   font-family: var(--font-code);
 }
 
-/* ── Bar ── */
+/* â”€â”€ Bar â”€â”€ */
 
 /* Rules are inset to the same 18px gutter the content uses, so a divider ends
    where the card below it ends instead of overhanging it on both sides. */
@@ -5533,7 +5926,7 @@ body {
 
 .rw-title {
   /* The Workspaces heading's treatment: hollow pixel letters, outlined rather
-     than filled. VT323 needs the opposite handling to a display face — it
+     than filled. VT323 needs the opposite handling to a display face â€” it
      renders small for its em so the size goes up, it has a single weight so
      bolding is meaningless, and it wants tracking opened out, because negative
      letter-spacing closes the gaps the pixel grid depends on.
@@ -5550,7 +5943,7 @@ body {
   -webkit-text-stroke-color: rgba(255, 255, 255, 0.7);
 }
 
-/* ── Stage ── */
+/* â”€â”€ Stage â”€â”€ */
 
 /* The whole stage, not just the level: the ticks and the legend are siblings
    of .rwl, so dragging the slider used to highlight the time labels. */
@@ -5576,7 +5969,7 @@ body {
   white-space: nowrap;
 }
 
-/* ── Deck ── */
+/* â”€â”€ Deck â”€â”€ */
 
 .rw-deck {
   position: relative;
@@ -5587,7 +5980,7 @@ body {
   padding: 12px 18px 16px;
 }
 
-/* A tape counter. Recessed, gold digits on black — the readout on a machine
+/* A tape counter. Recessed, gold digits on black â€” the readout on a machine
    you rewind, which is exactly what this panel is. */
 .rw-counter {
   display: flex;
@@ -5624,8 +6017,8 @@ body {
   margin-left: auto;
 }
 
-/* ── Transport keys ──
- * This panel is a machine you rewind, with a tape counter for a readout — so
+/* â”€â”€ Transport keys â”€â”€
+ * This panel is a machine you rewind, with a tape counter for a readout â€” so
  * the controls are the machine's keys rather than web buttons. Each is a cap
  * sitting proud of the deck: lit along its top edge, dark underneath, with a
  * solid block beneath standing in for its thickness. Pressing it drives the
@@ -5740,11 +6133,11 @@ body {
 .rw-key.is-small:hover:not(:disabled) .rw-key-icon { color: #FF8085; }
 
 
-/* ── Messages ──
+/* â”€â”€ Messages â”€â”€
  *
  * These are the machine talking, not web alerts. Both are cut into the deck
- * with the tape counter's construction — near-black face, hard inset bevel,
- * one hairline of light around it — so they read as part of the instrument
+ * with the tape counter's construction â€” near-black face, hard inset bevel,
+ * one hairline of light around it â€” so they read as part of the instrument
  * rather than notification cards dropped on top of it.
  *
  * They span the full width because a tinted slab that stops at 86ch has a
@@ -5791,7 +6184,7 @@ body {
     #3A1114 3px 6px);
 }
 
-/* Armed, and waiting on you — so it says so, and it blinks while it waits. */
+/* Armed, and waiting on you â€” so it says so, and it blinks while it waits. */
 .rw-warn::after {
   content: 'ARMED';
   position: absolute;
@@ -5847,7 +6240,7 @@ body {
   color: #FFB224;
 }
 
-/* ── Empty ── */
+/* â”€â”€ Empty â”€â”€ */
 
 .rw-empty { padding: 18px; }
 
@@ -5867,7 +6260,7 @@ body {
   color: var(--t3);
 }
 
-/* ── Preview ── */
+/* â”€â”€ Preview â”€â”€ */
 
 .rw-preview {
   margin: 0 18px 18px;
@@ -5927,7 +6320,7 @@ body {
   white-space: pre;
 }
 
-/* ══════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
  * The rewind timeline, as a level
  *
  * Scrubbing back through a night is walking left through a level, so it is
@@ -5935,10 +6328,10 @@ body {
  * checkpoint flag at the last state that worked, and the plumber standing on
  * the ground as the handle you drag.
  *
- * The palette is the world's own — coin gold for good, brick bronze for the
+ * The palette is the world's own â€” coin gold for good, brick bronze for the
  * ground, Goomba brown for a failure. No status green: this panel already has
  * a currency for "good", and it is a coin.
- * ══════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .rwl {
   position: relative;
@@ -5979,8 +6372,8 @@ body {
    without needing a colour nobody has learned yet. */
 /* The last working build is a place in the timeline, so it is drawn as a post
    through the whole stage rather than a sprite standing on the ground. Mario
-   occupies that same spot by default — the newest checkpoint is usually the
-   last clean run — and two sprites in one box cannot both be read, whichever
+   occupies that same spot by default â€” the newest checkpoint is usually the
+   last clean run â€” and two sprites in one box cannot both be read, whichever
    is on top. Behind everything, with the pennant in the empty band above the
    sprites, both stay legible and nothing has to move. */
 .rwl-flag {
@@ -6071,7 +6464,7 @@ body {
   .rw-warn::after { animation: none; }
 }
 
-/* ── Legend ──
+/* â”€â”€ Legend â”€â”€
  * Pixel icons are only obvious once somebody has been told what they mean, and
  * nothing else in the app teaches this vocabulary. Four short pairings cost one
  * quiet line and remove the "what is this?" entirely.
@@ -6101,7 +6494,7 @@ body {
   opacity: 0.9;
 }
 
-/* ── Presence capsule ──
+/* â”€â”€ Presence capsule â”€â”€
  * One image does the explaining: your face, a thread, theirs. Floats over the
  * editor's corner and never displaces the code.
  */
@@ -6142,7 +6535,7 @@ body {
   to   { opacity: 1; transform: none; }
 }
 
-/* ── You ── thread ── them ── */
+/* â”€â”€ You â”€â”€ thread â”€â”€ them â”€â”€ */
 
 .cx-thread {
   display: inline-flex;
@@ -6167,7 +6560,7 @@ body {
   user-select: none;
 }
 
-/* Your own face is the anchor, not the subject — outlined rather than filled,
+/* Your own face is the anchor, not the subject â€” outlined rather than filled,
    so the eye goes to the person who is actually doing something. */
 .cx-av.is-me {
   background: transparent;
@@ -6183,7 +6576,7 @@ body {
 
 .cx-av + .cx-av:not(.is-more) { margin-left: -8px; }
 
-/* The thread itself — the whole idea in 22 pixels. */
+/* The thread itself â€” the whole idea in 22 pixels. */
 .cx-line {
   position: relative;
   width: 22px;
@@ -6214,7 +6607,7 @@ body {
   100% { transform: translateX(0);    opacity: 0; }
 }
 
-/* A ring rather than a glow — a glow blurs a 25px circle; this stays crisp. */
+/* A ring rather than a glow â€” a glow blurs a 25px circle; this stays crisp. */
 .cx-ring {
   position: absolute;
   inset: -2px;
@@ -6229,7 +6622,7 @@ body {
   100% { transform: scale(1.45); opacity: 0; }
 }
 
-/* ── The line that opens ──
+/* â”€â”€ The line that opens â”€â”€
  * max-width, so it reveals rather than snapping to a new size. */
 
 .cx-body {
@@ -6292,9 +6685,9 @@ body {
   .cx-body { transition: none; }
 }
 
-/* ── Changed since this point ──
+/* â”€â”€ Changed since this point â”€â”€
  * One row per person, everything on it. In the terminal's face like the rest
- * of the panel — this is a readout, not prose.
+ * of the panel â€” this is a readout, not prose.
  */
 .rwc {
   padding: 15px 18px 18px;
@@ -6337,7 +6730,7 @@ body {
   color: var(--t4);
 }
 
-/* ── One author ── */
+/* â”€â”€ One author â”€â”€ */
 
 .rwc-block {
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -6395,7 +6788,7 @@ body {
   color: #FFB224;
 }
 
-/* Takes the slack, so nothing is stranded against the far edge — the undo
+/* Takes the slack, so nothing is stranded against the far edge â€” the undo
    control used to sit ~900px away from the name it belonged to. */
 .rwc-files {
   flex: 1;
@@ -6407,11 +6800,11 @@ body {
   color: var(--t4);
 }
 
-/* ── The changes themselves ──
+/* â”€â”€ The changes themselves â”€â”€
  *
  * A ledger, not a stack of cards. Every change used to be its own bordered
  * block with its own padded code well, repeating "index.html:" on each one and
- * costing ~110px a row — four changes filled the panel. Here the filename is
+ * costing ~110px a row â€” four changes filled the panel. Here the filename is
  * said once per file, the line numbers run down a gutter the way they do in the
  * editor, and each change is a row you read across.
  */
@@ -6423,7 +6816,7 @@ body {
   gap: 14px;
 }
 
-/* ── One file ── */
+/* â”€â”€ One file â”€â”€ */
 
 .rwf {
   border-left: 1px solid rgba(255, 255, 255, 0.07);
@@ -6463,7 +6856,7 @@ body {
   color: var(--t4);
 }
 
-/* ── One change ── */
+/* â”€â”€ One change â”€â”€ */
 
 .rwr {
   display: flex;
@@ -6509,7 +6902,7 @@ body {
 
 /* Gone vs. current has to be legible in the text itself.
    I had kept both near-white on the theory that the sign column carried the
-   distinction — but a wall of identically-coloured lines gives the eye nothing,
+   distinction â€” but a wall of identically-coloured lines gives the eye nothing,
    and the one question being asked here is "which of these is still true?".
    What is gone is rose and dimmed, what stands is bright; the deleted lines
    also carry a solid edge so a block of them reads as one removal at a glance. */
@@ -6614,7 +7007,7 @@ body {
 
 .rwc-all { align-self: flex-start; margin-top: 2px; }
 
-/* ── Read-only ── */
+/* â”€â”€ Read-only â”€â”€ */
 
 .rw-role {
   padding: 3px 8px;
@@ -6647,7 +7040,7 @@ body {
 /* The legend sits under the level, inside the stage's padding. */
 .rwl-legend { margin: -6px 0 4px; }
 
-/* ── Saving a checkpoint ──
+/* â”€â”€ Saving a checkpoint â”€â”€
  * The owner's control, in the rewind panel's own machine idiom rather than the
  * flat cards used elsewhere: recessed field, physical key. It belongs to this
  * panel, and this panel looks like hardware.
@@ -6670,7 +7063,7 @@ body {
   background: rgba(255, 255, 255, 0.07);
 }
 
-/* In the empty state the row is the only thing there — no rule needed under it,
+/* In the empty state the row is the only thing there â€” no rule needed under it,
    and it gets air above instead. */
 .rw-save.is-empty {
   padding: 4px 18px 18px;
@@ -6686,7 +7079,7 @@ body {
   letter-spacing: 0.06em;
 }
 
-/* Replaces the standalone placeholder screen. One line under the deck — the
+/* Replaces the standalone placeholder screen. One line under the deck â€” the
    empty track above it has already made the point visually. */
 .rw-hint {
   padding: 12px 18px 14px;
@@ -6734,7 +7127,7 @@ body {
 }
 
 /* The same key as the transport controls, because it is the same kind of
-   object — the one that commits rather than looks, so it carries the gold the
+   object â€” the one that commits rather than looks, so it carries the gold the
    panel reserves for "this is the good state". */
 .rw-save-btn {
   flex-shrink: 0;
@@ -6803,7 +7196,7 @@ body {
   color: var(--t4);
 }
 
-/* ── What the checkpoint is a record of ── */
+/* â”€â”€ What the checkpoint is a record of â”€â”€ */
 
 .rw-cap {
   padding: 14px 18px 16px;
@@ -6891,10 +7284,10 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Toolchain missing ──
+/* â”€â”€ Toolchain missing â”€â”€
  * The panel that runs when nothing else could. It has to do two jobs at once:
  * say clearly that the user's code is not at fault, and hand over a command
- * they can paste. Greyscale — a red panel would say "your program failed",
+ * they can paste. Greyscale â€” a red panel would say "your program failed",
  * which is the exact misreading this exists to prevent. Structure and weight
  * carry it instead: a ruled eyebrow, one heavy line, then quiet prose.
  */
@@ -6952,7 +7345,7 @@ body {
 }
 
 /* The tool's name is the answer to "what is wrong", so it gets the only
-   emphasis in the card — set in code type, because it is a command. */
+   emphasis in the card â€” set in code type, because it is a command. */
 .tcm-tool {
   font-family: var(--font-code);
   font-size: 1.05rem;
@@ -7047,7 +7440,7 @@ body {
   color: var(--t4);
 }
 
-/* The follow-up command is still a command — it keeps the brighter ink. */
+/* The follow-up command is still a command â€” it keeps the brighter ink. */
 .tcm-after { color: var(--t2); }
 
 .tcm-link {
@@ -7074,7 +7467,7 @@ body {
   border-color: #FFFFFF;
 }
 
-/* The step people miss, given the weight of an aside rather than a warning —
+/* The step people miss, given the weight of an aside rather than a warning â€”
    it matters, but it is the last thing to read, not the first. */
 .tcm-foot {
   display: flex;
@@ -7103,11 +7496,11 @@ body {
   .tcm { animation: none; }
 }
 
-/* ── The lobby ──
+/* â”€â”€ The lobby â”€â”€
  * Someone is at the door. Greyscale, and quiet about it: the strip earns its
  * attention from a ring leaving the person's initials and a clock counting up,
  * not from being coloured in. An amber bar would have read as a warning, and
- * nothing has gone wrong — a person is waiting, which deserves poise rather
+ * nothing has gone wrong â€” a person is waiting, which deserves poise rather
  * than alarm.
  */
 .adm {
@@ -7160,7 +7553,7 @@ body {
   gap: 14px;
 }
 
-/* ── The knock ── */
+/* â”€â”€ The knock â”€â”€ */
 
 .adm-knock {
   position: relative;
@@ -7191,7 +7584,7 @@ body {
 }
 
 /* Out from the initials and gone. Slow, and never quite reaching full
-   strength — a knock, not a siren. */
+   strength â€” a knock, not a siren. */
 .adm-ring {
   position: absolute;
   inset: -1px;
@@ -7235,7 +7628,7 @@ body {
 }
 
 /* The wait, counting up. Tabular so it cannot jitter, and set in the quietest
-   ink in the strip — it informs the decision without asking for it. */
+   ink in the strip â€” it informs the decision without asking for it. */
 .adm-clock {
   font-family: var(--font-code);
   font-size: 0.54rem;
@@ -7247,7 +7640,7 @@ body {
   margin-right: 4px;
 }
 
-/* ── The two answers ── */
+/* â”€â”€ The two answers â”€â”€ */
 
 .adm-btn {
   height: 30px;
@@ -7274,7 +7667,7 @@ body {
 }
 
 /* Solid white on black, the same yes as Create & Start. In a greyscale palette
-   fill is the only rank there is, so the affirmative takes it — with a faint
+   fill is the only rank there is, so the affirmative takes it â€” with a faint
    halo, which is the one flourish the strip allows itself. */
 .adm-btn.is-yes {
   background: #FFFFFF;
@@ -7299,8 +7692,8 @@ body {
   .adm-ring { animation: none; opacity: 0.28; }
 }
 
-/* ── Header presence ──
- * The same image the collision hint uses — you, a thread, them — shrunk to fit
+/* â”€â”€ Header presence â”€â”€
+ * The same image the collision hint uses â€” you, a thread, them â€” shrunk to fit
  * the toolbar, where it replaces the role label and session id. Smaller than
  * the floating hint on purpose: this one is always on screen.
  */
@@ -7336,7 +7729,7 @@ body {
   color: var(--t2);
 }
 
-/* Overlapping only the peers — the thread already separates you from them. */
+/* Overlapping only the peers â€” the thread already separates you from them. */
 .hdr-av + .hdr-av:not(.is-more) { margin-left: -6px; }
 
 .hdr-av.is-more {
@@ -7356,7 +7749,7 @@ body {
 }
 
 /* Typing, right now, in the file you are looking at. This is the state the
-   thread exists for — two people building the same thing is the one collision
+   thread exists for â€” two people building the same thing is the one collision
    a CRDT cannot resolve, because technically nothing went wrong. */
 .hdr-av.is-typing { position: relative; }
 
@@ -7381,7 +7774,7 @@ body {
   .hdr-ring { animation: none; opacity: 0.5; transform: scale(1); }
 }
 
-/* ── Finish & push ──
+/* â”€â”€ Finish & push â”€â”€
  * The session's ending, sitting under the git dashboard in the same panel. It
  * borrows that card's type scale on purpose: the two are read as one column,
  * and a second set of sizes would make the ending look bolted on.
@@ -7427,7 +7820,7 @@ body {
 .fin-input:focus { border-color: var(--line-strong); }
 .fin-input:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* A readout of what is about to be committed — measurements, so mono. */
+/* A readout of what is about to be committed â€” measurements, so mono. */
 .fin-meta {
   display: flex;
   align-items: center;
@@ -7521,7 +7914,7 @@ body {
 
 .fin-panel.is-done .fin-title { color: #6BCB77; }
 
-/* ── The evidence behind a checkpoint's numbers ──
+/* â”€â”€ The evidence behind a checkpoint's numbers â”€â”€
  * A count is a claim; these are the lines it was counted from. Indented under
  * the author so it reads as their working, not as a second list.
  */
@@ -7594,7 +7987,7 @@ body {
 .rw-snap-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rw-snap-lines { flex-shrink: 0; color: var(--t4); font-variant-numeric: tabular-nums; }
 
-/* Marking a checkpoint by hand — the legend's sprites, as pressable keys. */
+/* Marking a checkpoint by hand â€” the legend's sprites, as pressable keys. */
 .rw-runpick { display: inline-flex; gap: 4px; flex-shrink: 0; }
 .rw-runpick-btn {
   display: inline-flex; align-items: center; justify-content: center;

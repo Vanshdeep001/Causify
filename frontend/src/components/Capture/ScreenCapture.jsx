@@ -256,7 +256,12 @@ const ScreenCapture = () => {
           style={{
             position: 'absolute',
             top: 'calc(100% + 8px)',
-            right: 0,
+            /* Hangs from the button's LEFT edge. It used to hang from the right,
+               which was correct while this control lived at the right end of the
+               editor toolbar; in the app header it sits a couple of hundred
+               pixels from the left edge, and a 240px menu opening leftwards from
+               there runs straight off the window. */
+            left: 0,
             width: '240px',
             background: 'var(--s1)',
             border: '1px solid var(--line-strong)',

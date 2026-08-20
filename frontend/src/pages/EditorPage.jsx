@@ -18,9 +18,9 @@ import ImpactWarningBanner from '../components/Editor/ImpactWarningBanner';
 import ConnectionBanner from '../components/Session/ConnectionBanner';
 import AdmissionRequests from '../components/Session/AdmissionRequests';
 import Whiteboard from '../components/Editor/Whiteboard';
-import ScreenCapture from '../components/Capture/ScreenCapture';
 import MarioCompanion from '../components/Mario/MarioCompanion';
-import { PixelSprite, MARIO_PAL, MARIO_ROWS } from '../components/common/pixelArt';
+import { PixelSprite } from '../components/common/pixelArt';
+import { AGENT_PAL, AGENT_IDLE } from '../components/Mario/sprites';
 import { initials } from '../utils/initials';
 
 /* ── Language Icon Component ── */
@@ -993,39 +993,56 @@ const EditorPage = () => {
               </div>
             )}
 
-            {/* Screen capture — screenshot & recording */}
-            <ScreenCapture />
+            {/* Screen recording used to sit here. It moved up to the app header
+                beside the project name: recording is about the whole window,
+                not about the file open in this pane, and next to RUN it read as
+                one of the actions you take on your code. */}
 
-            {/* Invoke Mario. Beside RUN because it is the other half of the
-                same loop: RUN tells you it broke, Mario fixes it. Available
-                without a run having happened, which is the whole point — a
-                crashed dev server never produces one. */}
-            <button
-              onClick={toggleMario}
-              className={`mario-invoke${marioOpen ? ' is-on' : ''}`}
-              title={marioOpen ? 'Send Mario away' : 'Invoke Mario — fix or change code'}
-            >
-              <span className="mario-invoke-sprite">
-                <PixelSprite rows={MARIO_ROWS} palette={MARIO_PAL} px={1.5} />
-              </span>
-              MARIO
-            </button>
+            {/* Mario, standing in the header beside RUN — the other half of the
+                same loop: RUN tells you it broke, he fixes it. Reachable without
+                a run having happened, which is the whole point, since a crashed
+                dev server never produces one.
 
-            {/* Run — primary action */}
-            <button
-              onClick={runCode}
-              disabled={isRunning}
-              className="run-button"
-            >
-              {isRunning ? (
-                <span className="loading-spinner" style={{ width: '10px', height: '10px' }} />
-              ) : (
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="6 3 21 12 6 21" />
-                </svg>
+                No label. He is a recognisable shape and a word beside him only
+                repeats what the shape already says.
+
+                He disappears once summoned, rather than staying lit as a toggle.
+                The companion IS him: leaving a copy behind would make two of
+                him on screen and break the one thing that makes this read as a
+                character rather than a panel — that he got up and walked over. */}
+            {/* Mario and RUN as one tight pair, rather than two items sharing
+                the row's 10px gap. Both carry padding of their own — his button
+                pads the sprite, RUN pads its label — so inheriting the row gap
+                stacked three separate spaces into one wide hole between them.
+                They are two halves of the same loop and should read as a pair. */}
+            <span style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+              {!marioOpen && (
+                <button
+                  onClick={toggleMario}
+                  className="mario-invoke"
+                  title="Invoke Mario"
+                  aria-label="Invoke Mario"
+                >
+                  <PixelSprite rows={AGENT_IDLE} palette={AGENT_PAL} px={1.5} />
+                </button>
               )}
-              {isRunning ? 'RUNNING...' : 'RUN'}
-            </button>
+
+              {/* Run — primary action */}
+              <button
+                onClick={runCode}
+                disabled={isRunning}
+                className="run-button"
+              >
+                {isRunning ? (
+                  <span className="loading-spinner" style={{ width: '10px', height: '10px' }} />
+                ) : (
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="6 3 21 12 6 21" />
+                  </svg>
+                )}
+                {isRunning ? 'RUNNING...' : 'RUN'}
+              </button>
+            </span>
           </div>
         </div>
 

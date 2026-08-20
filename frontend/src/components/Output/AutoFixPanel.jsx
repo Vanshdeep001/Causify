@@ -419,16 +419,23 @@ const AutoFixPanel = () => {
   const hasPatch = Boolean(autoFix.fixedCode) && Array.isArray(autoFix.edits) && autoFix.edits.length > 0;
   const needsKey = autoFix.status === 'NO_AI_KEY';
 
-  /* Bare while asking for a key: the scene and the coin slot below it already
-     form one framed cabinet, so the panel adds nothing but a second border. */
+  /* Bare while asking for a key: the coin slot below is the whole cabinet, so
+     the panel adds nothing but a second border. */
   return (
     <div className={`afx-panel ${needsKey ? 'is-bare' : ''}`}>
-      <ResultScene
-        status={autoFix.status}
-        attemptsUsed={autoFix.attemptsUsed}
-        confidence={hasPatch ? autoFix.confidence : 0}
-        attached={needsKey}
-      />
+      {/* No scene while asking for a key.
+          It rendered a goomba, a brick course, a red INSERT COIN and a WORLD
+          counter directly above a card that then said INSERT COIN again — the
+          same sentence twice, in three accent colours, for a screen whose only
+          job is to take one string. Missing a key is not a verdict on a run;
+          there was nothing to run. */}
+      {!needsKey && (
+        <ResultScene
+          status={autoFix.status}
+          attemptsUsed={autoFix.attemptsUsed}
+          confidence={hasPatch ? autoFix.confidence : 0}
+        />
+      )}
 
       {/* The coin slot on the front of the cabinet. Joined to the scene above
           it, which already says INSERT COIN — so the form carries no heading,
