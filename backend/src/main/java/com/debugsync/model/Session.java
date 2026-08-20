@@ -43,6 +43,25 @@ public class Session {
     @Column
     private LocalDateTime lastActiveAt;
 
+    /**
+     * Who created this session.
+     *
+     * A session outlives the room now: everyone can leave and come back later.
+     * Without a recorded owner, "who is in charge on rejoin" was answered by
+     * whoever happened to reconnect first — so a collaborator could return
+     * before the host and inherit the right to lock files, admit people and
+     * rewrite history. Stored so the answer is the same tomorrow as it was
+     * today, regardless of arrival order.
+     *
+     * The display name travels with it because the id alone cannot tell anyone
+     * who they are waiting for.
+     */
+    @Column
+    private String ownerUserId;
+
+    @Column
+    private String ownerName;
+
     public Session() {
     }
 
@@ -119,5 +138,21 @@ public class Session {
 
     public void setLastActiveAt(LocalDateTime lastActiveAt) {
         this.lastActiveAt = lastActiveAt;
+    }
+
+    public String getOwnerUserId() {
+        return ownerUserId;
+    }
+
+    public void setOwnerUserId(String ownerUserId) {
+        this.ownerUserId = ownerUserId;
+    }
+
+    public String getOwnerName() {
+        return ownerName;
+    }
+
+    public void setOwnerName(String ownerName) {
+        this.ownerName = ownerName;
     }
 }

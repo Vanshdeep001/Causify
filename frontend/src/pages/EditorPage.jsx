@@ -16,9 +16,12 @@ import EmptyEditorState from '../components/Editor/EmptyEditorState';
 import { isBinaryAssetPath, isTextImagePath } from '../utils/binaryAssets';
 import ImpactWarningBanner from '../components/Editor/ImpactWarningBanner';
 import ConnectionBanner from '../components/Session/ConnectionBanner';
-import CollisionHint from '../components/Session/CollisionHint';
+import AdmissionRequests from '../components/Session/AdmissionRequests';
 import Whiteboard from '../components/Editor/Whiteboard';
-import ScreenCapture from '../components/Capture/ScreenCapture';
+import MarioCompanion from '../components/Mario/MarioCompanion';
+import { PixelSprite } from '../components/common/pixelArt';
+import { AGENT_PAL, AGENT_IDLE } from '../components/Mario/sprites';
+import { initials } from '../utils/initials';
 
 /* ── Language Icon Component ── */
 const LanguageIcon = ({ filename, size = 20 }) => {
@@ -333,7 +336,6 @@ const MIN_SIDEBAR_WIDTH = 220;
 const MAX_SIDEBAR_WIDTH = 800;
 
 const EditorPage = () => {
-  const [copied, setCopied] = useState(false);
   const isTerminalOpen = useEditorStore((s) => s.isTerminalOpen);
   const terminalHeight = useEditorStore((s) => s.terminalHeight);
   const isRunning = useEditorStore((s) => s.isRunning);
@@ -355,6 +357,8 @@ const EditorPage = () => {
   const userRole = useEditorStore((s) => s.userRole);
 
   const runCode = useEditorStore((s) => s.runCode);
+  const marioOpen = useEditorStore((s) => s.marioOpen);
+  const toggleMario = useEditorStore((s) => s.toggleMario);
   const goToLive = useEditorStore((s) => s.goToLive);
   const setTerminalActiveTab = useEditorStore((s) => s.setTerminalActiveTab);
   const setFileExplorerOpen = useEditorStore((s) => s.setFileExplorerOpen);
@@ -369,6 +373,23 @@ const EditorPage = () => {
   const collisionWarning = useEditorStore((s) => s.collisionWarning);
   const code = useEditorStore((s) => s.code);
   const connectedUsers = useEditorStore((s) => s.connectedUsers);
+
+  /* Who is in THIS file with you — not who is in the session.
+   *
+   * The distinction is the entire point of the thread. "Four people are
+   * connected" is ambient and answers nothing; "Ana has the file you are
+   * looking at open" is the one fact that changes what you do next, because it
+   * is the only situation where two people can quietly build the same thing.
+   * The file tree already carries session-wide presence, file by file.
+   *
+   * Keyed off filePresence, which peers announce on every file switch. */
+  const filePresence = useEditorStore((s) => s.filePresence);
+  const remoteTyping = useEditorStore((s) => s.remoteTyping);
+  const peers = activePath
+    ? Object.entries(filePresence)
+        .filter(([uid, p]) => p.path === activePath && uid !== currentUser?.id)
+        .map(([uid, p]) => ({ id: uid, ...p, typing: Boolean(remoteTyping[uid]) }))
+    : [];
   const activeView = useEditorStore((s) => s.activeView);
   const setActiveView = useEditorStore((s) => s.setActiveView);
   const [isSaving, setIsSaving] = useState(false);
@@ -930,62 +951,98 @@ const EditorPage = () => {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {sessionId && (
+              /* Who is in the room, and only that. Copying the invitation lives
+                 in the sidebar under the OWNER/COLLAB badge, where someone goes
+                 when they are thinking about who else should be here — so the
+                 header is presence, nothing else. */
               <div
-                onClick={() => {
-                  navigator.clipboard.writeText(sessionId);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '6px', padding: '0 4px', height: '26px',
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer', transition: 'all 0.15s ease',
+                  display: 'flex', alignItems: 'center', padding: '0 4px', height: '26px',
                   userSelect: 'none',
-                  position: 'relative',
-                  opacity: 0.8
+                  opacity: 0.85,
                 }}
-                onMouseEnter={e => { e.currentTarget.style.opacity = '1'; }}
-                onMouseLeave={e => { e.currentTarget.style.opacity = '0.8'; }}
-                title="Click to copy Session ID"
               >
-                <span style={{
-                  fontFamily: 'var(--font-number)', fontSize: '0.52rem', letterSpacing: '0.08em',
-                  color: userRole === 'owner' ? 'var(--lime)' : 'var(--cyan)',
-                }}>{userRole?.toUpperCase()}</span>
-                <span style={{
-                  fontFamily: 'var(--font-number)', fontSize: '0.6rem', letterSpacing: '0.02em',
-                  color: 'var(--t2)', minWidth: '56px',
-                }}>
-                  {copied ? 'Copied ✓' : sessionId?.substring(0, 8)}
+                <span className="hdr-thread">
+                  <span
+                    className="hdr-av is-me"
+                    style={{ borderColor: userRole === 'owner' ? 'var(--lime)' : 'var(--cyan)' }}
+                    title={peers.length > 0
+                      ? `You — ${userRole || 'collaborator'} — and ${peers.length} other${peers.length === 1 ? '' : 's'} in this file`
+                      : `You — ${userRole || 'collaborator'} — nobody else is in this file`}
+                  >
+                    {initials(currentUser?.username || 'Me')}
+                  </span>
+
+                  {peers.length > 0 && <span className="hdr-line" />}
+
+                  {peers.slice(0, 3).map((u, i) => (
+                    <span
+                      key={u.id}
+                      className={`hdr-av ${u.typing ? 'is-typing' : ''}`}
+                      style={{ background: u.color || '#6366f1', zIndex: 3 - i }}
+                      title={`${u.username} — ${u.typing ? 'typing in this file now' : 'has this file open'}`}
+                    >
+                      {initials(u.username)}
+                      {u.typing && <span className="hdr-ring" />}
+                    </span>
+                  ))}
+                  {peers.length > 3 && (
+                    <span className="hdr-av is-more">+{peers.length - 3}</span>
+                  )}
                 </span>
-                {!copied && (
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="2" style={{ opacity: 0.8 }}>
-                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-                    <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
-                  </svg>
-                )}
               </div>
             )}
 
-            {/* Screen capture — screenshot & recording */}
-            <ScreenCapture />
+            {/* Screen recording used to sit here. It moved up to the app header
+                beside the project name: recording is about the whole window,
+                not about the file open in this pane, and next to RUN it read as
+                one of the actions you take on your code. */}
 
-            {/* Run — primary action */}
-            <button
-              onClick={runCode}
-              disabled={isRunning}
-              className="run-button"
-            >
-              {isRunning ? (
-                <span className="loading-spinner" style={{ width: '10px', height: '10px' }} />
-              ) : (
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="6 3 21 12 6 21" />
-                </svg>
+            {/* Mario, standing in the header beside RUN — the other half of the
+                same loop: RUN tells you it broke, he fixes it. Reachable without
+                a run having happened, which is the whole point, since a crashed
+                dev server never produces one.
+
+                No label. He is a recognisable shape and a word beside him only
+                repeats what the shape already says.
+
+                He disappears once summoned, rather than staying lit as a toggle.
+                The companion IS him: leaving a copy behind would make two of
+                him on screen and break the one thing that makes this read as a
+                character rather than a panel — that he got up and walked over. */}
+            {/* Mario and RUN as one tight pair, rather than two items sharing
+                the row's 10px gap. Both carry padding of their own — his button
+                pads the sprite, RUN pads its label — so inheriting the row gap
+                stacked three separate spaces into one wide hole between them.
+                They are two halves of the same loop and should read as a pair. */}
+            <span style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+              {!marioOpen && (
+                <button
+                  onClick={toggleMario}
+                  className="mario-invoke"
+                  title="Invoke Mario"
+                  aria-label="Invoke Mario"
+                >
+                  <PixelSprite rows={AGENT_IDLE} palette={AGENT_PAL} px={1.5} />
+                </button>
               )}
-              {isRunning ? 'RUNNING...' : 'RUN'}
-            </button>
+
+              {/* Run — primary action */}
+              <button
+                onClick={runCode}
+                disabled={isRunning}
+                className="run-button"
+              >
+                {isRunning ? (
+                  <span className="loading-spinner" style={{ width: '10px', height: '10px' }} />
+                ) : (
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="6 3 21 12 6 21" />
+                  </svg>
+                )}
+                {isRunning ? 'RUNNING...' : 'RUN'}
+              </button>
+            </span>
           </div>
         </div>
 
@@ -1017,6 +1074,13 @@ const EditorPage = () => {
           )}
 
           <div style={{ flex: 1, position: 'relative', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            {/* Outside the view switch below, not inside it. Somebody knocks
+                most often right after the owner has shared the code — which is
+                frequently before any file is open, and can be while they are on
+                the whiteboard. Nested in the editor branch, the prompt would
+                simply not exist at the moment it matters most. */}
+            <AdmissionRequests />
+
             {/* The switcher is hidden without a project, so showing the board
                 here would strand the user on it with no way back to the editor.
                 activeView is persisted, so this also covers reopening the app
@@ -1036,8 +1100,9 @@ const EditorPage = () => {
                 {/* Above the impact warning: if the session is gone, that is
                     the more urgent thing on screen. */}
                 <ConnectionBanner />
-                <CollisionHint />
                 <ImpactWarningBanner />
+                {/* Presence used to float over this corner. It lives in the
+                    header now, so the editor is left alone. */}
                 <div id="causify-code-region" style={{ flex: 1, position: 'relative', minHeight: 0 }}>
                   <MonacoEditor />
                 </div>
@@ -1049,6 +1114,12 @@ const EditorPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Last, and outside every pane. He is position:fixed and belongs to the
+          window rather than to any layout, so mounting him at the end keeps him
+          above the editor, the terminal and the sidebar alike — and clear of
+          any ancestor that could trap a fixed child in its own box. */}
+      <MarioCompanion />
     </div>
   );
 };

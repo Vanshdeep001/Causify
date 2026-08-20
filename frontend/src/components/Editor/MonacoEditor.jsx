@@ -69,6 +69,12 @@ const MonacoEditor = () => {
   const canEdit = userRole === 'owner'
     || connectedUsers.find((u) => u.id === currentUser?.id)?.permission !== 'viewer';
 
+  /* The other half of access control, per file rather than per person: the
+     owner can freeze one file while everyone keeps working on the rest. The
+     owner is never locked out of their own lock. */
+  const lockedFiles = useEditorStore((s) => s.lockedFiles);
+  const fileLock = userRole === 'owner' ? null : (activePath ? lockedFiles[activePath] : null);
+
   /* A session whose connection has gone for good is frozen.
    *
    * Yjs will happily keep accepting edits into the local document forever, so
@@ -591,7 +597,9 @@ const MonacoEditor = () => {
           range: new monaco.Range(lineNum, 1, lineNum, 1),
           options: {
             isWholeLine: false,
-            marginClassName: 'has-line-edit',
+            /* Only the decorations strip. It used to also set marginClassName,
+               which is what let the styling reach in and repaint the line
+               number itself. */
             linesDecorationsClassName: 'has-line-edit',
           },
         });
@@ -751,8 +759,10 @@ const MonacoEditor = () => {
 
     bindingRef.current = createBinding(ytext, model, monaco, {
       path: activePath,
-      onLocalChange: (p, text) => {
-        useEditorStore.getState().setCode(text);
+      onLocalChange: (p, text, meta) => {
+        // A seed is content arriving, not content written. It still belongs in
+        // the store and on disk — it just has no author.
+        useEditorStore.getState().setCode(text, { attribute: !meta?.seed });
         schedulePersist(p, text);
       },
       onRemoteChange: (p, text, uid) => {
@@ -764,7 +774,9 @@ const MonacoEditor = () => {
     // <Editor value> matches the model and never fights the binding. maybeSeed
     // (above) already captured files[activePath], so if this is momentarily
     // empty for a joiner, the deferred seed / incoming sync will refill it.
-    useEditorStore.getState().setCode(ytext.toString());
+    /* Mirroring the just-bound document into the store. Nobody typed this, so
+       it must not be recorded as anyone's work. */
+    useEditorStore.getState().setCode(ytext.toString(), { attribute: false });
 
     return () => {
       if (bindingRef.current) {
@@ -1111,6 +1123,33 @@ const MonacoEditor = () => {
         </div>
       )}
 
+      {/* Locked file. Shown instead of VIEW ONLY when both apply — a viewer
+          already knows they cannot type, and the reason that changes what they
+          should do next is the one about this file. */}
+      {!isReplaying && sessionId && canEdit && fileLock && (
+        <div title={`${activePath} was locked by ${fileLock.by || 'the owner'} — the rest of the project is still yours to edit`} style={{
+          position: 'absolute',
+          top: '8px',
+          right: '14px',
+          zIndex: 30,
+          pointerEvents: 'none',
+          display: 'inline-flex', alignItems: 'center', gap: '5px',
+          padding: '3px 9px',
+          background: 'rgba(255,176,36,0.12)',
+          border: '1px solid rgba(255,176,36,0.4)',
+          borderRadius: '999px',
+          fontFamily: 'var(--font-number)', fontSize: '0.55rem', fontWeight: 700,
+          letterSpacing: '0.1em', color: '#FFB224',
+        }}>
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#FFB224"
+            strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+          LOCKED BY {(fileLock.by || 'OWNER').toUpperCase()}
+        </div>
+      )}
+
       <Editor
         height="100%"
         language={language}
@@ -1127,7 +1166,7 @@ const MonacoEditor = () => {
           smoothScrolling: true,
           cursorBlinking: 'smooth',
           renderLineHighlight: 'all',
-          readOnly: isReplaying || !canEdit || connectionLost,
+          readOnly: isReplaying || !canEdit || connectionLost || Boolean(fileLock),
           wordWrap: 'on',
           lineNumbers: 'on',
           glyphMargin: false,
@@ -1198,11 +1237,16 @@ const MonacoEditor = () => {
       })()}
 
       <style>{`
+        /* An edited line looks like every other line. No colour, no weight, no
+           bar in the margin — a column of numbers reads as a column of numbers,
+           and nothing in it competes with the code.
+
+           The affordance is hover-only: point at a line that has an edit behind
+           it and the number becomes a spark, which is the thing you click to
+           open the card. Lines with no edit do not react at all, so the hover
+           doubles as the answer to "is there anything here?". */
         .margin-view-overlays > div:has(.has-line-edit) .line-numbers {
-          color: #FFB224 !important;
-          font-weight: 700;
           cursor: pointer !important;
-          transition: color 0.15s ease;
         }
         .margin-view-overlays > div:has(.has-line-edit):hover .line-numbers {
           color: transparent !important;

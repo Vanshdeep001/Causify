@@ -41,15 +41,18 @@ public class SessionCleanupService {
     private final ProjectFileRepository projectFileRepository;
     private final SnapshotRepository snapshotRepository;
     private final DeploymentRepository deploymentRepository;
+    private final AdmissionService admissionService;
 
     public SessionCleanupService(SessionRepository sessionRepository,
                                  ProjectFileRepository projectFileRepository,
                                  SnapshotRepository snapshotRepository,
-                                 DeploymentRepository deploymentRepository) {
+                                 DeploymentRepository deploymentRepository,
+                                 AdmissionService admissionService) {
         this.sessionRepository = sessionRepository;
         this.projectFileRepository = projectFileRepository;
         this.snapshotRepository = snapshotRepository;
         this.deploymentRepository = deploymentRepository;
+        this.admissionService = admissionService;
     }
 
     /**
@@ -67,6 +70,9 @@ public class SessionCleanupService {
             snapshotRepository.deleteAll(snapshotRepository.findBySessionIdOrderByTimestampAsc(sessionId));
             deploymentRepository.deleteAll(deploymentRepository.findBySessionIdOrderByTimestampDesc(sessionId));
             sessionRepository.deleteById(sessionId);
+            // An admission for a session that no longer exists would let its
+            // holder join something that had already been deleted.
+            admissionService.purgeSession(sessionId);
             log.info("[SessionCleanup] Purged session {}", sessionId);
         } catch (Exception e) {
             // Cleanup must never break the request that triggered it.

@@ -240,6 +240,99 @@ public class DevServerService {
     }
 
     // ════════════════════════════════════════════════════════════
+    //  Restart-and-watch — used by the auto-fix agent to verify a patch
+    //
+    //  A server cannot be proven by running one file, only by booting it. These
+    //  three give the agent exactly that and nothing more: what is running, put
+    //  it through a restart, and wait for it to settle either way.
+    // ════════════════════════════════════════════════════════════
+
+    /** Enough about a running server to put it back after stopping it. */
+    public static class ServerHandle {
+        private final String type;
+        private final String directory;
+        private final Path localRoot;
+        private final String state;
+
+        ServerHandle(String type, String directory, Path localRoot, String state) {
+            this.type = type;
+            this.directory = directory;
+            this.localRoot = localRoot;
+            this.state = state;
+        }
+
+        public String getType() { return type; }
+        public String getDirectory() { return directory; }
+        /** Set only for a server running in place in the user's own folder. */
+        public Path getLocalRoot() { return localRoot; }
+        public String getState() { return state; }
+        public boolean isLocal() { return localRoot != null; }
+    }
+
+    /**
+     * What is running under this scope and type, or null if nothing is.
+     *
+     * Worth taking before a stop: {@link #stopServer} removes the entry, taking
+     * the directory and framework with it, and those are needed to start it again.
+     */
+    public ServerHandle handleFor(String scope, String type) {
+        ManagedServer server = servers.get(serverKey(scope, type));
+        if (server == null) return null;
+        return new ServerHandle(server.type, server.directory, server.localRoot, server.state);
+    }
+
+    /**
+     * Stop a server and start it again on the same directory.
+     *
+     * Only for servers running in place from a local folder — that is the case
+     * the agent verifies, and the session-backed path materialises files out of
+     * the database, which would undo the candidate patch on the way up.
+     *
+     * @return false when there was nothing to restart or it is not a local server
+     */
+    public boolean restartLocalServer(String projectPath, String type) {
+        ServerHandle handle = handleFor(projectPath, type);
+        if (handle == null || !handle.isLocal()) return false;
+
+        stopServer(projectPath, type);
+        startLocalServer(projectPath, handle.getDirectory(), type);
+        return true;
+    }
+
+    /**
+     * Block until the server has either come up or failed, or the wait runs out.
+     *
+     * PREPARING/INSTALLING/STARTING are all "still deciding". RUNNING and ERROR
+     * are verdicts. A timeout is reported as its own answer rather than being
+     * folded into failure: a server that is merely slow has not told us anything
+     * about the patch, and calling that a failed fix would be a lie.
+     *
+     * @return the state it settled on, or "TIMEOUT"
+     */
+    public String awaitSettled(String scope, String type, long timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        String state = "IDLE";
+
+        while (System.currentTimeMillis() < deadline) {
+            ManagedServer server = servers.get(serverKey(scope, type));
+            if (server == null) return "STOPPED";
+
+            state = server.state;
+            if ("RUNNING".equals(state) || "ERROR".equals(state) || "STOPPED".equals(state)) {
+                return state;
+            }
+
+            try {
+                Thread.sleep(250);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return state;
+            }
+        }
+        return "TIMEOUT";
+    }
+
+    // ════════════════════════════════════════════════════════════
     //  Pipeline: Write files → npm install → npm run dev
     // ════════════════════════════════════════════════════════════
 

@@ -7,6 +7,7 @@ import EditorPage from './pages/EditorPage';
 import UserPresence from './components/Session/UserPresence';
 import VoiceRoom from './components/Session/VoiceRoom';
 import NotificationSystem from './components/Session/NotificationSystem';
+import ScreenCapture from './components/Capture/ScreenCapture';
 import CodeShotModal from './components/CodeShot/CodeShotModal';
 import { parseCodeShotLink } from './utils/codeShotDeepLink';
 import useEditorStore from './store/useEditorStore';
@@ -14,8 +15,9 @@ import { connectWebSocket, disconnectWebSocket } from './services/socket';
 import { buildCollabCallbacks, reconnectOnConnected } from './services/collabCallbacks';
 import { saveFile, getSession, touchSession, leaveSession } from './services/api';
 import { setOrigin, buildJoinCode } from './services/backendHost';
+import { publishSession } from './services/rendezvous';
 import MigrateWorkspaceModal from './components/Editor/MigrateWorkspaceModal';
-import causifyLogo from './assets/causify-logo.png';
+import causifyLogo from './assets/causify-mark.png';
 
 // Module-level so React StrictMode's double-mount can't run the bootstrap twice
 let sessionRehydrateAttempted = false;
@@ -176,6 +178,10 @@ const App = () => {
       if (store.sessionId) {
         store.setJoinCode(buildJoinCode(store.sessionId, url));
         store.setJoinCodeStale(true);
+        // The address on every invite already sent is now wrong, and this is
+        // the only place that knows the right one. Republishing under the same
+        // session id repairs those invites for anyone who looks the code up.
+        publishSession(store.sessionId, url);
       }
       console.warn('[Causify] Tunnel address changed — the previous invite link is dead.');
     });
@@ -183,14 +189,9 @@ const App = () => {
     return unsubscribe;
   }, []);
 
-  /* ── Session Rewind sampling ──
-   * One timer for the whole app. Checkpoints are taken here rather than at each
-   * place a file can change, so no existing edit path had to be touched. */
-  useEffect(() => {
-    const store = useEditorStore.getState();
-    store.startRewindSampler();
-    return () => useEditorStore.getState().stopRewindSampler();
-  }, []);
+  /* Rewind used to sample on a 15s timer from here. It does not any more:
+     checkpoints are saved when the owner decides to save one, so there is
+     nothing for the app to do in the background. See captureCheckpoint. */
 
   // ── Deep-link navigation handler (Electron causify:// protocol) ──
   useEffect(() => {
@@ -356,6 +357,23 @@ const App = () => {
               {sessionId.substring(0, 8)}
             </span>
           )}
+
+          {/* Screen recording. Up here rather than in the editor toolbar
+              because what it captures is the window, not the file you happen to
+              have open — beside RUN it read as another action you perform on
+              your code. The divider keeps it out of the identity block: the
+              logo, the project and the session id say what this is; this is the
+              first thing you can do to it.
+
+              Its own flex group with a tighter gap, because the button is a
+              28px box around a 15px icon — it carries about 6px of padding of
+              its own. Inheriting the row's 12px would put ~18px of air between
+              the divider and the icon against 12px on the other side, which is
+              what made it look adrift rather than attached to the rule. */}
+          <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ width: '1px', height: '18px', background: 'var(--line-strong)' }} />
+            <ScreenCapture />
+          </span>
         </div>
 
         {/* Right: collaboration + session status */}

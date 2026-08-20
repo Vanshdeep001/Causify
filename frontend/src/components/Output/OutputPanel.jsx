@@ -6,8 +6,56 @@ import React, { useState, useEffect } from 'react';
 import useEditorStore from '../../store/useEditorStore';
 import HtmlPreview from '../Preview/HtmlPreview';
 import DevServerPanel from '../Terminal/DevServerPanel';
-import AutoFixPanel from './AutoFixPanel';
 import AiKeySetupCard, { AiProviderChip } from './AiKeySetupCard';
+import ToolchainMissing from './ToolchainMissing';
+import { PixelSprite } from '../common/pixelArt';
+import { AGENT_PAL, AGENT_IDLE } from '../Mario/sprites';
+
+/**
+ * The handoff to Mario.
+ *
+ * The repair agent no longer renders in the terminal, but this is still where
+ * you are standing when you find out something broke — so rather than make you
+ * go looking for him, the failure itself offers him. One click summons the
+ * companion and starts the same repair that used to begin here.
+ */
+const AskMarioStrip = () => {
+  const autoFix = useEditorStore((s) => s.autoFix);
+  const autoFixState = useEditorStore((s) => s.autoFixState);
+  const setMarioOpen = useEditorStore((s) => s.setMarioOpen);
+  const requestAutoFix = useEditorStore((s) => s.requestAutoFix);
+
+  const busy = autoFixState === 'working';
+  const hasProposal = Boolean(autoFix);
+
+  const summon = () => {
+    setMarioOpen(true);
+    // Only start a run when there isn't already one to look at — otherwise this
+    // would throw away a proposal the user has not read yet.
+    if (!hasProposal && !busy) requestAutoFix();
+  };
+
+  return (
+    <button className="ask-mario-strip" onClick={summon} disabled={busy}>
+      <span className="ask-mario-sprite">
+        <PixelSprite rows={AGENT_IDLE} palette={AGENT_PAL} px={1.5} />
+      </span>
+      <span className="ask-mario-text">
+        <span className="ask-mario-title">
+          {busy ? 'MARIO IS WORKING' : hasProposal ? 'MARIO HAS A FIX' : 'GET MARIO TO FIX IT'}
+        </span>
+        <span className="ask-mario-sub">
+          {busy
+            ? 'patching, running, checking…'
+            : hasProposal
+              ? 'open the companion to review the diff'
+              : 'he patches the code, runs it, and retries until it passes'}
+        </span>
+      </span>
+      <span className="ask-mario-go">{busy ? '…' : '▶'}</span>
+    </button>
+  );
+};
 
 const LogLine = ({ type, message, timestamp }) => {
   const tagClass =
@@ -145,11 +193,12 @@ const RootCauseCard = ({ rootCause, code }) => {
       {/* Dashed separator divider */}
       <div className="rca2-divider" />
 
-      {/* Order is deliberate: the thing you can act on comes first.
-          The agent offers a fix you either apply or reject; the diagnosis
-          below it is reference material you consult only if you want to
-          understand the failure yourself. Reading order follows intent. */}
-      <AutoFixPanel />
+      {/* The agent used to render here, above the diagnosis. It lives in the
+          Mario companion now — reachable whether or not anything has been run,
+          which is what let it reach project failures at all. What is left here
+          is the handoff: the diagnosis stays where it is, and acting on it is
+          one click away. */}
+      <AskMarioStrip />
 
       {/* Typographic Collapse Trigger */}
       <div className="rca2-collapse-trigger rca2-trigger-after" onClick={() => setIsReportExpanded(!isReportExpanded)}>
@@ -474,6 +523,7 @@ const ScanningSegment = () => {
 const OutputPanel = () => {
   const output = useEditorStore((s) => s.output);
   const error = useEditorStore((s) => s.error);
+  const missingTool = useEditorStore((s) => s.missingTool);
   const isRunning = useEditorStore((s) => s.isRunning);
   const rootCause = useEditorStore((s) => s.rootCause);
   const autoFix = useEditorStore((s) => s.autoFix);
@@ -500,6 +550,20 @@ const OutputPanel = () => {
 
   if (isRunning) {
     return <ScanningSegment />;
+  }
+
+  /* Before the idle check — a missing toolchain produces no output and no
+     error by design, so the panel would otherwise show SYSTEM_IDLE and leave
+     the user believing they never pressed Run. */
+  if (missingTool) {
+    return (
+      <div className="terminal-window-pane">
+        <div className="terminal-scanlines" />
+        <div className="terminal-log-area" style={{ flex: 1, overflowY: 'auto', padding: '14px 12px' }}>
+          <ToolchainMissing tool={missingTool} />
+        </div>
+      </div>
+    );
   }
 
   // An applied fix clears the output it was diagnosing, so the panel would fall
@@ -537,12 +601,12 @@ const OutputPanel = () => {
           </div>
         )}
 
-        {/* The agent outlives the diagnosis. Normally it renders inside the
-            report card, just under the trigger; once a fix is applied there is
-            no report left to sit in, but the user still needs the result. */}
+        {/* An applied fix used to leave its confirmation here, because the
+            diagnosis it belonged to was gone. Mario holds that now — he
+            outlives the run, so the result has somewhere to stay. */}
         {!rootCause && autoFix && (
           <div style={{ padding: '0 12px', marginTop: '16px' }}>
-            <AutoFixPanel />
+            <AskMarioStrip />
           </div>
         )}
       </div>

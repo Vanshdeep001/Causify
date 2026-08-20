@@ -32,6 +32,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -53,11 +55,18 @@ public class AutoFixService {
 
     private final AiAnalysisService aiAnalysisService;
     private final ExecutionService executionService;
+    private final ProjectErrorLocator projectErrorLocator;
+    private final ProjectVerifier projectVerifier;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public AutoFixService(AiAnalysisService aiAnalysisService, ExecutionService executionService) {
+    public AutoFixService(AiAnalysisService aiAnalysisService,
+                          ExecutionService executionService,
+                          ProjectErrorLocator projectErrorLocator,
+                          ProjectVerifier projectVerifier) {
         this.aiAnalysisService = aiAnalysisService;
         this.executionService = executionService;
+        this.projectErrorLocator = projectErrorLocator;
+        this.projectVerifier = projectVerifier;
     }
 
     /* ─────────────────────────────────────────────────────────
@@ -68,22 +77,24 @@ public class AutoFixService {
         AutoFixResponse response = new AutoFixResponse();
         response.setAttempts(new ArrayList<>());
 
-        String code = request.getCode();
-        if (code == null || code.isBlank()) {
-            response.setStatus(AutoFixResponse.NO_FIX);
-            response.setMessage("There is no code to fix.");
-            return response;
-        }
-
         if (!aiAnalysisService.isConfigured()) {
             response.setStatus(AutoFixResponse.NO_AI_KEY);
             response.setMessage("Add a Gemini API key to use the auto-fix agent.");
             return response;
         }
 
-        String language = request.getLanguage();
-        boolean canVerify = executionService.canDryRun(language, code);
+        /* What are we even editing? In file mode the caller says. In project
+         * mode nobody knows yet — the failure was a server log — so this is
+         * where the agent works it out, and where it gives up honestly if it
+         * cannot. */
+        Target target = resolveTarget(request, response);
+        if (target == null) return response;
+
+        String code = target.code;
+        String language = target.language;
+        boolean canVerify = target.canVerify;
         response.setVerificationSupported(canVerify);
+        response.setTargetPath(target.displayPath);
 
         int totalLines = code.split("\n", -1).length;
         List<AutoFixResponse.Attempt> attempts = response.getAttempts();
@@ -140,24 +151,34 @@ public class AutoFixService {
             if (!canVerify) {
                 attempts.add(new AutoFixResponse.Attempt(attempt, patch.summary, false, null));
                 response.setStatus(AutoFixResponse.UNVERIFIED);
-                response.setMessage("This file can't be run on the backend, so the fix could not be verified. Review it before applying.");
+                response.setMessage(target.unverifiableReason);
                 return response;
             }
 
-            ExecutionService.DryRunResult run = executionService.dryRun(candidate, language);
+            Verdict verdict = verify(target, candidate, request);
 
-            if (!run.hasError()) {
+            if (verdict.verified) {
                 attempts.add(new AutoFixResponse.Attempt(attempt, patch.summary, true, null));
                 response.setStatus(AutoFixResponse.VERIFIED);
-                response.setVerifiedOutput(run.getStdout());
+                response.setVerifiedOutput(verdict.output);
                 response.setRemainingError(null);
                 response.setMessage(attempt == 1
-                        ? "Verified — the patched code runs clean."
-                        : "Verified on attempt " + attempt + " — the patched code runs clean.");
+                        ? target.verifiedMessage
+                        : "Verified on attempt " + attempt + " — " + target.verifiedTail);
                 return response;
             }
 
-            String failure = truncate(run.getStderr());
+            /* Inconclusive is not failure. The server timed out, or no checker
+             * exists for this file type — the patch has not been disproved, and
+             * retrying would only burn attempts on a test that cannot answer. */
+            if (!verdict.conclusive) {
+                attempts.add(new AutoFixResponse.Attempt(attempt, patch.summary, false, null));
+                response.setStatus(AutoFixResponse.UNVERIFIED);
+                response.setMessage(verdict.failure + " Review the change before applying it.");
+                return response;
+            }
+
+            String failure = truncate(verdict.failure);
             attempts.add(new AutoFixResponse.Attempt(attempt, patch.summary, false, failure));
             response.setStatus(AutoFixResponse.UNVERIFIED);
             response.setRemainingError(failure);
@@ -170,6 +191,169 @@ public class AutoFixService {
                     + MAX_ATTEMPTS + " attempts.");
         }
         return response;
+    }
+
+    /* ─────────────────────────────────────────────────────────
+     * What are we editing, and how would we know if it worked
+     * ───────────────────────────────────────────────────────── */
+
+    /**
+     * The file this run is about, plus how a candidate for it gets tested.
+     *
+     * Both modes end up here, which is the point: everything after resolution —
+     * the prompt, the loop, the validation, the diff — is shared. Only how the
+     * target is found and how it is proven differ.
+     */
+    private static class Target {
+        String code;
+        String language;
+        /** Project-relative path shown to the user; null in plain file mode. */
+        String displayPath;
+        /** Absolute path on disk. Project mode only — file mode never touches disk. */
+        Path absolutePath;
+        boolean canVerify;
+        String unverifiableReason;
+        String verifiedMessage;
+        String verifiedTail;
+    }
+
+    /** The answer from one verification attempt, whichever gate produced it. */
+    private static class Verdict {
+        final boolean verified;
+        final boolean conclusive;
+        final String failure;
+        final String output;
+
+        Verdict(boolean verified, boolean conclusive, String failure, String output) {
+            this.verified = verified;
+            this.conclusive = conclusive;
+            this.failure = failure;
+            this.output = output;
+        }
+    }
+
+    /**
+     * Work out which file to repair.
+     *
+     * @return the target, or null — in which case {@code response} already
+     *         explains why, and the caller returns it untouched.
+     */
+    private Target resolveTarget(AutoFixRequest request, AutoFixResponse response) {
+        return request.isProjectMode()
+                ? resolveProjectTarget(request, response)
+                : resolveFileTarget(request, response);
+    }
+
+    /** File mode: the caller already knows, and always did. */
+    private Target resolveFileTarget(AutoFixRequest request, AutoFixResponse response) {
+        String code = request.getCode();
+        if (code == null || code.isBlank()) {
+            response.setStatus(AutoFixResponse.NO_FIX);
+            response.setMessage("There is no code to fix.");
+            return null;
+        }
+
+        Target target = new Target();
+        target.code = code;
+        target.language = request.getLanguage();
+        target.displayPath = request.getFilePath();
+        target.canVerify = executionService.canDryRun(target.language, code);
+        target.unverifiableReason =
+                "This file can't be run on the backend, so the fix could not be verified. Review it before applying.";
+        target.verifiedMessage = "Verified — the patched code runs clean.";
+        target.verifiedTail = "the patched code runs clean.";
+        return target;
+    }
+
+    /**
+     * Project mode: read the log, find the file.
+     *
+     * Falls back to whatever the user has open when the log names nothing we can
+     * place. That fallback is what makes "fix this" work while they are looking
+     * at the broken file, which is the common case — but it is a fallback, not a
+     * guess: if there is no open file either, the agent says it does not know.
+     */
+    private Target resolveProjectTarget(AutoFixRequest request, AutoFixResponse response) {
+        String projectPath = request.getProjectPath();
+
+        if (projectPath == null || projectPath.isBlank()) {
+            response.setStatus(AutoFixResponse.NO_FIX);
+            response.setMessage("Open the project as a folder so the agent can read and verify its files.");
+            return null;
+        }
+
+        ProjectErrorLocator.Located located =
+                projectErrorLocator.locate(request.getErrorLog(), projectPath);
+
+        Target target = new Target();
+
+        if (located != null) {
+            target.code = located.getContent();
+            target.displayPath = located.getRelativePath();
+            target.absolutePath = located.getAbsolutePath();
+            if (located.getLine() > 0 && request.getErrorLine() <= 0) {
+                request.setErrorLine(located.getLine());
+            }
+        } else if (request.getCode() != null && !request.getCode().isBlank()
+                && request.getFilePath() != null && !request.getFilePath().isBlank()) {
+            target.code = request.getCode();
+            target.displayPath = request.getFilePath();
+            target.absolutePath = Paths.get(projectPath).resolve(request.getFilePath());
+        } else {
+            response.setStatus(AutoFixResponse.NO_FIX);
+            response.setMessage(request.hasInstruction()
+                    ? "Open the file you want changed, so the agent knows what to edit."
+                    : "The log doesn't name a file inside this project, so the agent can't tell what to fix. Open the failing file and try again.");
+            return null;
+        }
+
+        target.language = languageOf(target.displayPath, request.getLanguage());
+
+        boolean canBoot = projectVerifier.canBoot(projectPath, request.getServerType());
+        target.canVerify = true; // the syntax gate always runs; boot is a bonus
+        target.unverifiableReason = canBoot
+                ? "The fix could not be checked. Review it before applying."
+                : "No dev server is running from this folder, so the fix could not be booted. Review it before applying.";
+        target.verifiedMessage = canBoot
+                ? "Verified — the server restarted clean with this fix."
+                : "Verified — the patched file parses cleanly.";
+        target.verifiedTail = canBoot
+                ? "the server restarted clean."
+                : "the patched file parses cleanly.";
+        return target;
+    }
+
+    /** Put one candidate through whichever check this target supports. */
+    private Verdict verify(Target target, String candidate, AutoFixRequest request) {
+        if (!request.isProjectMode()) {
+            ExecutionService.DryRunResult run = executionService.dryRun(candidate, target.language);
+            return run.hasError()
+                    ? new Verdict(false, true, run.getStderr(), null)
+                    : new Verdict(true, true, null, run.getStdout());
+        }
+
+        ProjectVerifier.Result result = projectVerifier.verify(
+                target.absolutePath, candidate, request.getProjectPath(), request.getServerType());
+
+        return new Verdict(result.isVerified(), result.isConclusive(), result.getFailure(), null);
+    }
+
+    /** Extension → the language name the prompt and the checkers expect. */
+    private String languageOf(String path, String fallback) {
+        if (path == null) return fallback != null ? fallback : "javascript";
+        String lower = path.toLowerCase();
+        if (lower.endsWith(".py")) return "python";
+        if (lower.endsWith(".java")) return "java";
+        if (lower.endsWith(".cpp") || lower.endsWith(".cc") || lower.endsWith(".cxx")) return "cpp";
+        if (lower.endsWith(".c")) return "c";
+        if (lower.endsWith(".ts")) return "typescript";
+        if (lower.endsWith(".tsx")) return "tsx";
+        if (lower.endsWith(".jsx")) return "jsx";
+        if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) return "javascript";
+        if (lower.endsWith(".html")) return "html";
+        if (lower.endsWith(".css")) return "css";
+        if (lower.endsWith(".json")) return "json";
+        return fallback != null ? fallback : "javascript";
     }
 
     /* ─────────────────────────────────────────────────────────
@@ -197,23 +381,57 @@ public class AutoFixService {
         StringBuilder sb = new StringBuilder();
         String lang = language != null ? language : "javascript";
 
-        sb.append("You are an autonomous code repair agent inside an IDE called Causify.\n");
-        sb.append("A program is failing. Return the MINIMAL set of line edits that make it run correctly.\n\n");
+        boolean instructed = request.hasInstruction();
 
-        sb.append("## Failing program (").append(lang).append(")\n");
+        sb.append("You are an autonomous code agent inside an IDE called Causify.\n");
+        sb.append(instructed
+                ? "The user has asked for a change. Return the MINIMAL set of line edits that make it.\n\n"
+                : "A program is failing. Return the MINIMAL set of line edits that make it run correctly.\n\n");
+
+        if (instructed) {
+            /* First, and in the user's own words. A paraphrase here is how an
+             * agent ends up confidently doing the wrong job. */
+            sb.append("## What the user asked for\n");
+            sb.append(request.getUserInstruction().trim()).append("\n\n");
+        }
+
+        sb.append("## ").append(instructed ? "The file" : "Failing program");
+        sb.append(" (").append(lang).append(")");
+        if (request.isProjectMode() && request.getFilePath() != null) {
+            sb.append(" — ").append(request.getFilePath());
+        }
+        sb.append("\n");
         sb.append("Line numbers are shown for reference and are NOT part of the code.\n\n");
         sb.append(numberLines(code)).append("\n\n");
 
-        sb.append("## The error\n");
-        sb.append("- Type: ").append(nz(request.getErrorType(), "Unknown")).append("\n");
-        sb.append("- Message: ").append(nz(request.getErrorMessage(), "Unknown")).append("\n");
-        if (request.getErrorLine() > 0) {
-            sb.append("- Reported at line: ").append(request.getErrorLine()).append("\n");
+        /* In project mode this file is one of many, and the model cannot see the
+         * rest. Saying so stops it inventing imports for files it has not read. */
+        if (request.isProjectMode()) {
+            sb.append("## Context\n");
+            sb.append("This file is part of a larger project. You are editing THIS FILE ONLY — ");
+            sb.append("you cannot see or change any other file, so do not propose edits that ");
+            sb.append("depend on changing one. If the real fix is in a different file, say so ");
+            sb.append("in `explanation` and return an empty `edits` array.\n\n");
         }
-        if (request.getSuspectedVariable() != null && !request.getSuspectedVariable().isBlank()) {
-            sb.append("- Suspected variable: `").append(request.getSuspectedVariable()).append("`\n");
+
+        if (request.isProjectMode() && request.getErrorLog() != null && !request.getErrorLog().isBlank()) {
+            sb.append("## What the dev server printed\n");
+            sb.append("```\n").append(truncate(request.getErrorLog())).append("\n```\n\n");
         }
-        sb.append("\n");
+
+        boolean hasStructuredError = request.getErrorType() != null || request.getErrorMessage() != null;
+        if (hasStructuredError || !instructed) {
+            sb.append("## The error\n");
+            sb.append("- Type: ").append(nz(request.getErrorType(), "Unknown")).append("\n");
+            sb.append("- Message: ").append(nz(request.getErrorMessage(), "Unknown")).append("\n");
+            if (request.getErrorLine() > 0) {
+                sb.append("- Reported at line: ").append(request.getErrorLine()).append("\n");
+            }
+            if (request.getSuspectedVariable() != null && !request.getSuspectedVariable().isBlank()) {
+                sb.append("- Suspected variable: `").append(request.getSuspectedVariable()).append("`\n");
+            }
+            sb.append("\n");
+        }
 
         if (request.getSemanticContext() != null && !request.getSemanticContext().isEmpty()) {
             sb.append("## Runtime values captured at the failure\n");
@@ -249,11 +467,18 @@ public class AutoFixService {
         sb.append("- An empty `replacement` deletes those lines.\n");
         sb.append("- To insert code, replace the line it goes next to and include that line in the replacement.\n");
         sb.append("- Edits must not overlap and must stay inside the file.\n");
-        sb.append("- Change as FEW lines as possible. Never reformat, rename or 'improve' code that is not part of the fix.\n");
-        sb.append("- Fix the ROOT CAUSE. Never silence the error by deleting the failing line, wrapping everything in a\n");
-        sb.append("  blanket try/catch, or removing output the program is supposed to produce.\n");
+        sb.append("- Change as FEW lines as possible. Never reformat, rename or 'improve' code that is not part of the change.\n");
+        if (instructed) {
+            sb.append("- Do EXACTLY what was asked, and nothing else. Unrequested extras are how a small\n");
+            sb.append("  change becomes one the user has to unpick.\n");
+            sb.append("- If the request is impossible in this file alone, return an empty `edits` array and\n");
+            sb.append("  explain why. A wrong edit is worse than no edit.\n");
+        } else {
+            sb.append("- Fix the ROOT CAUSE. Never silence the error by deleting the failing line, wrapping everything in a\n");
+            sb.append("  blanket try/catch, or removing output the program is supposed to produce.\n");
+        }
         sb.append("- The program must still do what it was written to do.\n");
-        sb.append("- Do not add comments that narrate the fix.\n");
+        sb.append("- Do not add comments that narrate the change.\n");
 
         return sb.toString();
     }

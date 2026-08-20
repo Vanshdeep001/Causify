@@ -11,6 +11,41 @@ import React from 'react';
 /* NES-era palette. R red, S skin, N outline/brown, B blue, Y yellow. */
 export const MARIO_PAL = { R: '#E52521', S: '#FCB985', N: '#5C2E00', B: '#2A6DE0', Y: '#FBD000' };
 
+/**
+ * The same sprite with the colour taken out.
+ *
+ * Causify's chrome is monochrome by design — the palette spends its colour on
+ * file-type icons and on git state, where hue carries meaning. A full-colour
+ * Mario sitting in the header outranked everything around it, including the
+ * primary action next to him.
+ *
+ * The greys are picked by luminance, not by hue: cap and overalls stay distinct
+ * because one is light and the other dark, so the silhouette survives at 16px
+ * exactly as the coloured one does.
+ */
+export const MARIO_MONO = { R: '#F2F2F2', S: '#9A9A9A', N: '#2A2A2A', B: '#5E5E5E', Y: '#1A1A1A' };
+
+/**
+ * The same idea for the 12×16 animation frames in Output/MarioSprites.jsx,
+ * whose palette uses different keys.
+ *
+ * Assigned by luminance so the read survives losing hue: the cap and shirt go
+ * brightest because they are what identifies him at a glance, boots and hair
+ * go near-black, and the overalls sit in between. Flatten these to one grey and
+ * he becomes an unreadable blob — the whole silhouette is carried by the three
+ * steps between them.
+ */
+export const MARIO_FRAME_MONO = {
+  R: '#F5F5F5', // cap & shirt — the identifying shape
+  B: '#5C5C5C', // overalls
+  F: '#B0B0B0', // skin
+  H: '#1F1F1F', // hair & boots
+  Y: '#FFFFFF',
+  G: '#8A8A8A',
+  W: '#FFFFFF',
+  K: '#0A0A0A',
+};
+
 export const MARIO_ROWS = [
   '....RRRRRRR.....',
   '...RRRRRRRRR....',

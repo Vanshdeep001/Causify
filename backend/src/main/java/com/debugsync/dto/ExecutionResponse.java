@@ -15,7 +15,21 @@ public class ExecutionResponse {
     private CausalityGraphData causalityGraph;
     private CommitSuggestionDto commitSuggestion;
 
+    /*
+     * The toolchain this run needed and could not find — "g++", "python", "node".
+     *
+     * Carried as its own field rather than folded into `error` because it is not
+     * a failure of the user's code, and the UI has to be able to tell the
+     * difference. A missing compiler rendered as a stack trace teaches someone
+     * to distrust their own program; named here, the client can say what is
+     * missing and where to get it.
+     */
+    private String missingTool;
+
     public ExecutionResponse() {}
+
+    public String getMissingTool() { return missingTool; }
+    public void setMissingTool(String missingTool) { this.missingTool = missingTool; }
 
     public String getOutput() { return output; }
     public void setOutput(String output) { this.output = output; }

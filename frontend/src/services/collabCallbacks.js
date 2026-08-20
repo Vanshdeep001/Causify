@@ -35,6 +35,20 @@ export const buildCollabCallbacks = ({ sessionId, onConnected }) => ({
 
   onUsersChange: (d) => useEditorStore.getState().setConnectedUsers(d.users || []),
 
+  /* The whole map every time, never a delta — a client that missed a message
+     is corrected by the next one instead of holding a stale lock forever. */
+  onLocksChange: (d) => useEditorStore.getState().setLockedFiles(d.locks || {}),
+
+  onAdmissionChange: (d) => useEditorStore.getState().setPendingAdmissions(d.pending || []),
+
+  /* The owner saved a checkpoint. The sender already captured its own before
+     publishing, so it must not do so twice. */
+  onCheckpoint: (d) => {
+    const me = useEditorStore.getState().currentUser;
+    if (d?.by?.id && me?.id && d.by.id === me.id) return;
+    useEditorStore.getState().applyRemoteCheckpoint(d);
+  },
+
   onExecutionResult: (d) => useEditorStore.getState().handleExecutionResult(d),
 
   onSnapshot: (d) => useEditorStore.getState().addSnapshot(d),

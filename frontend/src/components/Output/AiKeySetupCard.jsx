@@ -284,8 +284,27 @@ const AiKeySetupCard = ({ forceVisible = false, context = 'diagnosis', variant =
         {/* Nothing but the slot. Anyone holding a key knows where it came from,
             so asking them to name the provider was a question with a known
             answer — it is worked out from the key instead. */}
+        {/* ── Marquee ──
+            Says what this is, once. The credit counter is the arcade's own way
+            of saying "nothing has been paid in yet", and it ticks to 1 the
+            moment a key is in the field — so the screen answers "did that
+            register?" before you press anything. */}
+        <div className="afx-slot-marquee">
+          <span className="afx-slot-title">Insert coin</span>
+          <span className={`afx-slot-credit ${keyInput.trim() ? 'is-live' : ''}`}>
+            CREDIT {keyInput.trim() ? 1 : 0}
+          </span>
+        </div>
+        <p className="afx-slot-sub">
+          An API key is needed to play. It is stored on this machine and sent only
+          to the provider it belongs to.
+        </p>
+
+        {/* The slot itself: a coin waiting beside the opening it goes into. */}
         <div className="afx-slot-row is-coin">
-          <span className="afx-slot-coin"><Coin px={2} /></span>
+          <span className={`afx-slot-coin ${status === 'saving' ? 'is-dropping' : ''}`}>
+            <Coin px={2} />
+          </span>
           <input
             type="password"
             className="afx-slot-input is-key"
@@ -295,14 +314,28 @@ const AiKeySetupCard = ({ forceVisible = false, context = 'diagnosis', variant =
             onKeyDown={(e) => { if (e.key === 'Enter') handleActivate(); }}
             spellCheck={false}
           />
-          <button
-            className="afx-coin-btn"
-            onClick={handleActivate}
-            disabled={!keyInput.trim() || status === 'saving'}
-          >
-            {status === 'saving' ? 'CHECKING…' : 'INSERT COIN'}
-          </button>
         </div>
+
+        {/* The button gets its own full-width row.
+            It used to sit on the coin row, which worked in a wide terminal and
+            fell apart here: inside Mario's panel three items on one line left
+            the key field about twelve characters wide. Full width also gives
+            the press somewhere to travel, which is what makes it feel like a
+            button on a cabinet rather than a link.
+
+            It says START, not INSERT COIN — the heading above already said that
+            once, and on a real cabinet the coin goes in the slot and START is
+            the separate thing you press afterwards. Which is exactly the shape
+            of this form: the key goes in the field, then you commit it. */}
+        <button
+          className={`afx-coin-btn ${!keyInput.trim() && status !== 'saving' ? 'is-attract' : ''}`}
+          onClick={handleActivate}
+          disabled={!keyInput.trim() || status === 'saving'}
+        >
+          <span className="afx-coin-btn-label">
+            {status === 'saving' ? 'CHECKING…' : '1P  START'}
+          </span>
+        </button>
 
         {status === 'error' && <div className="afx-slot-error">{errorMsg}</div>}
 

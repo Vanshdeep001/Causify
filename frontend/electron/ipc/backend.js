@@ -63,6 +63,33 @@ function getJarPath() {
 }
 
 /**
+ * The Java runtime that ships inside the app, if it is there.
+ *
+ * Installing Causify used to mean installing a JDK as well, and the app gave no
+ * hint of it: the window opened, the backend never came up, and the failure
+ * read as "the app is broken". scripts/fetch-jre.js builds a trimmed runtime
+ * into resources/jre and the packager copies it next to the jar, so there is
+ * normally nothing for the user to install.
+ *
+ * Returns null when the runtime is absent — a developer who has not run the
+ * script yet, or a build where it was skipped. The system-Java search below
+ * then runs exactly as it always did, so this is additive: it can only turn a
+ * failure into a success, never the reverse.
+ */
+function getBundledJavaHome() {
+  const home = app.isPackaged
+    ? path.join(process.resourcesPath, 'jre')
+    : path.join(__dirname, '..', '..', 'resources', 'jre');
+
+  const exe = process.platform === 'win32' ? 'java.exe' : 'java';
+  try {
+    return fs.existsSync(path.join(home, 'bin', exe)) ? home : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get the working directory for the backend.
  */
 function getBackendCwd() {
@@ -223,11 +250,17 @@ async function spawnBackend(isDev = false) {
     return;
   }
 
-  // Find java executable — comprehensive search on Windows
+  // Find java executable. The bundled runtime first — see getBundledJavaHome.
   let javaExe = null;
+  const bundledHome = getBundledJavaHome();
+
+  if (bundledHome) {
+    javaExe = path.join(bundledHome, 'bin', process.platform === 'win32' ? 'java.exe' : 'java');
+    console.log(`[Backend] Using the bundled Java runtime: ${javaExe}`);
+  }
 
   // 1. Check JAVA_HOME first
-  if (process.env.JAVA_HOME) {
+  if (!javaExe && process.env.JAVA_HOME) {
     const candidate = path.join(process.env.JAVA_HOME, 'bin', 'java');
     if (fs.existsSync(candidate + '.exe') || fs.existsSync(candidate)) {
       javaExe = candidate;
@@ -318,6 +351,10 @@ async function spawnBackend(isDev = false) {
           ...process.env,
           // Keeps the H2 file in the user profile rather than the install dir.
           CAUSIFY_DATA_DIR: toJdbcPath(dataDir),
+          /* Running a user's .java file shells out to javac, which would send
+             them straight back to installing a JDK. The bundled image includes
+             the compiler, so tell the backend where it is. */
+          ...(bundledHome ? { CAUSIFY_JAVA_HOME: bundledHome } : {}),
           ...(storedApiKey ? { AI_API_KEY: storedApiKey } : {}),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -367,7 +404,12 @@ async function spawnBackend(isDev = false) {
         pushLog(`[ERROR] Failed to start backend: ${err.message}`);
 
         if (err.code === 'ENOENT') {
-          const msg = 'Java not found. Please install JDK 17+ and ensure JAVA_HOME is set.';
+          /* With the runtime bundled, this is no longer "you forgot to install
+             Java" — it means the install is damaged or the packaged runtime
+             never made it in. Say which, so the fix is the right one. */
+          const msg = bundledHome
+            ? `The bundled Java runtime could not be started (${javaExe}). Reinstalling Causify should fix it.`
+            : 'Java not found, and no bundled runtime is present. Install JDK 17+, or rebuild with: npm run fetch-jre';
           pushLog(`[ERROR] ${msg}`);
           if (!resolved) { resolved = true; reject(new Error(msg)); }
         } else {

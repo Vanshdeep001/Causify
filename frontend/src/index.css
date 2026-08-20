@@ -1,20 +1,20 @@
-/* ============================================================
-   DEBUGSYNC — Design System: "INTELLIGENCE"
+﻿/* ============================================================
+   DEBUGSYNC â€” Design System: "INTELLIGENCE"
    A software intelligence command center.
    Mission control for understanding how software behaves.
 
-   Surfaces : deep matte black → graphite → carbon, layered.
+   Surfaces : deep matte black â†’ graphite â†’ carbon, layered.
    Accents  : electric lime (#FFFFFF) + intelligent cyan (#B3B3B3).
    Borders  : thin, technical, 1px.
-   Type     : Space Grotesk (headings) · Inter (interface)
-              · JetBrains Mono (code & data readouts).
-   Motion   : sparing — smooth transitions, subtle pulses.
+   Type     : Space Grotesk (headings) Â· Inter (interface)
+              Â· JetBrains Mono (code & data readouts).
+   Motion   : sparing â€” smooth transitions, subtle pulses.
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=VT323&family=Silkscreen:wght@400;700&family=Syne:wght@700;800&family=Unbounded:wght@400;500;600;700;800;900&family=Sora:wght@400;500;600;700;800&family=Fraunces:ital,wght@0,400;0,500;0,600;1,400;1,500;1,600&display=swap');
 
 :root {
-  /* ── Surfaces (legacy names kept, values remapped) ── */
+  /* â”€â”€ Surfaces (legacy names kept, values remapped) â”€â”€ */
   --bg-creme: #0A0A0A;
   /* app background               */
   --bg-paper: #111111;
@@ -26,19 +26,19 @@
   --color-white: #0A0A0A;
   /* inverse text (on accents)    */
 
-  /* ── Surface scale ── */
+  /* â”€â”€ Surface scale â”€â”€ */
   --s0: #0A0A0A;
-  /* matte black — canvas         */
+  /* matte black â€” canvas         */
   --s1: #111111;
-  /* graphite — panels            */
+  /* graphite â€” panels            */
   --s2: #171717;
-  /* carbon — nested surfaces     */
+  /* carbon â€” nested surfaces     */
   --s3: #1A1A1A;
   /* raised                       */
   --s4: #202020;
   /* highest                      */
 
-  /* ── Text scale ── */
+  /* â”€â”€ Text scale â”€â”€ */
   --t1: #EDEDED;
   /* primary                      */
   --t2: #A0A0A0;
@@ -48,7 +48,7 @@
   --t4: #484848;
   /* faint / disabled             */
 
-  /* ── Borders ── */
+  /* â”€â”€ Borders â”€â”€ */
   --line: #232323;
   /* default hairline             */
   --line-strong: #2E2E2E;
@@ -56,7 +56,7 @@
   --line-faint: #1C1C1C;
   /* subtle separation            */
 
-  /* ── Accents ── */
+  /* â”€â”€ Accents â”€â”€ */
   --lime: #FFFFFF;
   /* primary accent               */
   --lime-dim: rgba(255, 255, 255, 0.06);
@@ -73,21 +73,21 @@
   /* error                        */
   --crimson-dim: rgba(229, 72, 77, 0.10);
 
-  /* ── Legacy accent names (remapped) ── */
+  /* â”€â”€ Legacy accent names (remapped) â”€â”€ */
   --accent-electric-blue: #B3B3B3;
   --accent-toxic-green: #FFFFFF;
   --accent-crimson: #E5484D;
   --accent-gold: #FFB224;
   --accent-violet: #B3B3B3;
 
-  /* ── Structure (legacy names, new values) ── */
+  /* â”€â”€ Structure (legacy names, new values) â”€â”€ */
   --border-thick: 1px solid var(--line-strong);
   --border-thin: 1px solid var(--line);
   --shadow-brutal: 0 16px 40px rgba(0, 0, 0, 0.45);
   --shadow-brutal-sm: 0 8px 24px rgba(0, 0, 0, 0.35);
   --shadow-brutal-hover: 0 16px 48px rgba(0, 0, 0, 0.55);
 
-  /* ── Typography ── */
+  /* â”€â”€ Typography â”€â”€ */
   --font-header: 'Unbounded', sans-serif;
   --font-number: 'JetBrains Mono', monospace;
   --font-body: 'Sora', sans-serif;
@@ -125,7 +125,7 @@ body {
 }
 
 /* ============================================================
-   CANVAS — blueprint-inspired, almost invisible
+   CANVAS â€” blueprint-inspired, almost invisible
    ============================================================ */
 
 .cockpit-env {
@@ -139,7 +139,7 @@ body {
     var(--s0);
 }
 
-/* faint engineering grid — barely there */
+/* faint engineering grid â€” barely there */
 .cockpit-grid {
   position: absolute;
   inset: 0;
@@ -163,7 +163,7 @@ body {
   display: none;
 }
 
-/* legacy overlay hook — neutralized */
+/* legacy overlay hook â€” neutralized */
 .organic-texture {
   display: none;
 }
@@ -266,7 +266,7 @@ body {
 
 /* ---------- Typography Utilities ---------- */
 
-/* Syne hollow wordmark — heavy, oblique, transparent fill with white stroke */
+/* Syne hollow wordmark â€” heavy, oblique, transparent fill with white stroke */
 .logo-text {
   font-family: 'Syne', sans-serif;
   font-weight: 800;
@@ -280,7 +280,7 @@ body {
   text-stroke: 1.5px rgba(255, 255, 255, 0.7);
 }
 
-/* Cyan letterspaced caption under the wordmark (à la "MICROSOFT BUILD") */
+/* Cyan letterspaced caption under the wordmark (Ã  la "MICROSOFT BUILD") */
 .logo-sub {
   font-family: var(--font-number);
   font-weight: 500;
@@ -344,7 +344,7 @@ body {
   transition: padding-bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* ── Primary workspace panel ── */
+/* â”€â”€ Primary workspace panel â”€â”€ */
 .bento-tile {
   background: rgba(17, 17, 17, 0.65);
   backdrop-filter: blur(16px);
@@ -617,7 +617,10 @@ body {
 /* Redesigned Run Button matching the brand logo */
 .run-button {
   height: 28px;
-  padding: 0 16px;
+  /* Tightened from 16px now that the border is gone. With a box around it that
+     padding read as breathing room; without one it is just empty space holding
+     the label away from whatever sits beside it. */
+  padding: 0 11px;
   font-family: 'Silkscreen', var(--font-number);
   font-weight: 700;
   font-size: 0.72rem;
@@ -626,7 +629,10 @@ body {
   background: transparent;
   color: var(--t1) !important;
   -webkit-text-fill-color: var(--t1) !important;
-  border: 1px solid rgba(255, 255, 255, 0.75);
+  /* No outline at rest. The hover fill below is what marks it as a button —
+     the box was doing the same job twice and boxing in a header that is
+     otherwise all bare controls. */
+  border: none;
   border-radius: 3px;
   cursor: pointer;
   display: flex;
@@ -639,15 +645,19 @@ body {
 
 .run-button:hover:not(:disabled) {
   background: var(--t1);
-  border-color: var(--t1);
   color: var(--s0) !important;
   -webkit-text-fill-color: var(--s0) !important;
   box-shadow: 0 0 12px rgba(255, 255, 255, 0.2);
 }
 
+/* Keyboard users lose the resting box too, so focus has to draw its own. */
+.run-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55);
+}
+
 .run-button:disabled {
   background: var(--s2);
-  border-color: var(--line);
   color: var(--t4) !important;
   -webkit-text-fill-color: var(--t4) !important;
   cursor: not-allowed;
@@ -949,7 +959,7 @@ body {
   animation: ees-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Welcome wordmark — pixel type, black interior with bright outline */
+/* Welcome wordmark â€” pixel type, black interior with bright outline */
 .empty-editor-brand {
   font-family: 'Silkscreen', var(--font-number);
   font-weight: 700;
@@ -964,12 +974,12 @@ body {
   text-stroke: 1.5px rgba(237, 237, 237, 0.92);
 }
 
-/* sidebar collapsed → extra width, keep the wordmark on one line */
+/* sidebar collapsed â†’ extra width, keep the wordmark on one line */
 .empty-editor-state.is-sidebar-collapsed .empty-editor-brand {
   white-space: nowrap;
 }
 
-/* ── Index — the editorial spec-sheet of entry actions ── */
+/* â”€â”€ Index â€” the editorial spec-sheet of entry actions â”€â”€ */
 .ees-index {
   width: 100%;
   max-width: 620px;
@@ -1030,7 +1040,7 @@ body {
   height: 62%;
 }
 
-/* oversized outlined numeral — rhymes with the pixel wordmark */
+/* oversized outlined numeral â€” rhymes with the pixel wordmark */
 .ees-entry-num {
   position: relative;
   flex-shrink: 0;
@@ -1062,7 +1072,7 @@ body {
   flex: 1;
 }
 
-/* title — grotesk structure with serif-italic emphasis */
+/* title â€” grotesk structure with serif-italic emphasis */
 .ees-entry-title {
   font-family: 'Space Grotesk', 'Inter', sans-serif;
   font-size: clamp(1.15rem, 2.1vw, 1.45rem);
@@ -1079,7 +1089,7 @@ body {
   color: #FFFFFF;
 }
 
-/* description — mono, technical, quiet */
+/* description â€” mono, technical, quiet */
 .ees-entry-desc {
   font-family: var(--font-number), monospace;
   font-size: 0.64rem;
@@ -1244,10 +1254,10 @@ body {
   font-size: 1.2rem;
 }
 
-/* ========== Root Cause Analysis — Intelligence Cards ========== */
+/* ========== Root Cause Analysis â€” Intelligence Cards ========== */
 
-/* ===== Diagnostic Report — editorial, card-less ===== */
-/* ===== Diagnostic Report — Premium Typographic Flat Redesign (Black & Red) ===== */
+/* ===== Diagnostic Report â€” editorial, card-less ===== */
+/* ===== Diagnostic Report â€” Premium Typographic Flat Redesign (Black & Red) ===== */
 .rca2-divider {
   border-top: 1px dashed rgba(255, 79, 86, 0.25);
   margin: 24px 0 16px;
@@ -1266,7 +1276,7 @@ body {
 }
 
 /* Which provider is live, parked on the report's toggle row where it is always
-   visible. Quiet by default — it is a readout first and a control second. */
+   visible. Quiet by default â€” it is a readout first and a control second. */
 .rca2-provider-chip {
   margin-left: auto;
   flex-shrink: 0;
@@ -1309,7 +1319,7 @@ body {
 }
 
 /* Now sits below the agent panel rather than above it, so it needs its own
-   separation — otherwise the trigger reads as part of the panel's footer. */
+   separation â€” otherwise the trigger reads as part of the panel's footer. */
 .rca2-trigger-after {
   margin-top: 20px;
   padding-top: 16px;
@@ -1323,7 +1333,7 @@ body {
   transition: transform 0.15s ease;
 }
 
-/* JetBrains Mono — the same face the terminal and its log lines use, so the
+/* JetBrains Mono â€” the same face the terminal and its log lines use, so the
    heading belongs to the output pane it sits in rather than announcing itself
    in the display font.
    Weight drops from 900 to 700 because this family stops there, and the size
@@ -1691,12 +1701,12 @@ body {
   letter-spacing: 0.04em;
 }
 
-/* ── AI Key Setup card (shown when no OpenRouter key is configured) ── */
-/* ── Key setup card ──
+/* â”€â”€ AI Key Setup card (shown when no OpenRouter key is configured) â”€â”€ */
+/* â”€â”€ Key setup card â”€â”€
  * The premium feel here comes from layering, not ornament. Three things do the
  * work, and they are the same three on every surface in this panel:
  *
- *   1. a background that is never one flat fill — a soft corner light over a
+ *   1. a background that is never one flat fill â€” a soft corner light over a
  *      vertical gradient, so the surface has a direction
  *   2. a 1px inset highlight along the top edge, which is what reads as a
  *      physical bevel catching light
@@ -1721,7 +1731,7 @@ body {
     0 14px 36px rgba(0, 0, 0, 0.5);
 }
 
-/* Accent seam. Fades at both ends rather than cutting off — a hard stop is
+/* Accent seam. Fades at both ends rather than cutting off â€” a hard stop is
    what made the old one look like a progress bar that had stalled. */
 .rca2-keysetup::before {
   content: '';
@@ -1733,12 +1743,12 @@ body {
   background: linear-gradient(90deg, transparent, rgba(255, 79, 86, 0.75) 22%, rgba(255, 79, 86, 0.18) 62%, transparent);
 }
 
-/* ── Active provider readout ──
+/* â”€â”€ Active provider readout â”€â”€
  * An instrument panel, not a card with a headline. It reports two facts and
  * offers two actions, so it is laid out as a readout: a micro label, the value
  * in the terminal's own face, and the controls held to one side.
  *
- * Type is deliberately all JetBrains Mono — the same face as the diagnostic
+ * Type is deliberately all JetBrains Mono â€” the same face as the diagnostic
  * heading, the section labels and the terminal itself. The display/body pairing
  * it used before belonged to a marketing card and read as imported.
  */
@@ -1769,7 +1779,7 @@ body {
 
 /* Four corner brackets instead of a border: eight hairlines positioned at the
    corners, so the frame is implied rather than drawn. Reads as instrumentation,
-   and it is the green that carries "this is live" — no tick required. */
+   and it is the green that carries "this is live" â€” no tick required. */
 .ai-status::before {
   content: '';
   position: absolute;
@@ -1829,7 +1839,7 @@ body {
   line-height: 1.2;
 }
 
-/* Prefixed rather than boxed — a chip here would reintroduce the rounded
+/* Prefixed rather than boxed â€” a chip here would reintroduce the rounded
    surface the readout just got rid of. */
 .ai-status-model {
   margin-top: 8px;
@@ -1843,7 +1853,7 @@ body {
 }
 
 .ai-status-model::before {
-  content: '▸ ';
+  content: 'â–¸ ';
   color: rgba(61, 214, 140, 0.8);
 }
 
@@ -1919,7 +1929,7 @@ body {
   color: #FF9A9E;
 }
 
-/* ── A key is already in place ──
+/* â”€â”€ A key is already in place â”€â”€
    Green seam, same as success: this is a working state, not a prompt. */
 .rca2-keysetup.is-connected::before,
 .rca2-keysetup.is-success::before {
@@ -1941,7 +1951,7 @@ body {
   color: #FFFFFF;
 }
 
-/* The tick gets a ring instead of sitting loose in the text flow — it becomes
+/* The tick gets a ring instead of sitting loose in the text flow â€” it becomes
    a deliberate status object rather than a stray character. */
 .rca2-keysetup-check {
   flex-shrink: 0;
@@ -1981,7 +1991,7 @@ body {
   margin-top: 4px;
 }
 
-/* The destructive action stays quiet — findable, never hit by momentum. */
+/* The destructive action stays quiet â€” findable, never hit by momentum. */
 .rca2-keysetup-btn.is-ghost {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.015) 100%);
   border-color: rgba(255, 255, 255, 0.12);
@@ -2033,7 +2043,7 @@ body {
   border-bottom-color: #FF8085;
 }
 
-/* ── Provider picker and its optional fields ── */
+/* â”€â”€ Provider picker and its optional fields â”€â”€ */
 
 .rca2-keysetup-field {
   margin-bottom: 10px;
@@ -2050,7 +2060,7 @@ body {
   color: var(--t3);
 }
 
-/* Matches the key field exactly — the two are read as one form, so a differently
+/* Matches the key field exactly â€” the two are read as one form, so a differently
    shaped select would make the provider look like a separate control. */
 .rca2-keysetup-select {
   width: 100%;
@@ -2088,7 +2098,7 @@ body {
   color: #FFFFFF;
 }
 
-/* Model override — a disclosure, because almost nobody needs it. */
+/* Model override â€” a disclosure, because almost nobody needs it. */
 .rca2-keysetup-advanced {
   margin-top: 12px;
 }
@@ -2146,7 +2156,7 @@ body {
   height: 42px;
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  /* Matches the button beside it — a rounded field against a squared button
+  /* Matches the button beside it â€” a rounded field against a squared button
      makes the pair read as two unrelated controls. */
   border-radius: 3px;
   padding: 0 14px;
@@ -2174,7 +2184,7 @@ body {
     0 0 0 3px rgba(255, 255, 255, 0.07);
 }
 
-/* ── Primary button ──
+/* â”€â”€ Primary button â”€â”€
  * A pressable object: gradient body so it has a lit top and a shaded base,
  * a bright inset seam along the top edge, and a shadow that shortens as the
  * button travels down on press. */
@@ -2253,7 +2263,7 @@ body {
   background: linear-gradient(180deg, #0C0C0E 0%, #090909 100%);
   border: 1px solid rgba(255, 255, 255, 0.075);
   /* Square throughout. Pixel sprites and rounded chrome are the same mismatch
-     as pixel type with a soft glow — the corners give the illusion away. */
+     as pixel type with a soft glow â€” the corners give the illusion away. */
   border-radius: 0;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.035),
@@ -2261,11 +2271,11 @@ body {
   animation: rca2-content-in 0.25s ease forwards;
 }
 
-/* The applied state is a confirmation, not a document — it holds one line of
+/* The applied state is a confirmation, not a document â€” it holds one line of
    text and two buttons. Framing that in a card gives weight to something the
    user has already finished reading, so it sits bare on the panel instead. */
 /* The level draws its own frame. Whenever it is the only thing in the panel,
-   the panel's frame is a second box drawn around the first — so the outer one
+   the panel's frame is a second box drawn around the first â€” so the outer one
    steps aside and the scene becomes the card. */
 .afx-panel.is-bare {
   background: none;
@@ -2283,7 +2293,7 @@ body {
   padding: 4px 2px 10px;
 }
 
-/* ── The level ──
+/* â”€â”€ The level â”€â”€
  * A side-scrolling strip: sky, a row of ? blocks, ground. The plumber's
  * horizontal position is driven from React (one step per stage of the agent
  * loop) and eased here, so movement reads as running rather than teleporting.
@@ -2291,7 +2301,7 @@ body {
 
 /* The sky is deliberately NOT cartoon blue. A saturated navy fights the IDE's
    neutral surface scale and reads cheap next to it; a near-black base lifted by
-   two faint coloured glows — warm high, cool at the horizon — gives depth
+   two faint coloured glows â€” warm high, cool at the horizon â€” gives depth
    without introducing a colour the rest of the app never uses. */
 .afx-scene {
   position: relative;
@@ -2314,7 +2324,7 @@ body {
 }
 
 /* Fine CRT scanlines + a soft vignette. Both sit far below the threshold of
-   "effect" — they read as material, not as decoration. */
+   "effect" â€” they read as material, not as decoration. */
 .afx-sky::after {
   content: '';
   position: absolute;
@@ -2334,11 +2344,11 @@ body {
 }
 
 /* A clear used to tint the whole scene green. It flattened the background into
-   one muddy wash and undid the neutral palette the panel is built on — the
+   one muddy wash and undid the neutral palette the panel is built on â€” the
    flag, the verdict colour and the coins already say "cleared" without
    repainting the sky. */
 
-/* Clouds — pure decoration, deliberately slow so they never pull the eye
+/* Clouds â€” pure decoration, deliberately slow so they never pull the eye
    away from the status text below. */
 .afx-cloud {
   position: absolute;
@@ -2368,7 +2378,7 @@ body {
   100% { transform: translateX(-160px); }
 }
 
-/* Ground: a brick strip in dark bronze rather than toy brown — it still reads
+/* Ground: a brick strip in dark bronze rather than toy brown â€” it still reads
    as ground, but sits in the same tonal family as the rest of the IDE. The
    warm hairline on top is what separates it from the sky; the inner shadow
    underneath gives the strip weight. The scrolling variant runs only while the
@@ -2395,7 +2405,7 @@ body {
   100% { background-position: -14px 0; }
 }
 
-/* ── Idle scene ── */
+/* â”€â”€ Idle scene â”€â”€ */
 
 .afx-idle-block {
   position: absolute;
@@ -2421,7 +2431,7 @@ body {
   94%           { transform: translateY(-3px); }
 }
 
-/* ── Run scene ── */
+/* â”€â”€ Run scene â”€â”€ */
 
 .afx-blocks {
   position: absolute;
@@ -2463,7 +2473,7 @@ body {
 
 /* The runner travels inside the same insets the blocks use, so he arrives
    under the block he is bumping. He used to be positioned straight off the
-   scene's full width, which put him at left:100% on the final stage — his
+   scene's full width, which put him at left:100% on the final stage â€” his
    whole body past the right edge, erased by the sky's overflow:hidden. The
    level then animated with no character in it, which read as frozen. */
 .afx-runner-track {
@@ -2480,7 +2490,7 @@ body {
   transition: left 0.75s cubic-bezier(0.32, 0.72, 0.35, 1);
 }
 
-/* ── Result scene ── */
+/* â”€â”€ Result scene â”€â”€ */
 
 .afx-flagpole {
   position: absolute;
@@ -2538,12 +2548,12 @@ body {
   color: #FFB224;
 }
 
-/* ── HUD / scoreboard ── */
+/* â”€â”€ HUD / scoreboard â”€â”€ */
 
 /* Type rule for this panel: pixel face for LABELS (they are game chrome and
    never longer than a few words), the app's body face for SENTENCES. Silkscreen
-   is the app's existing pixel voice — the Run button and welcome wordmark
-   already use it — so this stays in-family instead of importing kitsch.
+   is the app's existing pixel voice â€” the Run button and welcome wordmark
+   already use it â€” so this stays in-family instead of importing kitsch.
    It ships 400/700 only, so nothing here asks for a heavier weight. */
 
 .afx-hud {
@@ -2617,11 +2627,11 @@ body {
   color: var(--t3);
 }
 
-/* ── START ──
+/* â”€â”€ START â”€â”€
  * Standalone rather than a modifier on .afx-btn. As a modifier its Silkscreen
  * was silently lost: .afx-btn is declared later in this file at the same
  * specificity, so its font-family won and the button rendered in the display
- * face — the one element in the level not speaking pixel.
+ * face â€” the one element in the level not speaking pixel.
  *
  * Same construction as the coin button: flat fill, square corners, a hard
  * four-sided bevel, and a solid drop that is the button's thickness rather
@@ -2706,7 +2716,7 @@ body {
 }
 
 /* Motion is the whole idea here, but it must never be the price of using the
-   feature — honour the OS setting and let the level sit still. */
+   feature â€” honour the OS setting and let the level sit still. */
 @media (prefers-reduced-motion: reduce) {
   .afx-cloud-1, .afx-cloud-2,
   .afx-idle-block, .afx-idle-mario,
@@ -2717,10 +2727,10 @@ body {
   .afx-runner, .afx-flag { transition: none; }
 }
 
-/* ── Verdict ── */
+/* â”€â”€ Verdict â”€â”€ */
 
 /* No glow on pixel type anywhere in this panel. A halo bleeds past the pixel
-   grid and softens the very edges that make the sprite work — the letterforms
+   grid and softens the very edges that make the sprite work â€” the letterforms
    go from crisp to smeared at exactly the sizes used here. Colour alone
    carries the verdict. */
 .afx-verdict-label {
@@ -2738,7 +2748,7 @@ body {
   margin: 10px 0;
 }
 
-/* ── What the agent did, in words ──
+/* â”€â”€ What the agent did, in words â”€â”€
  * Held in its own block with generous breathing room, so the headline and its
  * explanation read as one unit rather than two stacked paragraphs. */
 .afx-brief {
@@ -2779,7 +2789,7 @@ body {
   white-space: nowrap;
 }
 
-/* ── Section joints ──
+/* â”€â”€ Section joints â”€â”€
  * A label, a rule that fills the gap, and optional right-aligned meta. Cheap
  * to render and it turns one long column into legible chapters. */
 .afx-section {
@@ -2814,7 +2824,7 @@ body {
   color: var(--t4);
 }
 
-/* ── The diff ── */
+/* â”€â”€ The diff â”€â”€ */
 .afx-diffs {
   display: flex;
   flex-direction: column;
@@ -2829,7 +2839,7 @@ body {
   overflow: hidden;
 }
 
-/* The marker is drawn in CSS rather than typed as a box-drawing glyph — that
+/* The marker is drawn in CSS rather than typed as a box-drawing glyph â€” that
    character rendered as a stray artifact and depended on the font having it. */
 .afx-diff-head {
   display: flex;
@@ -2908,9 +2918,9 @@ body {
   opacity: 0.6;
 }
 
-/* ── Evidence: what the patched code actually printed ──
+/* â”€â”€ Evidence: what the patched code actually printed â”€â”€
  * The section head above it already names it, so the block itself is just the
- * output — one framed surface instead of a captioned box inside a box. */
+ * output â€” one framed surface instead of a captioned box inside a box. */
 .afx-evidence-pre {
   margin: 0 0 14px;
   padding: 12px 14px;
@@ -2936,7 +2946,7 @@ body {
   color: #E8B4B6;
 }
 
-/* ── Agent log ── */
+/* â”€â”€ Agent log â”€â”€ */
 .afx-trail-toggle {
   font-family: var(--font-number);
   font-size: 0.56rem;
@@ -3018,7 +3028,7 @@ body {
   color: rgba(61, 214, 140, 0.7);
 }
 
-/* ── Applied ── */
+/* â”€â”€ Applied â”€â”€ */
 /* Header row of the applied state. The rule under it separates "what happened"
    from "what changed" without needing a card around either. */
 .afx-applied {
@@ -3065,7 +3075,7 @@ body {
   flex-shrink: 0;
 }
 
-/* ── The coin slot ──
+/* â”€â”€ The coin slot â”€â”€
  * The front of the cabinet: joined to the level above it, same materials, and
  * carrying no heading of its own because the scene already says INSERT COIN.
  */
@@ -3075,17 +3085,93 @@ body {
   border-bottom: none;
 }
 
+/* The cabinet face.
+ *
+ * Not a form on a dark background — the front panel of a machine. Three things
+ * carry that: a metal ground that is lit from above, hard square corners
+ * everywhere, and CRT scanlines laid over the whole face. Every control below
+ * is drawn as something physical set into this panel.
+ */
 .afx-slot {
+  position: relative;
   margin-bottom: 4px;
-  padding: 13px 15px 12px;
-  background: rgba(6, 7, 9, 0.72);
+  padding: 15px 15px 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 0;
+  overflow: hidden;
+  /* Brushed metal: a top-down sheen over near-black, so the panel has a
+     direction of light and the recesses cut into it read as recesses. */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055) 0%, rgba(255, 255, 255, 0.012) 22%, transparent 55%),
+    linear-gradient(180deg, #0E1013 0%, #06070A 100%);
+}
+
+/* Scanlines. 3px pitch is the point where they read as a CRT rather than as a
+   moiré pattern — finer and they shimmer, coarser and they look like blinds. */
+.afx-slot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.22) 0px,
+    rgba(0, 0, 0, 0.22) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  opacity: 0.5;
+}
+
+/* ── Marquee ──
+ * The panel's one heading, and the credit readout that answers "did that
+ * register?" before you press anything.
+ *
+ * Everything here is white or grey. Gold appears exactly twice on this card —
+ * on the coin, and on the button once it can be pressed — so it means "this is
+ * the live thing" rather than being the card's decoration. */
+.afx-slot-marquee {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 5px;
+}
+
+.afx-slot-title {
+  font-family: 'Silkscreen', var(--font-number);
+  font-weight: 700;
+  font-size: 0.86rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #FFFFFF;
+}
+
+.afx-slot-credit {
+  flex-shrink: 0;
+  font-family: 'Silkscreen', var(--font-number);
+  font-size: 0.56rem;
+  letter-spacing: 0.1em;
+  color: var(--t4);
+  transition: color 0.15s ease;
+}
+/* Ticks over the moment a key is in the field. */
+.afx-slot-credit.is-live { color: #FFB224; }
+
+.afx-slot-sub {
+  margin: 0 0 13px;
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--t3);
+  max-width: 46ch;
 }
 
 /* A control panel keeps its size regardless of how wide the terminal is. */
 .afx-slot-inner {
+  position: relative;   /* above the scanlines and the bloom */
+  z-index: 1;
   max-width: 620px;
   margin: 0 auto;
 }
@@ -3112,7 +3198,7 @@ body {
   color: var(--t3);
 }
 
-/* Recessed slots in a cabinet face: square corners and a hard two-tone bevel —
+/* Recessed slots in a cabinet face: square corners and a hard two-tone bevel â€”
    dark on the top/left where the panel casts into them, light on the
    bottom/right. Rounded corners with a soft glow read as a web form. */
 .afx-slot-select,
@@ -3168,16 +3254,23 @@ body {
 
 /* The coin sits where a cabinet's slot would be — left of the key field. */
 .afx-slot-row.is-coin {
-  gap: 8px;
+  gap: 10px;
+  margin-bottom: 11px;
 }
 
+/* Narrower than the old 62px label column: that width existed to line up with
+   form labels that are no longer on this row, and it was pushing the key field
+   into a corner. The coin only needs to be beside the slot, not aligned to a
+   grid that left with the labels. */
 .afx-slot-coin {
+  position: relative;
   flex-shrink: 0;
-  width: 62px;
+  width: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
   animation: afx-coin-spin 2.4s ease-in-out infinite;
+  filter: drop-shadow(0 0 6px rgba(255, 178, 36, 0.45));
 }
 
 @keyframes afx-coin-spin {
@@ -3185,16 +3278,31 @@ body {
   50%      { transform: scaleX(0.25); }
 }
 
-/* ── The coin button ──
+/* Submitting drops it into the slot: it spins faster, falls, and is gone.
+   `forwards` matters — without it the coin springs back out of the machine the
+   instant the animation ends, which is the opposite of what just happened. */
+.afx-slot-coin.is-dropping {
+  animation: afx-coin-drop 0.5s ease-in forwards;
+}
+
+@keyframes afx-coin-drop {
+  0%   { transform: translateY(0) scaleX(1);     opacity: 1; }
+  40%  { transform: translateY(4px) scaleX(0.2); opacity: 1; }
+  100% { transform: translateY(26px) scaleX(0.7); opacity: 0; }
+}
+
+/* â”€â”€ The coin button â”€â”€
  * Built the way an NES button is drawn rather than the way a web button is:
  * flat coin-gold fill, no gradient, square corners, and a hard four-sided
- * bevel made of solid inset shadows — bright top-left, dark bottom-right. The
+ * bevel made of solid inset shadows â€” bright top-left, dark bottom-right. The
  * drop underneath is the button's thickness, so pressing it moves the face
  * down onto the panel and the thickness disappears.
  */
 .afx-coin-btn {
-  flex-shrink: 0;
-  height: 34px;
+  position: relative;
+  display: block;
+  width: 100%;          /* its own row now, so it takes the whole panel */
+  height: 38px;
   padding: 0 16px;
   border: none;
   border-radius: 0;
@@ -3202,9 +3310,10 @@ body {
   color: #2A1A00;
   font-family: 'Silkscreen', var(--font-number);
   font-weight: 700;
-  font-size: 0.58rem;
-  letter-spacing: 0.06em;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
   cursor: pointer;
+  overflow: hidden;
   box-shadow:
     inset 3px 3px 0 rgba(255, 255, 255, 0.5),
     inset -3px -3px 0 rgba(0, 0, 0, 0.28),
@@ -3212,8 +3321,67 @@ body {
   transition: background 0.12s ease, transform 0.08s ease, box-shadow 0.08s ease;
 }
 
+.afx-coin-btn-label { position: relative; z-index: 1; }
+
+/* A shine that sweeps the face on hover — the light moving across a plastic
+   button as you reach for it. Skewed so it reads as a reflection rather than
+   as a loading bar. */
+.afx-coin-btn::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  bottom: -50%;
+  left: -60%;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.45s ease;
+}
+.afx-coin-btn:hover:not(:disabled)::after { left: 130%; }
+
 .afx-coin-btn:hover:not(:disabled) {
   background: #FFC658;
+}
+
+/* ── Attract mode ──
+ * With no key typed there is nothing to press, and the button is a flat plate
+ * with no gold and no thickness — pressable things are gold here, so an unlit
+ * one has to look inert. It blinks its label the way a cabinet's attract screen
+ * does, which is the one cue that it is waiting rather than broken. */
+.afx-coin-btn.is-attract:disabled {
+  animation: afx-attract 1.7s steps(1, end) infinite;
+}
+
+@keyframes afx-attract {
+  0%, 62%   { color: #5E5E5E; }
+  63%, 100% { color: #9A9A9A; }
+}
+
+/* The key field IS the slot: a dark opening cut into the panel. Taller than the
+   other inputs because an API key is the one thing you paste here.
+   Kept colourless — a gold-rimmed field competing with a gold button gave the
+   card two things both shouting that they were the important one. */
+.afx-slot-input.is-key {
+  height: 38px;
+  letter-spacing: 0.08em;
+}
+
+.afx-slot-input.is-key:focus {
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.9),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.07),
+    0 0 0 2px rgba(255, 255, 255, 0.55);
+}
+
+/* The cabinet stops performing. The controls keep every state they need —
+   focus, hover, disabled — they just stop moving on their own. */
+@media (prefers-reduced-motion: reduce) {
+  .afx-slot::after,
+  .afx-slot-coin,
+  .afx-slot-coin.is-dropping,
+  .afx-coin-btn.is-attract:disabled { animation: none; }
+  .afx-coin-btn::after { display: none; }
+  .afx-slot-coin.is-dropping { opacity: 0; }
 }
 
 .afx-coin-btn:active:not(:disabled) {
@@ -3321,7 +3489,7 @@ body {
   color: #FFD08A;
 }
 
-/* Confirmation that the key was recognised — replaces the form row that used
+/* Confirmation that the key was recognised â€” replaces the form row that used
    to ask the same question. */
 .afx-slot-hint.is-detected {
   color: #FFB224;
@@ -3342,7 +3510,7 @@ body {
   text-align: right;
 }
 
-/* ── Coin accepted ── */
+/* â”€â”€ Coin accepted â”€â”€ */
 .afx-slot.is-success {
   display: flex;
   align-items: center;
@@ -3379,7 +3547,7 @@ body {
   .afx-slot-coin, .afx-slot-sprite { animation: none; }
 }
 
-/* ── Notices and buttons ── */
+/* â”€â”€ Notices and buttons â”€â”€ */
 .afx-notice {
   margin-top: 12px;
   padding: 10px 13px;
@@ -3398,14 +3566,14 @@ body {
   margin-top: 12px;
 }
 
-/* ── Panel buttons ──
+/* â”€â”€ Panel buttons â”€â”€
  * Same construction as START and INSERT COIN, so every control in this feature
  * is visibly the same object: flat fill, square corners, a hard four-sided
  * bevel, and a solid drop that is the button's thickness. Pressing sinks the
  * face onto the panel.
  *
  * Silkscreen, because these sit inside the level. The diff itself stays
- * monospace and plain — the code you review is the serious part; a short
+ * monospace and plain â€” the code you review is the serious part; a short
  * button label is not.
  */
 .afx-btn {
@@ -3443,7 +3611,7 @@ body {
     inset -3px -3px 0 rgba(0, 0, 0, 0.25);
 }
 
-/* The secondary action stays quiet on purpose — Reject and Undo should be easy
+/* The secondary action stays quiet on purpose â€” Reject and Undo should be easy
    to find and impossible to hit by momentum. */
 .afx-btn-ghost {
   background: #232323;
@@ -3471,6 +3639,478 @@ body {
 .rca2-keysetup-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.22);
+}
+
+/* â”€â”€ Mario, standing in the header â”€â”€
+ * No chrome and no label: he is a sprite sitting on the bar, not a button
+ * pretending to be one. The frame appears on hover so it is still obviously
+ * clickable, and he lifts slightly â€” the smallest possible hint that he is
+ * about to get up. */
+.mario-invoke {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  height: 30px;
+  background: transparent;
+  /* Transparent, and stays that way on hover. It exists only so
+     :focus-visible below has something to colour in — keyboard users get no
+     hover lift, so the border is the one cue left for them. */
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  image-rendering: pixelated;
+  transition: border-color 0.14s ease, transform 0.12s ease;
+}
+/* He lifts, and that is all. No plate appearing behind him: a card on hover
+   frames him as a button icon, and the whole point is that he is a character
+   standing on the bar. The lift reads as him noticing you, which is a better
+   affordance here than a box would be — and it is the same movement he makes
+   when you approach him out in the editor. */
+.mario-invoke:hover {
+  transform: translateY(-2px);
+}
+.mario-invoke:active { transform: translateY(0); }
+.mario-invoke:focus-visible {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* â”€â”€ The handoff, in the terminal â”€â”€
+ * Where the agent's panel used to be. It is a doorway, not a panel: it says
+ * what he will do and gets out of the way. */
+.ask-mario-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  background: var(--s1);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.14s ease, background 0.14s ease, transform 0.08s ease;
+}
+.ask-mario-strip:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.24);
+  transform: translateY(-1px);
+}
+.ask-mario-strip:disabled { cursor: default; opacity: 0.75; }
+
+.ask-mario-sprite { display: flex; align-items: flex-end; flex-shrink: 0; image-rendering: pixelated; }
+.ask-mario-strip:disabled .ask-mario-sprite { animation: mario-hop 0.85s steps(2, end) infinite; }
+
+.ask-mario-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+
+.ask-mario-title {
+  font-family: var(--font-header);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #FFFFFF;
+}
+.ask-mario-sub {
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  color: var(--t3);
+  line-height: 1.4;
+}
+.ask-mario-go { flex-shrink: 0; color: var(--t3); font-size: 0.72rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-mario-strip:hover:not(:disabled) { transform: none; }
+  .ask-mario-strip:disabled .ask-mario-sprite { animation: none; }
+}
+
+/* ═══════════════════════════════════════════════════════
+ * Mario — a character standing in the editor
+ *
+ * Not a window. There is no frame, no title bar and no chrome around him: he
+ * is a sprite on the page, and the command line is something that comes OUT of
+ * him when you approach. Everything below serves that one illusion, so the
+ * rules are mostly about what is absent.
+ *
+ * The two easings do all the work:
+ *   --mario-spring  overshoots slightly, for things that unfurl
+ *   --mario-ease    plain and quick, for things that only fade
+ * ═══════════════════════════════════════════════════════ */
+
+/* The wrapper is exactly Mario and nothing else — a 32px box at the position
+ * he was dragged to. Everything that opens is positioned absolutely against
+ * it, never in flow.
+ *
+ * That is the whole trick. Laying the bar out beside him in a flex row would
+ * make the row wider as it opened, and since the box is pinned by its left
+ * edge, HE would slide sideways to make room — the one thing that would break
+ * the illusion that the bar is coming out of him. Anchored absolutely, he does
+ * not move by a pixel.
+ */
+.mario-agent {
+  --mario-spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --mario-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  position: fixed;
+  z-index: 900;
+  width: 64px;    /* 16 sprite columns at px=4 */
+  height: 80px;   /* 20 sprite rows    at px=4 */
+  /* No background and no border: this is scaffolding, not a surface. */
+  background: none;
+  /* Only he and the bar are targets — the empty space around them must not eat
+     clicks meant for the editor underneath. */
+  pointer-events: none;
+}
+.mario-agent > * { pointer-events: auto; }
+
+/* ── The character ── */
+.mario-char {
+  position: relative;
+  cursor: grab;
+  touch-action: none;
+  image-rendering: pixelated;
+  /* A drag must not paint him blue mid-move. */
+  user-select: none;
+  -webkit-user-drag: none;
+  /* A 32px sprite is a small thing to hit with a mouse. The padding grows the
+     target for hovering and grabbing; the equal negative margin takes the space
+     straight back, so he does not visually shift by a pixel. */
+  padding: 7px;
+  margin: -7px;
+}
+.mario-agent.is-dragging .mario-char { cursor: grabbing; }
+
+/* He breathes.
+ *
+ * An earlier pass had this at six seconds and one pixel, which is invisible —
+ * and an invisible idle animation is the same as none, so he read as a sticker
+ * somebody had left on the screen. Two and a half seconds and two pixels is the
+ * point where it registers as breathing from the corner of your eye without
+ * ever asking to be looked at. The blink and the occasional hop do the rest. */
+.mario-sprite {
+  display: block;
+  animation: mario-breathe 2.5s ease-in-out infinite;
+}
+@keyframes mario-breathe {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-2px); }
+}
+
+/* ── The hop ──
+ * Asymmetric on purpose: fast up, hang, slower down, then a squash on landing.
+ * An even up-and-down reads as a floating icon; the hang and the squash are
+ * what make it read as weight. The component swaps to the jump frame for
+ * exactly as long as this runs, so the pose and the arc agree. */
+.mario-agent.is-hopping .mario-sprite {
+  animation: mario-hop 0.42s var(--mario-ease);
+}
+@keyframes mario-hop {
+  0%   { transform: translateY(0)     scaleY(0.9)  scaleX(1.1); }
+  18%  { transform: translateY(-16px) scaleY(1.08) scaleX(0.94); }
+  46%  { transform: translateY(-19px) scaleY(1)    scaleX(1); }
+  78%  { transform: translateY(0)     scaleY(0.86) scaleX(1.14); }
+  100% { transform: translateY(0)     scaleY(1)    scaleX(1); }
+}
+
+/* Walking. The vertical bob is small because the FRAMES carry the motion —
+   doubling up with a big CSS bounce makes him look like he is on a trampoline. */
+.mario-agent.is-busy .mario-sprite {
+  animation: mario-step 0.28s steps(2, end) infinite;
+}
+@keyframes mario-step {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-2px); }
+}
+
+/* Held off the ground while being carried. */
+.mario-agent.is-dragging .mario-sprite {
+  animation: none;
+  transform: translateY(-3px) rotate(-5deg);
+}
+
+/* The ground he stands on. A soft ellipse that shrinks and darkens as he
+   rises — the cheapest possible cue that he is a thing in space rather than an
+   image pasted on the page. */
+.mario-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 48px;
+  height: 9px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.7), transparent 70%);
+  filter: blur(2px);
+  transition: width 0.2s var(--mario-ease), opacity 0.2s var(--mario-ease);
+  pointer-events: none;
+}
+.mario-agent.is-hopping .mario-shadow,
+.mario-agent.is-dragging .mario-shadow { width: 28px; opacity: 0.5; }
+
+/* ── Speech ──
+ * A hard-edged pixel bubble, near-white on a dark editor so it actually reads
+ * as speech rather than as one more grey panel. It is the only bright surface
+ * he has, which is what makes the rare moments he uses it land. */
+.mario-bubble {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  z-index: 2;
+  padding: 7px 11px;
+  background: #F5F5F5;
+  color: #0A0A0A;
+  font-family: var(--font-code);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  border-radius: 4px;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35), 0 10px 26px rgba(0, 0, 0, 0.5);
+  transform-origin: bottom center;
+  animation: mario-pop 0.28s var(--mario-spring);
+  pointer-events: none;
+  /* Centred on him with `translate` rather than inside `transform`, so the pop
+     animation can own `transform` outright without having to restate the
+     centring in every keyframe. */
+  translate: -50% 0;
+  max-width: 60vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The tail. A rotated square rather than a border triangle, so it inherits the
+   bubble's colour and its shadow without a second hard-coded value. */
+.mario-bubble-tail {
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  background: #F5F5F5;
+  transform: rotate(45deg);
+}
+
+@keyframes mario-pop {
+  0%   { opacity: 0; transform: translateY(6px) scale(0.7); }
+  60%  { opacity: 1; transform: translateY(0)   scale(1.06); }
+  100% { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+/* ── The command line ──
+ * Unfurls from his side: width first, so it reads as something extending out
+ * of him, with the contents fading in a beat later. Animating width rather
+ * than transform is deliberate — a scaleX would squash the text as it grew. */
+.mario-bar {
+  position: absolute;
+  top: 50%;
+  overflow: hidden;
+  border-radius: 999px;
+  max-width: 0;
+  opacity: 0;
+  /* Starts nudged toward him and settles outward, so it reads as extending out
+     of him rather than sliding in from nowhere. The sign follows the direction
+     it will grow. */
+  transform: translateY(-50%) translateX(8px);
+  transition:
+    max-width 0.34s var(--mario-spring),
+    opacity 0.2s var(--mario-ease),
+    transform 0.34s var(--mario-spring);
+}
+
+/* Grows away from the nearer edge. The anchored side is the one touching him,
+   so the box extends outward from his shoulder as max-width opens up.
+ *
+ * The 10px separating him from the pill is transparent PADDING on this element
+ * rather than a gap between two elements. That matters: the bar opens on hover
+ * and closes when the pointer leaves, and a real gap is dead space that fires
+ * mouseleave halfway to the thing you are reaching for. Padding keeps the whole
+ * run from his shoulder to the pill inside one element, so the journey never
+ * leaves it. */
+.mario-bar { box-sizing: border-box; }
+
+.mario-agent:not(.opens-right) .mario-bar {
+  right: 100%;
+  padding-right: 10px;
+}
+.mario-agent.opens-right .mario-bar {
+  left: 100%;
+  padding-left: 10px;
+  transform: translateY(-50%) translateX(-8px);
+}
+
+.mario-agent.is-open .mario-bar,
+.mario-agent.opens-right.is-open .mario-bar {
+  max-width: 350px;   /* 340 of pill + the 10 of padding */
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.mario-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 6px 0 14px;
+  background: rgba(17, 17, 17, 0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+
+/* A hairline of light along the top edge — the one flourish, and what stops
+   the pill reading as a flat grey lozenge. */
+.mario-bar-inner {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 40%);
+}
+
+.mario-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--t1);
+  font-family: var(--font-code);
+  font-size: 0.74rem;
+  letter-spacing: 0.01em;
+}
+.mario-input::placeholder { color: var(--t4); }
+
+.mario-send {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #FFFFFF;
+  border: none;
+  border-radius: 999px;
+  color: #0A0A0A;
+  font-size: 0.55rem;
+  cursor: pointer;
+  transition: opacity 0.16s var(--mario-ease), transform 0.16s var(--mario-spring);
+}
+.mario-send:hover:not(:disabled) { transform: scale(1.1); }
+/* Fades rather than disappears: the button keeps its place, so the bar does not
+   reflow the moment you type your first character. */
+.mario-send:disabled { opacity: 0.2; cursor: default; }
+
+/* ── Working ── */
+.mario-status {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-code);
+  font-size: 0.72rem;
+  color: var(--t2);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.mario-status-text { overflow: hidden; text-overflow: ellipsis; }
+
+.mario-status-dots { display: flex; gap: 3px; flex-shrink: 0; }
+.mario-status-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--t2);
+  animation: mario-dot 1.1s ease-in-out infinite;
+}
+.mario-status-dots i:nth-child(2) { animation-delay: 0.15s; }
+.mario-status-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes mario-dot {
+  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+  30%           { opacity: 1;    transform: translateY(-2px); }
+}
+
+/* ── The proposal ──
+ * Rises from where he stands. Anchored to his bottom edge so it grows upward,
+ * which keeps him fixed on the spot the user put him rather than shoving him
+ * around as the diff changes size. */
+.mario-result {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  width: 380px;
+  max-height: min(60vh, 560px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(10, 10, 10, 0.97);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.66);
+  overflow: hidden;
+  transform-origin: bottom center;
+  animation: mario-rise 0.3s var(--mario-spring);
+}
+/* Anchored under him rather than under the bar, so it opens into the screen
+   from whichever corner he is parked in. */
+.mario-agent:not(.opens-right) .mario-result { right: 0; }
+.mario-agent.opens-right .mario-result { left: 0; }
+
+@keyframes mario-rise {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+/* Clamped so a diff opening next to a narrow window cannot push itself off the
+   edge — the panel is wider than he is, and he can be parked anywhere. */
+.mario-result { max-width: calc(100vw - 24px); }
+
+.mario-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px 9px 14px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-code);
+  font-size: 0.68rem;
+  color: var(--t2);
+  flex-shrink: 0;
+}
+.mario-result-head span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mario-result-head button {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--t3);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.mario-result-head button:hover { background: rgba(255, 255, 255, 0.08); color: var(--t1); }
+
+.mario-result-body { overflow-y: auto; min-height: 0; }
+.mario-result-body .afx-panel { border: none; margin: 0; }
+
+/* Everything above is motion for its own sake as far as this reader is
+   concerned. The sprite still swaps frames while he works — that is state, not
+   decoration, and it is the only signal that anything is happening. */
+@media (prefers-reduced-motion: reduce) {
+  .mario-sprite,
+  .mario-agent.is-busy .mario-sprite,
+  .mario-agent.is-hopping .mario-sprite { animation: none; transform: none; }
+  .mario-bubble { animation: none; }
+  .mario-result { animation: none; }
+  .mario-bar { transition: opacity 0.15s linear, max-width 0.15s linear; }
+  .mario-send:hover:not(:disabled) { transform: none; }
+  .mario-status-dots i { animation: none; opacity: 0.6; }
+  .mario-invoke:hover { transform: none; }
 }
 
 /* --- Diagnostic FX --- */
@@ -3696,7 +4336,7 @@ body {
 }
 
 /* ==========================================================
-   Causality / Dependency Graph — system architecture view
+   Causality / Dependency Graph â€” system architecture view
    ========================================================== */
 
 .dep-graph-container {
@@ -3888,7 +4528,7 @@ body {
   margin-top: 2px;
 }
 
-/* ── Graph Nodes ── */
+/* â”€â”€ Graph Nodes â”€â”€ */
 .dep-node {
   background: var(--s2);
   border: 1px solid var(--line-strong);
@@ -4186,7 +4826,7 @@ body {
   color: var(--t3);
 }
 
-/* ── React Flow overrides for the graph wrapper ── */
+/* â”€â”€ React Flow overrides for the graph wrapper â”€â”€ */
 .dep-flow-wrapper .react-flow__background {
   background: #FFFFFF !important;
 }
@@ -4221,7 +4861,7 @@ body {
 }
 
 /* ==========================================================
-   Setup Wizard — onboarding
+   Setup Wizard â€” onboarding
    ========================================================== */
 
 @keyframes setup-fade-in {
@@ -4766,14 +5406,14 @@ body {
   background: #E0E0E0;
 }
 
-/* ══════════════════════════════════════════════════════════
- *  Deploy HQ — Frontend / Backend target switcher
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ *  Deploy HQ â€” Frontend / Backend target switcher
  *  A restrained segmented control: an inset track holds two
  *  segments; a solid neutral thumb slides under the active one.
  *  Brand identity is carried only by a thin accent rail on the
- *  thumb and the segment's glyph + provider tag — no glow.
+ *  thumb and the segment's glyph + provider tag â€” no glow.
  *  Per-segment accent is passed in as --dhub-accent.
- * ══════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 .dhub-switcher {
   flex-shrink: 0;
   padding: 12px 14px;
@@ -4877,17 +5517,17 @@ body {
   color: var(--dhub-accent);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * WORLD 1-1 — terminal chrome
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * WORLD 1-1 â€” terminal chrome
  *
  * Black and white only. With colour off the table the character has to come
  * from somewhere else, so it comes from surface and type: a CRT with scanlines
  * and a soft bloom, hollow pixel lettering borrowed from the welcome screen,
  * and Mario standing where the cursor is.
  *
- * Every layer is a static gradient or border — nothing animates per frame, and
+ * Every layer is a static gradient or border â€” nothing animates per frame, and
  * nothing sits between you and the text.
- * ═══════════════════════════════════════════════════════════════════════════ */
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .sigbay {
   position: relative;
@@ -4902,7 +5542,7 @@ body {
     radial-gradient(120% 120% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.55));
 }
 
-/* Scanlines. Tighter and stronger than a subtle nod — with no colour to carry
+/* Scanlines. Tighter and stronger than a subtle nod â€” with no colour to carry
    the theme, the surface has to. */
 .sigbay-scanlines {
   position: absolute;
@@ -4942,13 +5582,13 @@ body {
 }
 
 /* Phosphor bloom, white. A CRT halates, and this is what stops the greys
-   reading as flat web colours. One small shadow only — text-shadow is
+   reading as flat web colours. One small shadow only â€” text-shadow is
    per-glyph work, so anything heavier would show as jank on fast output. */
 .sigbay-screen .xterm-rows {
   text-shadow: 0 0 4px rgba(255, 255, 255, 0.22);
 }
 
-/* ── Mario, as the cursor ──
+/* â”€â”€ Mario, as the cursor â”€â”€
  * Positioned from JS against the panel root. Inert to the pointer so text
  * selection still passes straight through him.
  */
@@ -4957,14 +5597,14 @@ body {
   pointer-events: none;
   z-index: 4;
   /* Desaturated to keep the screen strictly black and white. He reads perfectly
-     well as a silhouette — the shape is what makes him recognisable, not the
+     well as a silhouette â€” the shape is what makes him recognisable, not the
      red. Drop this filter and he becomes the single spot of colour, which is a
      good look too if you ever want one. */
   filter: grayscale(1) contrast(1.35) brightness(1.25);
   animation: sigbay-mario-idle 1.4s steps(2, end) infinite;
 }
 
-/* Two frames, not an eased bob — an NES sprite snaps between poses. */
+/* Two frames, not an eased bob â€” an NES sprite snaps between poses. */
 @keyframes sigbay-mario-idle {
   0%, 49%   { transform: translateY(0); }
   50%, 100% { transform: translateY(-1px); }
@@ -4974,7 +5614,7 @@ body {
   .sigbay-mario { animation: none; }
 }
 
-/* ── Level HUD ──
+/* â”€â”€ Level HUD â”€â”€
  * Hollow pixel lettering, the same treatment as the welcome screen's wordmark:
  * Silkscreen with a stroke and no fill.
  */
@@ -5051,7 +5691,7 @@ body {
   .sigbay-coin { animation: none; }
 }
 
-/* ── Level tabs ── */
+/* â”€â”€ Level tabs â”€â”€ */
 .sigbay-chan {
   display: inline-flex;
   align-items: center;
@@ -5073,7 +5713,7 @@ body {
   border-color: rgba(255, 255, 255, 0.55);
 }
 
-/* The active shell is a lit block — inverted, the way an 8-bit UI shows focus. */
+/* The active shell is a lit block â€” inverted, the way an 8-bit UI shows focus. */
 .sigbay-chan.is-active {
   color: #000000;
   background: #FFFFFF;
@@ -5107,7 +5747,7 @@ body {
   text-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
 }
 
-/* ── Dependency graph zoom controls ──
+/* â”€â”€ Dependency graph zoom controls â”€â”€
  * Replaces React Flow's default cluster. Larger tap targets and the app's own
  * surface treatment, so it reads as part of the panel rather than a library
  * default dropped on top of it.
@@ -5239,252 +5879,391 @@ body {
   .conn-banner-pulse { animation: none; }
 }
 
-/* ========== Session Rewind ==========
- * A scrubber over the whole project's history. Reads as an instrument: the
- * terminal's own mono face, square edges, no floating card.
- */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * Session Rewind
+ *
+ * Three parts with real edges between them, because the previous version was
+ * one flat stack and everything read as equally important:
+ *
+ *   bar    what this is, how much history there is, where the checkpoint is
+ *   stage  the level you scrub
+ *   deck   the moment you have selected, and what you can do about it
+ *
+ * Set entirely in the terminal's own face. This panel is instrumentation, and
+ * the body typeface used elsewhere made it read like an article.
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 .rw-panel,
 .rw-empty {
-  padding: 16px 18px;
   height: 100%;
   overflow-y: auto;
-  font-family: var(--font-number);
+  padding: 0;
+  font-family: var(--font-code);
 }
 
-.rw-empty-title,
-.rw-title {
-  font-family: var(--font-number);
-  font-weight: 700;
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #FFFFFF;
-}
+/* â”€â”€ Bar â”€â”€ */
 
-.rw-empty-sub {
-  margin-top: 8px;
-  max-width: 66ch;
-  font-family: var(--font-body);
-  font-size: 0.76rem;
-  line-height: 1.65;
-  color: var(--t3);
-}
-
-.rw-head {
+/* Rules are inset to the same 18px gutter the content uses, so a divider ends
+   where the card below it ends instead of overhanging it on both sides. */
+.rw-bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 14px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
+  padding: 14px 18px;
 }
 
-/* The one shortcut worth having: back to the last state that actually ran. */
-.rw-lastgood {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 11px;
-  background: rgba(61, 214, 140, 0.08);
-  border: 1px solid rgba(61, 214, 140, 0.3);
-  border-radius: 3px;
-  color: #3DD68C;
-  font-family: var(--font-number);
-  font-size: 0.55rem;
-  font-weight: 600;
-  letter-spacing: 0.09em;
+.rw-bar::after,
+.rw-deck::after {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.rw-title {
+  /* The Workspaces heading's treatment: hollow pixel letters, outlined rather
+     than filled. VT323 needs the opposite handling to a display face â€” it
+     renders small for its em so the size goes up, it has a single weight so
+     bolding is meaningless, and it wants tracking opened out, because negative
+     letter-spacing closes the gaps the pixel grid depends on.
+     Scaled down from the 1.9rem used in the empty state: this sits in a compact
+     panel bar rather than filling an empty sidebar. */
+  font-family: 'VT323', 'Silkscreen', monospace;
+  font-weight: 400;
+  font-size: 1.5rem;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke-width: 1px;
+  -webkit-text-stroke-color: rgba(255, 255, 255, 0.7);
 }
 
-.rw-lastgood:hover {
-  background: rgba(61, 214, 140, 0.16);
-  border-color: rgba(61, 214, 140, 0.55);
+/* â”€â”€ Stage â”€â”€ */
+
+/* The whole stage, not just the level: the ticks and the legend are siblings
+   of .rwl, so dragging the slider used to highlight the time labels. */
+.rw-stage {
+  padding: 14px 18px 4px;
+  user-select: none;
 }
 
-.rw-lastgood-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #3DD68C;
-  box-shadow: 0 0 7px rgba(61, 214, 140, 0.7);
-}
-
+/* Each label is placed on the moment it names and pulled back by its own
+   share of its width, so the ends sit flush and the middles stay centred. */
 .rw-ticks {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.55rem;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--t4);
-  margin-bottom: 6px;
-}
-
-.rw-track {
   position: relative;
-  padding: 6px 0 14px;
+  height: 13px;
+  margin-bottom: 6px;
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  color: var(--t4);
 }
 
-.rw-range {
-  width: 100%;
-  appearance: none;
-  height: 3px;
-  border-radius: 0;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.08));
-  outline: none;
-  cursor: pointer;
-}
-
-.rw-range::-webkit-slider-thumb {
-  appearance: none;
-  width: 12px;
-  height: 18px;
-  border-radius: 2px;
-  background: #FFFFFF;
-  border: 1px solid #000000;
-  cursor: grab;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
-}
-
-.rw-range::-webkit-slider-thumb:active { cursor: grabbing; }
-
-.rw-range::-moz-range-thumb {
-  width: 12px;
-  height: 18px;
-  border-radius: 2px;
-  background: #FFFFFF;
-  border: 1px solid #000000;
-  cursor: grab;
-}
-
-/* Run outcomes pinned along the track — a failed build is findable by eye. */
-.rw-marks {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 6px;
-  pointer-events: none;
-}
-
-.rw-mark {
+.rw-ticks span {
   position: absolute;
   top: 0;
-  width: 2px;
-  height: 6px;
-  margin-left: -1px;
-  pointer-events: auto;
+  white-space: nowrap;
 }
 
-.rw-mark.is-ok { background: #3DD68C; }
-.rw-mark.is-fail { background: #E5484D; }
+/* â”€â”€ Deck â”€â”€ */
 
-.rw-selected {
+.rw-deck {
+  position: relative;
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 14px;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 18px 16px;
 }
 
-.rw-selected-time {
-  font-size: 0.95rem;
+/* A tape counter. Recessed, gold digits on black â€” the readout on a machine
+   you rewind, which is exactly what this panel is. */
+.rw-counter {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 14px;
+  background: #050505;
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.9),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+
+.rw-counter-time {
+  font-family: var(--font-code);
   font-weight: 700;
-  color: #FFFFFF;
+  font-size: 1.15rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: #FFB224;
 }
 
-.rw-selected-meta {
-  font-size: 0.56rem;
-  letter-spacing: 0.09em;
+.rw-counter-meta {
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--t4);
 }
 
-.rw-actions {
+.rw-deck-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  margin-left: auto;
 }
 
-.rw-btn {
-  padding: 8px 14px;
-  border-radius: 0;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: transparent;
-  color: var(--t2);
-  font-family: var(--font-number);
+/* â”€â”€ Transport keys â”€â”€
+ * This panel is a machine you rewind, with a tape counter for a readout â€” so
+ * the controls are the machine's keys rather than web buttons. Each is a cap
+ * sitting proud of the deck: lit along its top edge, dark underneath, with a
+ * solid block beneath standing in for its thickness. Pressing it drives the
+ * cap down onto the deck and the thickness disappears.
+ */
+.rw-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 15px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  background: linear-gradient(180deg, #24242A 0%, #17171B 100%);
+  color: var(--t1);
+  font-family: var(--font-code);
   font-weight: 600;
-  font-size: 0.56rem;
-  letter-spacing: 0.13em;
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   cursor: pointer;
-  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 3px 0 #0B0B0D;
+  transition: background 0.14s ease, transform 0.07s ease,
+              box-shadow 0.07s ease, color 0.14s ease, border-color 0.14s ease;
 }
 
-.rw-btn:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.5);
+/* The glyph carries the meaning; the word confirms it. Gold, matching the
+   counter's digits, so the panel has one accent rather than several. */
+.rw-key-icon {
+  display: flex;
+  align-items: center;
+  color: #FFB224;
+  flex-shrink: 0;
+}
+
+.rw-key:hover:not(:disabled) {
+  background: linear-gradient(180deg, #2C2C33 0%, #1D1D22 100%);
+  border-color: rgba(255, 255, 255, 0.22);
   color: #FFFFFF;
-  background: rgba(255, 255, 255, 0.05);
 }
 
-.rw-btn:disabled { opacity: 0.32; cursor: not-allowed; }
+/* Travels the full height of its own thickness, so the cap lands on the deck. */
+.rw-key:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+}
 
-.rw-btn.is-primary {
-  border-color: rgba(255, 255, 255, 0.45);
+.rw-key:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 3px 0 #0B0B0D,
+    0 0 0 2px rgba(255, 178, 36, 0.7);
+}
+
+/* An unlit key: flat on the deck, nothing to press. */
+.rw-key:disabled {
+  cursor: not-allowed;
+  color: var(--t4);
+  background: #141417;
+  border-color: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.rw-key:disabled .rw-key-icon { color: var(--t4); }
+
+.rw-key.is-primary {
+  border-color: rgba(255, 255, 255, 0.26);
   color: #FFFFFF;
 }
 
-/* Destructive and shared, so it announces itself before the second press. */
-.rw-btn.is-confirm {
-  border-color: rgba(229, 72, 77, 0.65);
-  background: rgba(229, 72, 77, 0.12);
+/* Destructive and shared, so the key itself goes red before it is committed. */
+.rw-key.is-confirm {
+  background: linear-gradient(180deg, #4A1F22 0%, #33161A 100%);
+  border-color: rgba(229, 72, 77, 0.7);
+  color: #FF9A9E;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 3px 0 #1C0B0D;
+}
+
+.rw-key.is-confirm .rw-key-icon { color: #FF8085; }
+
+.rw-key.is-ghost {
+  background: transparent;
+  box-shadow: none;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--t3);
+}
+
+.rw-key.is-ghost:active:not(:disabled) { transform: none; }
+
+/* The per-person undo: the same machine, one size down. */
+.rw-key.is-small {
+  height: 28px;
+  padding: 0 11px;
+  gap: 6px;
+  font-size: 0.56rem;
+  flex-shrink: 0;
+}
+
+.rw-key.is-small:hover:not(:disabled) {
+  border-color: rgba(229, 72, 77, 0.55);
   color: #FF8085;
 }
 
+.rw-key.is-small:hover:not(:disabled) .rw-key-icon { color: #FF8085; }
+
+
+/* â”€â”€ Messages â”€â”€
+ *
+ * These are the machine talking, not web alerts. Both are cut into the deck
+ * with the tape counter's construction â€” near-black face, hard inset bevel,
+ * one hairline of light around it â€” so they read as part of the instrument
+ * rather than notification cards dropped on top of it.
+ *
+ * They span the full width because a tinted slab that stops at 86ch has a
+ * right edge aligned to nothing, which is what made them look broken. The
+ * measure is held by the lane reserved for the tag instead.
+ */
+
+.rw-warn,
+.rw-notice {
+  position: relative;
+  margin: 0 18px 12px;
+  padding: 12px 15px 12px 19px;
+  background: #050505;
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.9),
+    inset -2px -2px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(255, 255, 255, 0.09);
+  font-family: var(--font-code);
+  font-size: 0.68rem;
+  line-height: 1.65;
+}
+
+/* The edge strip is where the two differ, and it carries the whole message:
+   hazard tape while the machine is armed, a solid bar once it has finished. */
+.rw-warn::before,
+.rw-notice::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+}
+
 .rw-warn {
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-left: 2px solid #E5484D;
-  background: rgba(229, 72, 77, 0.07);
-  font-family: var(--font-body);
-  font-size: 0.74rem;
-  line-height: 1.55;
   color: #FFB3B6;
-  max-width: 74ch;
+  padding-right: 84px;
+}
+
+.rw-warn::before {
+  background: repeating-linear-gradient(
+    -45deg,
+    #E5484D 0 3px,
+    #3A1114 3px 6px);
+}
+
+/* Armed, and waiting on you â€” so it says so, and it blinks while it waits. */
+.rw-warn::after {
+  content: 'ARMED';
+  position: absolute;
+  top: 11px;
+  right: 13px;
+  padding: 2px 6px;
+  border: 1px solid rgba(229, 72, 77, 0.55);
+  color: #FF8085;
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1.4;
+  animation: rwArmed 1.4s steps(1, end) infinite;
+}
+
+@keyframes rwArmed {
+  0%, 60% { opacity: 1; }
+  61%, 100% { opacity: 0.35; }
 }
 
 .rw-notice {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  margin-top: 12px;
-  padding: 10px 12px;
-  border-left: 2px solid #3DD68C;
-  background: rgba(61, 214, 140, 0.07);
-  font-family: var(--font-body);
-  font-size: 0.74rem;
-  color: #9BE8C4;
+  gap: 12px;
+  color: #F0D3A0;
 }
 
+.rw-notice::before { background: #FFB224; }
+
+/* A key cap one more size down, so dismissing is the same gesture as every
+   other control on the deck rather than a bare glyph floating in the corner. */
 .rw-notice-x {
   margin-left: auto;
-  background: none;
-  border: none;
-  color: inherit;
-  font-size: 0.9rem;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  color: var(--t3);
+  font-size: 0.8rem;
   line-height: 1;
   cursor: pointer;
-  opacity: 0.7;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
 }
 
-.rw-notice-x:hover { opacity: 1; }
+.rw-notice-x:hover {
+  background: rgba(255, 178, 36, 0.14);
+  border-color: rgba(255, 178, 36, 0.5);
+  color: #FFB224;
+}
 
-/* ── Preview ──
-   Rendered here rather than in the editor: pushing history into Monaco would
-   send it out through the CRDT and show the past to everyone else. */
+/* â”€â”€ Empty â”€â”€ */
+
+.rw-empty { padding: 18px; }
+
+.rw-empty-title {
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #FFFFFF;
+}
+
+.rw-empty-sub {
+  margin-top: 9px;
+  max-width: 76ch;
+  font-size: 0.7rem;
+  line-height: 1.7;
+  color: var(--t3);
+}
+
+/* â”€â”€ Preview â”€â”€ */
+
 .rw-preview {
-  margin-top: 16px;
+  margin: 0 18px 18px;
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -5492,17 +6271,13 @@ body {
   padding: 7px 12px;
   background: rgba(255, 255, 255, 0.03);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  font-size: 0.55rem;
-  letter-spacing: 0.1em;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--t3);
 }
 
-.rw-preview-body {
-  display: flex;
-  min-height: 0;
-  max-height: 320px;
-}
+.rw-preview-body { display: flex; min-height: 0; max-height: 320px; }
 
 .rw-preview-files {
   width: 190px;
@@ -5545,270 +6320,1688 @@ body {
   white-space: pre;
 }
 
-/* ── Undo one person's changes ──
-   Kept visually quiet: it is a scalpel, not the main control. */
-.rw-authors {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+ * The rewind timeline, as a level
+ *
+ * Scrubbing back through a night is walking left through a level, so it is
+ * drawn as one: ? blocks where a run passed, Goombas where it failed, a
+ * checkpoint flag at the last state that worked, and the plumber standing on
+ * the ground as the handle you drag.
+ *
+ * The palette is the world's own â€” coin gold for good, brick bronze for the
+ * ground, Goomba brown for a failure. No status green: this panel already has
+ * a currency for "good", and it is a coin.
+ * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+
+.rwl {
+  position: relative;
+  margin: 2px 0 16px;
+  user-select: none;
 }
 
-.rw-authors-head {
+.rwl-sky {
+  position: relative;
+  height: 52px;
+  background:
+    repeating-linear-gradient(180deg,
+      rgba(255, 255, 255, 0.012) 0px,
+      rgba(255, 255, 255, 0.012) 1px,
+      transparent 1px,
+      transparent 3px),
+    linear-gradient(180deg, #0A0B0F 0%, #101219 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: none;
+}
+
+/* Runs sit above the ground, where a block or an enemy would be. */
+/* Painted above the flag post, but not interactive: the range input covers the
+   whole level so that dragging works anywhere, and any sprite that accepted
+   pointer events would punch a hole in the scrubber wherever a run happened.
+   The counter already names the selected point's verdict. */
+.rwl-marker {
+  position: absolute;
+  bottom: 4px;
+  line-height: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.rwl-marker.is-fail { bottom: 2px; opacity: 0.9; }
+
+/* The checkpoint stands taller than the blocks so it is findable at a glance
+   without needing a colour nobody has learned yet. */
+/* The last working build is a place in the timeline, so it is drawn as a post
+   through the whole stage rather than a sprite standing on the ground. Mario
+   occupies that same spot by default â€” the newest checkpoint is usually the
+   last clean run â€” and two sprites in one box cannot both be read, whichever
+   is on top. Behind everything, with the pennant in the empty band above the
+   sprites, both stay legible and nothing has to move. */
+.rwl-flag {
+  position: absolute;
+  top: 3px;
+  bottom: 0;
+  z-index: 0;
+  line-height: 0;
+  pointer-events: none;
   display: flex;
-  align-items: baseline;
-  gap: 9px;
-  font-family: var(--font-number);
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  color: #FFFFFF;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
-.rw-authors-file {
-  font-family: var(--font-code);
-  font-size: 0.66rem;
-  letter-spacing: 0;
-  text-transform: none;
+/* Fades downward: solid where it identifies itself, faint where it passes
+   behind the sprites, so it guides the eye without competing. */
+.rwl-flag-post {
+  flex: 1;
+  width: 2px;
+  background: linear-gradient(180deg,
+    #FFB224 0%,
+    rgba(255, 178, 36, 0.55) 35%,
+    rgba(255, 178, 36, 0.22) 100%);
+}
+
+/* The handle. Eased, so dragging reads as walking rather than teleporting. */
+.rwl-mario {
+  position: absolute;
+  bottom: 0;
+  line-height: 0;
+  pointer-events: none;
+  transition: left 0.12s linear;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.65));
+  z-index: 3;
+}
+
+/* Brick ground, matching the agent's level so the two read as one world. */
+.rwl-ground {
+  height: 13px;
+  background:
+    repeating-linear-gradient(90deg,
+      #241C15 0px, #241C15 11px,
+      #16110C 11px, #16110C 12px),
+    #241C15;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid rgba(255, 178, 36, 0.28);
+  box-shadow: inset 0 -5px 10px rgba(0, 0, 0, 0.5);
+}
+
+/* The real control, invisible over the whole level: drag, arrow keys and
+   screen readers keep working while the level does the drawing. */
+.rwl-range {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: grab;
+  appearance: none;
+  background: transparent;
+  z-index: 5;               /* the only thing that takes input */
+}
+
+.rwl-range:active { cursor: grabbing; }
+
+.rwl-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 26px;
+  height: 46px;
+}
+
+.rwl-range::-moz-range-thumb {
+  width: 26px;
+  height: 46px;
+  border: none;
+}
+
+/* Keyboard focus has to be visible even though the input itself is not. */
+.rwl-range:focus-visible + .rwl-ground,
+.rwl:focus-within .rwl-ground {
+  border-top-color: #FFB224;
+  box-shadow: inset 0 -5px 10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 178, 36, 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rwl-mario, .rwl-marker { transition: none; }
+  .rw-warn::after { animation: none; }
+}
+
+/* â”€â”€ Legend â”€â”€
+ * Pixel icons are only obvious once somebody has been told what they mean, and
+ * nothing else in the app teaches this vocabulary. Four short pairings cost one
+ * quiet line and remove the "what is this?" entirely.
+ */
+.rwl-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin: -6px 0 16px;
+  font-family: var(--font-number);
+  font-size: 0.53rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
   color: var(--t4);
 }
 
-.rw-authors-sub {
-  margin: 7px 0 12px;
-  max-width: 68ch;
-  font-family: var(--font-body);
-  font-size: 0.73rem;
-  line-height: 1.6;
-  color: var(--t3);
+.rwl-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
-.rw-author {
+/* Scaled to sit on the text baseline rather than set the row's height. */
+.rwl-key svg {
+  display: block;
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+/* â”€â”€ Presence capsule â”€â”€
+ * One image does the explaining: your face, a thread, theirs. Floats over the
+ * editor's corner and never displaces the code.
+ */
+
+.cx {
+  --cx-accent: #6366f1;
+  position: absolute;
+  top: 12px;
+  right: 18px;
+  z-index: 12;
+
+  display: flex;
+  align-items: center;
+  max-width: calc(100% - 36px);
+  padding: 7px 9px;
+  /* Fallback first: an unsupported color-mix drops the declaration below, and
+     without this the capsule would sit fully transparent over the code. */
+  background: rgba(13, 13, 16, 0.97);
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--cx-accent) 13%, transparent) 0%,
+      transparent 60%),
+    rgba(13, 13, 16, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 4px;
+  backdrop-filter: blur(16px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 12px 34px rgba(0, 0, 0, 0.6);
+  animation: cx-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: border-color 0.25s ease;
+}
+
+.cx.is-live { border-color: color-mix(in srgb, var(--cx-accent) 50%, transparent); }
+
+@keyframes cx-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* â”€â”€ You â”€â”€ thread â”€â”€ them â”€â”€ */
+
+.cx-thread {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.cx-av {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 25px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid #0D0D10;
+  font-family: var(--font-number);
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: #0A0A0A;
+  user-select: none;
+}
+
+/* Your own face is the anchor, not the subject â€” outlined rather than filled,
+   so the eye goes to the person who is actually doing something. */
+.cx-av.is-me {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.cx-av.is-more {
+  background: #2C2C31;
+  color: rgba(255, 255, 255, 0.7);
+  margin-left: -8px;
+}
+
+.cx-av + .cx-av:not(.is-more) { margin-left: -8px; }
+
+/* The thread itself â€” the whole idea in 22 pixels. */
+.cx-line {
+  position: relative;
+  width: 22px;
+  height: 1px;
+  margin: 0 3px;
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 0.2),
+    color-mix(in srgb, var(--cx-accent) 70%, transparent));
+}
+
+/* A pulse travelling toward you while they type: activity flowing down the
+   thread, which says "live" without a word. */
+.cx-spark {
+  position: absolute;
+  top: -1.5px;
+  left: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--cx-accent);
+  box-shadow: 0 0 6px var(--cx-accent);
+  animation: cx-spark 1.5s ease-in-out infinite;
+}
+
+@keyframes cx-spark {
+  0%   { transform: translateX(18px); opacity: 0; }
+  30%  { opacity: 1; }
+  100% { transform: translateX(0);    opacity: 0; }
+}
+
+/* A ring rather than a glow â€” a glow blurs a 25px circle; this stays crisp. */
+.cx-ring {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 2px solid var(--cx-accent);
+  animation: cx-ring 1.8s ease-out infinite;
+}
+
+@keyframes cx-ring {
+  0%   { transform: scale(1);    opacity: 0.9; }
+  70%  { transform: scale(1.45); opacity: 0; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+
+/* â”€â”€ The line that opens â”€â”€
+ * max-width, so it reveals rather than snapping to a new size. */
+
+.cx-body {
+  display: flex;
+  align-items: center;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition:
+    max-width 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease,
+    margin-left 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.cx.is-open .cx-body {
+  max-width: 420px;
+  opacity: 1;
+  margin-left: 11px;
+}
+
+/* Bright enough to read at a glance over live code. The muted greys used for
+   body copy elsewhere are unreadable on a translucent surface. */
+.cx-text {
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.82);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cx-text b { color: #FFFFFF; font-weight: 700; }
+
+.cx-hint { color: rgba(255, 255, 255, 0.45); }
+
+.cx-x {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-left: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.cx-x:hover { color: #FFFFFF; }
+
+/* Motion is flavour here, never the message. */
+@media (prefers-reduced-motion: reduce) {
+  .cx { animation: none; }
+  .cx-ring, .cx-spark { animation: none; }
+  .cx-spark { opacity: 1; transform: translateX(9px); }
+  .cx-body { transition: none; }
+}
+
+/* â”€â”€ Changed since this point â”€â”€
+ * One row per person, everything on it. In the terminal's face like the rest
+ * of the panel â€” this is a readout, not prose.
+ */
+.rwc {
+  padding: 15px 18px 18px;
+}
+
+/* The label ruled off to the panel's edge, so the section is delimited rather
+   than a line of grey text that happens to sit above a list. */
+.rwc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-code);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--t3);
+  margin-bottom: 10px;
+}
+
+.rwc-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0) 100%);
+}
+
+.rwc-head b { color: #FFB224; font-weight: 700; }
+
+/* An answer, not a container. It was a full-width dashed box holding six words,
+   which read as an empty region rather than a reply. */
+.rwc-none {
+  padding: 9px 0 9px 13px;
+  border-left: 2px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-code);
+  font-size: 0.66rem;
+  letter-spacing: 0.03em;
+  color: var(--t4);
+}
+
+/* â”€â”€ One author â”€â”€ */
+
+.rwc-block {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.rwc-block:last-child { border-bottom: none; }
+
+/* The whole row is the disclosure, so the target is a row rather than a
+   9px chevron. */
+.rwc-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 7px 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.045);
+  width: 100%;
+  padding: 10px 8px 10px 2px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-code);
+  transition: background 0.14s ease;
 }
 
-.rw-author-dot {
+.rwc-row:hover { background: rgba(255, 255, 255, 0.022); }
+
+.rwc-block.is-open .rwc-row { background: rgba(255, 255, 255, 0.03); }
+
+.rwc-caret {
+  display: flex;
+  color: var(--t4);
+  flex-shrink: 0;
+}
+
+.rwc-block.is-open .rwc-caret { color: #FFB224; }
+
+.rwc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.rwc-name {
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+/* The size of the change, in the counter's gold, so the row reads as a
+   measurement rather than a sentence. */
+.rwc-count {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  color: #FFB224;
+}
+
+/* Takes the slack, so nothing is stranded against the far edge â€” the undo
+   control used to sit ~900px away from the name it belonged to. */
+.rwc-files {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.64rem;
+  color: var(--t4);
+}
+
+/* â”€â”€ The changes themselves â”€â”€
+ *
+ * A ledger, not a stack of cards. Every change used to be its own bordered
+ * block with its own padded code well, repeating "index.html:" on each one and
+ * costing ~110px a row â€” four changes filled the panel. Here the filename is
+ * said once per file, the line numbers run down a gutter the way they do in the
+ * editor, and each change is a row you read across.
+ */
+
+.rwc-edits {
+  padding: 2px 0 14px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* â”€â”€ One file â”€â”€ */
+
+.rwf {
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.rwf-head {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 0 0 6px 12px;
+  font-family: var(--font-code);
+}
+
+.rwf-name {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.rwf-dir {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;            /* truncate deep paths at the front, not the tail */
+  text-align: left;
+  font-size: 0.58rem;
+  color: var(--t4);
+}
+
+.rwf-n {
+  flex-shrink: 0;
+  font-size: 0.54rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t4);
+}
+
+/* â”€â”€ One change â”€â”€ */
+
+.rwr {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 3px 8px 3px 12px;
+  border-radius: 2px;
+  transition: background 0.12s ease;
+}
+
+.rwr:hover { background: rgba(255, 255, 255, 0.028); }
+
+/* Right-aligned in a fixed column, so the numbers stack into a rule. */
+.rwr-ln {
+  flex-shrink: 0;
+  width: 30px;
+  padding-top: 2px;
+  text-align: right;
+  font-family: var(--font-code);
+  font-size: 0.6rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--t4);
+}
+
+.rwr-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-x: auto;
+}
+
+.rwr-line {
+  display: block;
+  white-space: pre;
+  padding: 1px 7px 1px 0;
+  border-radius: 2px;
+  font-family: var(--font-code);
+  font-size: 0.66rem;
+  line-height: 1.6;
+  color: #D8D8DC;
+}
+
+/* Gone vs. current has to be legible in the text itself.
+   I had kept both near-white on the theory that the sign column carried the
+   distinction â€” but a wall of identically-coloured lines gives the eye nothing,
+   and the one question being asked here is "which of these is still true?".
+   What is gone is rose and dimmed, what stands is bright; the deleted lines
+   also carry a solid edge so a block of them reads as one removal at a glance. */
+.rwr-line.is-del {
+  background: rgba(229, 72, 77, 0.10);
+  box-shadow: inset 2px 0 0 #E5484D;
+  color: #E9959A;
+}
+
+.rwr-line.is-add {
+  background: rgba(70, 167, 88, 0.10);
+  box-shadow: inset 2px 0 0 #46A758;
+  color: #F2F2F4;
+}
+
+.rwr-sign {
+  display: inline-block;
+  width: 15px;
+  padding-left: 4px;
+  font-style: normal;
+  font-weight: 700;
+  text-align: center;
+}
+
+.rwr-line.is-del .rwr-sign { color: #FF7A80; }
+.rwr-line.is-add .rwr-sign { color: #6BCB77; }
+
+/* A line that is genuinely empty rendered as a lone "+" with nothing after it,
+   which looks like a rendering fault rather than a fact about the file. */
+.rwr-empty {
+  font-style: normal;
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  color: var(--t4);
+  opacity: 0.8;
+}
+
+/* Present but quiet until the row is approached, so the list is changes with
+   actions rather than a column of buttons. Focus reveals it too, so it stays
+   reachable without a pointer. */
+.rwr-undo {
+  flex-shrink: 0;
+  width: 24px;
+  height: 22px;
+  margin-top: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 2px;
+  color: var(--t4);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.14s ease, background 0.14s ease,
+              color 0.14s ease, border-color 0.14s ease;
+}
+
+.rwr:hover .rwr-undo,
+.rwr-undo:focus-visible { opacity: 1; }
+
+.rwr-undo:hover:not(:disabled) {
+  background: rgba(255, 178, 36, 0.14);
+  border-color: rgba(255, 178, 36, 0.55);
+  color: #FFB224;
+}
+
+.rwr-undo:disabled { cursor: not-allowed; }
+
+@media (hover: none) {
+  /* No hover to reveal it with. */
+  .rwr-undo { opacity: 1; }
+}
+
+/* Inside the row, aligned with the code it is hiding. */
+.rwr-more {
+  align-self: flex-start;
+  margin-top: 3px;
+  margin-left: 15px;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  color: var(--t4);
+  font-family: var(--font-code);
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+
+.rwr-more:hover { color: #FFB224; border-color: rgba(255, 178, 36, 0.45); }
+
+.rwc-trunc {
+  font-family: var(--font-code);
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  color: var(--t4);
+  padding: 2px 0 2px 12px;
+}
+
+.rwc-all { align-self: flex-start; margin-top: 2px; }
+
+/* â”€â”€ Read-only â”€â”€ */
+
+.rw-role {
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  font-family: var(--font-code);
+  font-size: 0.52rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--t4);
+}
+
+.rw-viewing {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 15px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 2px;
+  font-family: var(--font-code);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t4);
+  cursor: default;
+}
+
+/* The legend sits under the level, inside the stage's padding. */
+.rwl-legend { margin: -6px 0 4px; }
+
+/* â”€â”€ Saving a checkpoint â”€â”€
+ * The owner's control, in the rewind panel's own machine idiom rather than the
+ * flat cards used elsewhere: recessed field, physical key. It belongs to this
+ * panel, and this panel looks like hardware.
+ */
+.rw-save {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 18px;
+}
+
+.rw-save::after {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* In the empty state the row is the only thing there â€” no rule needed under it,
+   and it gets air above instead. */
+.rw-save.is-empty {
+  padding: 4px 18px 18px;
+}
+.rw-save.is-empty::after { display: none; }
+
+.rw-save.is-passive { padding: 10px 18px; }
+
+/* Empty track: the clock reads out of service rather than showing a time that
+   would be a lie about a checkpoint that does not exist. */
+.rw-counter-time.is-idle {
+  color: var(--t4);
+  letter-spacing: 0.06em;
+}
+
+/* Replaces the standalone placeholder screen. One line under the deck â€” the
+   empty track above it has already made the point visually. */
+.rw-hint {
+  padding: 12px 18px 14px;
+  font-family: var(--font-code);
+  font-size: 0.6rem;
+  line-height: 1.7;
+  color: var(--t4);
+  max-width: 78ch;
+}
+
+/* Nothing to drag until there is a point to drag to. */
+.rwl-range:disabled { cursor: default; }
+
+/* Recessed, like the counter beside it: a field cut into the panel rather than
+   laid on top of it. */
+.rw-save-input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 12px;
+  background: #050505;
+  border: none;
+  border-radius: 2px;
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.9),
+    inset -1px -1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(255, 255, 255, 0.09);
+  font-family: var(--font-code);
+  font-size: 0.62rem;
+  letter-spacing: 0.02em;
+  color: var(--t1);
+  outline: none;
+}
+
+.rw-save-input::placeholder {
+  color: var(--t4);
+  letter-spacing: 0.06em;
+}
+
+.rw-save-input:focus {
+  box-shadow:
+    inset 2px 2px 0 rgba(0, 0, 0, 0.9),
+    inset -1px -1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+/* The same key as the transport controls, because it is the same kind of
+   object â€” the one that commits rather than looks, so it carries the gold the
+   panel reserves for "this is the good state". */
+.rw-save-btn {
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 178, 36, 0.4);
+  border-radius: 2px;
+  background: linear-gradient(180deg, #24242A 0%, #17171B 100%);
+  color: #FFB224;
+  font-family: var(--font-code);
+  font-weight: 700;
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 3px 0 #0B0B0D;
+  transition: background 0.14s ease, transform 0.07s ease, box-shadow 0.07s ease;
+}
+
+.rw-save-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #2E2A20 0%, #1D1A13 100%);
+  border-color: #FFB224;
+}
+
+/* Travels down onto its own shadow, like the transport keys. */
+.rw-save-btn:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 0 0 #0B0B0D;
+}
+
+.rw-save-btn:disabled {
+  color: var(--t3);
+  border-color: rgba(255, 255, 255, 0.12);
+  cursor: default;
+}
+
+.rw-save-note {
+  font-family: var(--font-code);
+  font-size: 0.56rem;
+  letter-spacing: 0.06em;
+  color: var(--t4);
+}
+
+.rw-counter-label {
+  font-family: var(--font-code);
+  font-size: 0.6rem;
+  letter-spacing: 0.02em;
+  color: #FFFFFF;
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rw-counter-by {
+  font-family: var(--font-code);
+  font-size: 0.52rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t4);
+}
+
+/* â”€â”€ What the checkpoint is a record of â”€â”€ */
+
+.rw-cap {
+  padding: 14px 18px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.rw-cap-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-family: var(--font-code);
+  font-size: 0.55rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+
+.rw-cap-rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0) 100%);
+}
+
+.rw-cap-total {
+  color: #FFB224;
+  letter-spacing: 0.1em;
+}
+
+.rw-cap-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 0;
+  font-family: var(--font-code);
+  font-size: 0.62rem;
+}
+
+.rw-cap-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
-.rw-author-name {
-  font-family: var(--font-body);
-  font-size: 0.78rem;
+.rw-cap-name {
+  font-weight: 700;
   color: #FFFFFF;
+  flex-shrink: 0;
 }
 
-.rw-author-lines {
-  font-family: var(--font-number);
+.rw-cap-lines {
+  color: var(--t3);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The files themselves, since "18 lines" is not a thing anyone can act on and
+   "18 lines, most of them in api.js" is. */
+.rw-cap-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.rw-cap-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
   font-size: 0.55rem;
+  color: var(--t2);
+}
+
+.rw-cap-file b {
+  color: var(--t4);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* â”€â”€ Toolchain missing â”€â”€
+ * The panel that runs when nothing else could. It has to do two jobs at once:
+ * say clearly that the user's code is not at fault, and hand over a command
+ * they can paste. Greyscale â€” a red panel would say "your program failed",
+ * which is the exact misreading this exists to prevent. Structure and weight
+ * carry it instead: a ruled eyebrow, one heavy line, then quiet prose.
+ */
+.tcm {
+  max-width: 640px;
+  padding: 20px 22px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-left: 2px solid rgba(255, 255, 255, 0.55);
+  border-radius: 3px;
+  animation: tcm-in 0.24s ease-out;
+}
+
+@keyframes tcm-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.tcm-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.tcm-eyebrow,
+.tcm-os {
+  font-family: var(--font-code);
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--t4);
+  white-space: nowrap;
+}
+
+.tcm-os { letter-spacing: 0.18em; }
+
+/* Fades out rather than stopping, so the row reads as a header rather than a
+   boxed-in label. */
+.tcm-rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0) 100%);
+}
+
+.tcm-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* The tool's name is the answer to "what is wrong", so it gets the only
+   emphasis in the card â€” set in code type, because it is a command. */
+.tcm-tool {
+  font-family: var(--font-code);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  letter-spacing: -0.01em;
+}
+
+.tcm-title-rest {
+  font-family: var(--font-header);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--t2);
+}
+
+.tcm-body {
+  margin: 0 0 18px;
+  font-family: var(--font-body);
+  font-size: 0.68rem;
+  line-height: 1.75;
+  color: var(--t3);
+  max-width: 60ch;
+}
+
+.tcm-install {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.tcm-label {
+  font-family: var(--font-code);
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--t4);
+  margin-bottom: 9px;
+}
+
+/* Darker than the card it sits in, so the command reads as a thing to take
+   rather than more prose. */
+.tcm-cmd {
+  display: flex;
+  align-items: stretch;
+  background: var(--s0);
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.tcm-cmd code {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 13px;
+  font-family: var(--font-code);
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: var(--t1);
+  overflow-x: auto;
+  white-space: nowrap;
+  user-select: all;
+}
+
+.tcm-copy {
+  flex-shrink: 0;
+  padding: 0 15px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--line-strong);
+  font-family: var(--font-code);
+  font-size: 0.52rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--t3);
+  cursor: pointer;
+  transition: color 0.14s ease, background 0.14s ease;
+}
+
+.tcm-copy:hover {
+  color: #0A0A0A;
+  background: #FFFFFF;
+}
+
+.tcm-after,
+.tcm-note {
+  margin-top: 9px;
+  font-family: var(--font-code);
+  font-size: 0.6rem;
+  line-height: 1.65;
+  color: var(--t4);
+}
+
+/* The follow-up command is still a command â€” it keeps the brighter ink. */
+.tcm-after { color: var(--t2); }
+
+.tcm-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 16px;
+  padding: 8px 15px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  font-family: var(--font-code);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--t2);
+  text-decoration: none;
+  transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+
+.tcm-link:hover {
+  color: #0A0A0A;
+  background: #FFFFFF;
+  border-color: #FFFFFF;
+}
+
+/* The step people miss, given the weight of an aside rather than a warning â€”
+   it matters, but it is the last thing to read, not the first. */
+.tcm-foot {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-body);
+  font-size: 0.62rem;
+  line-height: 1.7;
+  color: var(--t4);
+  max-width: 62ch;
+}
+
+.tcm-foot-mark {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tcm { animation: none; }
+}
+
+/* â”€â”€ The lobby â”€â”€
+ * Someone is at the door. Greyscale, and quiet about it: the strip earns its
+ * attention from a ring leaving the person's initials and a clock counting up,
+ * not from being coloured in. An amber bar would have read as a warning, and
+ * nothing has gone wrong â€” a person is waiting, which deserves poise rather
+ * than alarm.
+ */
+.adm {
+  position: relative;
+  /* Lifted very slightly off the editor, so the strip reads as something laid
+     on top of the room rather than a band cut out of it. */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0) 100%),
+    var(--s1);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.6), 0 8px 22px -18px rgba(0, 0, 0, 0.9);
+  padding: 13px 22px 13px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: adm-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes adm-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* A lit edge rather than a painted bar: brightest at the top and falling away,
+   so it reads as light catching the border. */
+.adm-rail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg,
+    rgba(255, 255, 255, 0.85) 0%,
+    rgba(255, 255, 255, 0.35) 55%,
+    rgba(255, 255, 255, 0.08) 100%);
+}
+
+.adm-count {
+  font-family: var(--font-code);
+  font-size: 0.48rem;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--t4);
+}
+
+.adm-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* â”€â”€ The knock â”€â”€ */
+
+.adm-knock {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+}
+
+.adm-av {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: radial-gradient(circle at 50% 30%, #1A1A1A 0%, #0B0B0B 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  font-family: var(--font-code);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #FFFFFF;
+  user-select: none;
+}
+
+/* Out from the initials and gone. Slow, and never quite reaching full
+   strength â€” a knock, not a siren. */
+.adm-ring {
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  border: 1px solid #FFFFFF;
+  animation: adm-knock 2.8s cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+  pointer-events: none;
+}
+
+@keyframes adm-knock {
+  0%   { transform: scale(1); opacity: 0.4; }
+  40%  { transform: scale(1.7); opacity: 0; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
+.adm-who {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+}
+
+.adm-name {
+  font-family: var(--font-header);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adm-sub {
+  font-family: var(--font-body);
+  font-size: 0.6rem;
+  letter-spacing: 0.01em;
+  color: var(--t4);
+  white-space: nowrap;
+}
+
+/* The wait, counting up. Tabular so it cannot jitter, and set in the quietest
+   ink in the strip â€” it informs the decision without asking for it. */
+.adm-clock {
+  font-family: var(--font-code);
+  font-size: 0.54rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--t4);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+/* â”€â”€ The two answers â”€â”€ */
+
+.adm-btn {
+  height: 30px;
+  padding: 0 16px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 3px;
+  font-family: var(--font-code);
+  font-size: 0.53rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--t3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.18s ease, border-color 0.18s ease,
+              background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.adm-btn:hover {
+  color: #FFFFFF;
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Solid white on black, the same yes as Create & Start. In a greyscale palette
+   fill is the only rank there is, so the affirmative takes it â€” with a faint
+   halo, which is the one flourish the strip allows itself. */
+.adm-btn.is-yes {
+  background: #FFFFFF;
+  border-color: #FFFFFF;
+  color: #0A0A0A;
+  font-weight: 800;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 2px 14px -6px rgba(255, 255, 255, 0.45);
+}
+
+.adm-btn.is-yes:hover {
+  background: #FFFFFF;
+  border-color: #FFFFFF;
+  color: #0A0A0A;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16), 0 3px 20px -6px rgba(255, 255, 255, 0.65);
+}
+
+.adm-btn:active { transform: translateY(1px); }
+
+/* The knock is decoration; the clock already says someone is waiting. */
+@media (prefers-reduced-motion: reduce) {
+  .adm { animation: none; }
+  .adm-ring { animation: none; opacity: 0.28; }
+}
+
+/* â”€â”€ Header presence â”€â”€
+ * The same image the collision hint uses â€” you, a thread, them â€” shrunk to fit
+ * the toolbar, where it replaces the role label and session id. Smaller than
+ * the floating hint on purpose: this one is always on screen.
+ */
+.hdr-thread {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.hdr-av {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-family: var(--font-code);
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  /* Peers get a bright fill, so the label on top has to be dark. */
+  color: #0A0A0A;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+/* You are drawn as an outline, not a fill: at a glance the row reads as
+   "me, and these other people". The border colour carries the role that the
+   OWNER / COLLABORATOR text used to spell out. */
+.hdr-av.is-me {
+  background: transparent;
+  border: 1px solid var(--cyan);
+  color: var(--t2);
+}
+
+/* Overlapping only the peers â€” the thread already separates you from them. */
+.hdr-av + .hdr-av:not(.is-more) { margin-left: -6px; }
+
+.hdr-av.is-more {
+  background: transparent;
+  border: 1px dashed var(--line-strong);
+  color: var(--t3);
+  margin-left: 3px;
+  font-size: 0.46rem;
+}
+
+.hdr-line {
+  width: 14px;
+  height: 1px;
+  margin: 0 3px;
+  background: var(--line-strong);
+  flex-shrink: 0;
+}
+
+/* Typing, right now, in the file you are looking at. This is the state the
+   thread exists for â€” two people building the same thing is the one collision
+   a CRDT cannot resolve, because technically nothing went wrong. */
+.hdr-av.is-typing { position: relative; }
+
+.hdr-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  color: #FFFFFF;
+  opacity: 0.5;
+  animation: hdr-pulse 1.4s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes hdr-pulse {
+  0%   { transform: scale(0.86); opacity: 0.55; }
+  70%  { transform: scale(1.25); opacity: 0; }
+  100% { transform: scale(1.25); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hdr-ring { animation: none; opacity: 0.5; transform: scale(1); }
+}
+
+/* â”€â”€ Finish & push â”€â”€
+ * The session's ending, sitting under the git dashboard in the same panel. It
+ * borrows that card's type scale on purpose: the two are read as one column,
+ * and a second set of sizes would make the ending look bolted on.
+ */
+.fin-panel {
+  padding: 18px;
+  border-top: 1px solid var(--line);
+  background: var(--s0);
+}
+
+.fin-title {
+  font-family: var(--font-header);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--t1);
+  margin-bottom: 4px;
+}
+
+.fin-sub {
+  font-family: var(--font-body);
+  font-size: 0.6rem;
+  line-height: 1.6;
+  color: var(--t4);
+}
+
+.fin-input {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: var(--font-code);
+  font-size: 0.66rem;
+  color: var(--t1);
+  outline: none;
+  transition: border-color 0.14s ease;
+}
+
+.fin-input::placeholder { color: var(--t4); }
+.fin-input:focus { border-color: var(--line-strong); }
+.fin-input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* A readout of what is about to be committed â€” measurements, so mono. */
+.fin-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-family: var(--font-code);
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t4);
+}
+
+.fin-dot-sep { color: var(--line-strong); }
+
+.fin-authors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+/* Named chips rather than a comma list: these people end up in the commit, and
+   the credit should look deliberate before it is written. */
+.fin-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: var(--font-code);
+  font-size: 0.6rem;
+  color: var(--t2);
+}
+
+.fin-author-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.fin-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.fin-btn {
+  padding: 9px 14px;
+  background: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  font-family: var(--font-code);
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--t2);
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+
+.fin-btn:hover:not(:disabled) { color: #FFFFFF; border-color: var(--t3); }
+.fin-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.fin-btn.is-primary { color: var(--t1); border-color: var(--t3); }
+
+/* Gold on the second press only. The push is the irreversible half, so the
+   confirm step is the one that changes colour. */
+.fin-btn.is-confirm {
+  color: #FFB224;
+  border-color: rgba(255, 178, 36, 0.45);
+  background: rgba(255, 178, 36, 0.06);
+}
+
+.fin-btn.is-confirm:hover:not(:disabled) {
+  color: #FFB224;
+  border-color: #FFB224;
+}
+
+.fin-error {
+  margin-top: 10px;
+  padding: 9px 0 9px 13px;
+  border-left: 2px solid var(--accent-crimson);
+  font-family: var(--font-code);
+  font-size: 0.62rem;
+  line-height: 1.55;
+  color: #FF7A80;
+}
+
+.fin-panel.is-done .fin-title { color: #6BCB77; }
+
+/* â”€â”€ The evidence behind a checkpoint's numbers â”€â”€
+ * A count is a claim; these are the lines it was counted from. Indented under
+ * the author so it reads as their working, not as a second list.
+ */
+.rw-cap-lines-list {
+  margin: 2px 0 8px 16px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rw-cap-edit {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-family: var(--font-code);
+  font-size: 0.56rem;
+  line-height: 1.5;
+}
+
+.rw-cap-loc {
+  flex-shrink: 0;
+  color: var(--t4);
+  min-width: 11ch;
+}
+
+.rw-cap-loc b {
+  color: var(--t3);
+  font-weight: 600;
+}
+
+/* Truncated rather than wrapped: this is a scannable index of what changed,
+   and a wrapped 200-character line would bury the next entry. */
+.rw-cap-text {
+  max-width: 46ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-code);
+}
+
+.rw-cap-text.is-del { color: #FF7A80; }
+.rw-cap-text.is-add { color: #6BCB77; }
+
+.rw-cap-more {
+  margin-top: 2px;
+  font-family: var(--font-code);
+  font-size: 0.54rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--t4);
 }
 
-.rw-author-btn {
-  margin-left: auto;
-  flex-shrink: 0;
+.rw-cap-total.is-none { color: var(--t4); }
+
+/* The project as it was saved, shown when a checkpoint records no edits. */
+.rw-snap { margin-top: 12px; }
+.rw-snap-head {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+  font-family: var(--font-code); font-size: 0.55rem; font-weight: 600;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--t3);
 }
-
-/* ── Someone else is in this file ──
- * Informational, not an alarm: nothing is broken, two people just need to
- * talk. Quieter than the connection and impact banners on purpose.
- */
-.collide-hint {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-  padding: 7px 14px;
-  background: rgba(99, 102, 241, 0.09);
-  border-bottom: 1px solid rgba(99, 102, 241, 0.25);
-  font-family: var(--font-body);
-  font-size: 0.73rem;
-  color: #C7C9FF;
-  animation: rca2-content-in 0.2s ease forwards;
+.rw-snap-total { color: var(--t4); letter-spacing: 0.1em; }
+.rw-snap-row {
+  display: flex; align-items: center; gap: 10px; padding: 3px 0;
+  font-family: var(--font-code); font-size: 0.6rem; color: var(--t2);
 }
+.rw-snap-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rw-snap-lines { flex-shrink: 0; color: var(--t4); font-variant-numeric: tabular-nums; }
 
-.collide-dots {
-  display: inline-flex;
-  flex-shrink: 0;
-}
-
-.collide-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  border: 1px solid var(--s0);
-  margin-right: -3px;
-}
-
-.collide-text strong { color: #FFFFFF; font-weight: 600; }
-
-.collide-x {
-  margin-left: auto;
-  flex-shrink: 0;
-  background: none;
+/* Marking a checkpoint by hand â€” the legend's sprites, as pressable keys. */
+.rw-runpick { display: inline-flex; gap: 4px; flex-shrink: 0; }
+.rw-runpick-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 34px; padding: 0;
+  background: #050505; cursor: pointer; border-radius: 2px;
   border: none;
-  color: inherit;
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0.6;
+  box-shadow: inset 2px 2px 0 rgba(0,0,0,0.9), 0 0 0 1px rgba(255,255,255,0.09);
+  opacity: 0.45;
+  transition: opacity 0.14s ease, box-shadow 0.14s ease;
 }
-
-.collide-x:hover { opacity: 1; }
-
-/* Takeover control on the lost-connection banner. */
-.conn-banner-btn {
-  flex-shrink: 0;
-  align-self: center;
-  margin-left: auto;
-  padding: 8px 14px;
-  border-radius: 0;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: transparent;
-  color: #FFFFFF;
-  font-family: var(--font-number);
-  font-weight: 600;
-  font-size: 0.56rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+.rw-runpick-btn:hover:not(:disabled) { opacity: 0.8; }
+/* Lit, not merely highlighted: the chosen mark is the one going on the track. */
+.rw-runpick-btn.is-on {
+  opacity: 1;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.1), 0 0 0 1px rgba(255,178,36,0.55);
 }
-
-.conn-banner-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: #FFFFFF;
-}
-
-.conn-banner-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-.conn-banner-takeover {
-  margin-top: 8px;
-  font-size: 0.72rem;
-  line-height: 1.5;
-}
-
-.conn-banner-takeover.is-ok { color: #9BE8C4; }
-.conn-banner-takeover.is-error { color: #FFB3B6; }
-
-/* ── Finish & push ── */
-.fin-panel {
-  margin: 14px;
-  padding: 16px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.022) 0%, transparent 100%);
-}
-
-.fin-panel.is-done { border-color: rgba(61, 214, 140, 0.35); }
-
-.fin-title {
-  font-family: var(--font-number);
-  font-weight: 700;
-  font-size: 0.62rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #FFFFFF;
-  margin-bottom: 7px;
-}
-
-.fin-panel.is-done .fin-title { color: #3DD68C; }
-
-.fin-sub {
-  font-family: var(--font-body);
-  font-size: 0.75rem;
-  line-height: 1.65;
-  color: var(--t3);
-  max-width: 68ch;
-  margin-bottom: 13px;
-}
-
-.fin-input {
-  width: 100%;
-  height: 36px;
-  padding: 0 12px;
-  background: #050505;
-  border: none;
-  border-radius: 0;
-  color: #FFFFFF;
-  font-family: var(--font-code);
-  font-size: 0.75rem;
-  outline: none;
-  box-shadow:
-    inset 2px 2px 0 rgba(0, 0, 0, 0.9),
-    inset -2px -2px 0 rgba(255, 255, 255, 0.06),
-    0 0 0 1px rgba(255, 255, 255, 0.09);
-}
-
-.fin-input:focus { box-shadow: inset 2px 2px 0 rgba(0,0,0,0.9), 0 0 0 2px rgba(255,255,255,0.28); }
-
-.fin-meta {
-  display: flex;
-  gap: 8px;
-  margin-top: 11px;
-  font-family: var(--font-number);
-  font-size: 0.55rem;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--t4);
-}
-
-.fin-dot-sep { opacity: 0.5; }
-
-.fin-authors {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.fin-author {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  font-family: var(--font-body);
-  font-size: 0.71rem;
-  color: var(--t2);
-}
-
-.fin-author-dot { width: 7px; height: 7px; border-radius: 50%; }
-
-.fin-actions { display: flex; gap: 8px; margin-top: 14px; }
-
-.fin-btn {
-  padding: 9px 16px;
-  border-radius: 0;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: transparent;
-  color: var(--t2);
-  font-family: var(--font-number);
-  font-weight: 600;
-  font-size: 0.56rem;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
-}
-
-.fin-btn:hover:not(:disabled) { border-color: rgba(255,255,255,0.5); color: #FFF; background: rgba(255,255,255,0.05); }
-.fin-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.fin-btn.is-primary { border-color: rgba(255,255,255,0.45); color: #FFFFFF; }
-.fin-btn.is-confirm { border-color: rgba(61,214,140,0.6); background: rgba(61,214,140,0.1); color: #3DD68C; }
-
-.fin-error {
-  margin-top: 12px;
-  padding: 9px 12px;
-  border-left: 2px solid #E5484D;
-  background: rgba(229, 72, 77, 0.08);
-  font-family: var(--font-body);
-  font-size: 0.73rem;
-  color: #FF9A9E;
-}
+.rw-runpick-btn:disabled { cursor: default; opacity: 0.25; }

@@ -1,0 +1,20 @@
+# Causify rendezvous — the phone book that keeps invitations from going stale.
+#
+# Deploy:
+#   npm install -g wrangler
+#   wrangler login
+#   wrangler kv namespace create SESSIONS          # copy the id it prints below
+#   wrangler deploy
+#
+# Free tier is far beyond what this needs: one short string per session, written
+# once per host launch and read a handful of times per join.
+
+name = "causify-rendezvous"
+main = "src/worker.js"
+compatibility_date = "2026-01-01"
+
+# The phone book itself. Replace the id with the one `wrangler kv namespace
+# create SESSIONS` prints — it is an account-scoped identifier, not a secret.
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"

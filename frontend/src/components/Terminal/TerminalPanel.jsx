@@ -262,6 +262,14 @@ const TerminalPanel = () => {
         <polyline points="12 6 12 12 16 14" />
       </svg>
     ),
+    /* Rewind, not another clock: the timeline tab already owns the clock, and
+       two round faces side by side would be a coin toss every time. */
+    rewind: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="11 19 2 12 11 5 11 19" />
+        <polygon points="22 19 13 12 22 5 22 19" />
+      </svg>
+    ),
     graph: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="18" cy="5" r="3" />
@@ -291,6 +299,7 @@ const TerminalPanel = () => {
     output: 'Output',
     terminal: 'Terminal',
     timeline: 'Timeline',
+    rewind: 'Session Rewind',
     graph: 'Graph',
     git: 'Git Assistant',
     deploy: 'Deploy',

@@ -29,6 +29,115 @@ public class ExecutionService {
 
     private static final Logger log = LoggerFactory.getLogger(ExecutionService.class);
 
+    /**
+     * Resolve a JDK tool — "java", "javac" — to something runnable.
+     *
+     * The user's own JDK comes first, and that ordering is deliberate. Running
+     * someone's code is meant to reproduce what they would get in their own
+     * terminal, exactly as it does for gcc, python and node, none of which we
+     * ship. Their compiler, their version, their behaviour.
+     *
+     * The runtime bundled with the desktop app is the fallback, not the
+     * default. It exists so the BACKEND always starts — an app that refuses to
+     * launch until you install a JDK is our problem, not the user's. It is a
+     * trimmed image built for that job: 29 modules, no jdk.localedata among
+     * them, so locale-sensitive formatting in user code would quietly differ
+     * from a real JDK. Fine as a last resort for someone who has no Java at
+     * all; wrong as the thing that runs in front of someone who does.
+     */
+    /**
+     * Find an executable the way a shell would, or return null.
+     *
+     * Asking first — rather than letting ProcessBuilder throw — is what makes a
+     * missing toolchain explainable. The IOException it raises says "The system
+     * cannot find the file specified", names a temp path, and mentions nothing
+     * about gcc; that message sent someone hunting through their own source for
+     * a bug that was never there.
+     *
+     * Candidates are tried in order, so a language whose command differs by
+     * platform ("python3" then "python") resolves to whichever exists.
+     */
+    private static String resolveTool(String... candidates) {
+        boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        // PATHEXT decides what counts as executable on Windows: gcc installs as
+        // gcc.exe, but some toolchains ship .cmd or .bat shims.
+        String[] exts = windows
+                ? new String[] { ".exe", ".cmd", ".bat", "" }
+                : new String[] { "" };
+
+        String pathEnv = System.getenv("PATH");
+        if (pathEnv == null) return null;
+
+        for (String tool : candidates) {
+            for (String dir : pathEnv.split(File.pathSeparator)) {
+                if (dir == null || dir.isBlank()) continue;
+                for (String ext : exts) {
+                    try {
+                        Path candidate = Paths.get(dir.trim(), tool + ext);
+                        if (Files.isRegularFile(candidate)) return tool;
+                    } catch (Exception ignored) {
+                        // A malformed PATH entry is not a reason to stop looking.
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * "You are missing a compiler", said in a way the client can act on.
+     *
+     * No error string: an error would be rendered as program output and read as
+     * the code having failed. The named tool lets the UI explain the situation
+     * and point at the installer instead.
+     */
+    private ExecutionResponse missingToolResponse(String tool, ExecutionRequest request, long startTime) {
+        log.info("Execution skipped — {} is not installed on this machine", tool);
+        ExecutionResponse response = new ExecutionResponse();
+        response.setMissingTool(tool);
+        response.setOutput(null);
+        response.setError(null);
+        response.setExecutionTimeMs(System.currentTimeMillis() - startTime);
+        return response;
+    }
+
+    private static String jdkTool(String tool) {
+        String exe = System.getProperty("os.name", "").toLowerCase().contains("win") ? ".exe" : "";
+
+        // 1. The user's JAVA_HOME.
+        String javaHome = System.getenv("JAVA_HOME");
+        if (javaHome != null && !javaHome.isBlank()) {
+            Path candidate = Paths.get(javaHome, "bin", tool + exe);
+            if (Files.isRegularFile(candidate)) return candidate.toString();
+        }
+
+        // 2. The user's PATH. Returning the bare name lets the OS resolve it,
+        //    which is what a terminal would do.
+        String pathEnv = System.getenv("PATH");
+        if (pathEnv != null) {
+            for (String dir : pathEnv.split(File.pathSeparator)) {
+                if (dir.isBlank()) continue;
+                try {
+                    if (Files.isRegularFile(Paths.get(dir.trim(), tool + exe))) return tool;
+                } catch (Exception ignored) {
+                    // A malformed PATH entry is not a reason to stop looking.
+                }
+            }
+        }
+
+        // 3. Ours, so "no JDK installed" still runs rather than failing outright.
+        String bundled = System.getenv("CAUSIFY_JAVA_HOME");
+        if (bundled != null && !bundled.isBlank()) {
+            Path candidate = Paths.get(bundled, "bin", tool + exe);
+            if (Files.isRegularFile(candidate)) {
+                log.debug("No system JDK found — running {} from the bundled runtime", tool);
+                return candidate.toString();
+            }
+        }
+
+        return tool;
+    }
+
     private final SnapshotRepository snapshotRepository;
     private final ExecutionRepository executionRepository;
     private final ErrorRepository errorRepository;
@@ -97,9 +206,17 @@ public class ExecutionService {
             tempFile = Files.createTempFile("debugsync_", ext);
             Files.writeString(tempFile, request.getCode());
 
-            String[] command = ("python".equals(lang))
-                    ? new String[] { "python", tempFile.toString() }
-                    : new String[] { "node", tempFile.toString() };
+            /* "python3" as well as "python": on macOS and most Linux distros the
+               bare name either does not exist or still points at Python 2. */
+            String interpreter = "python".equals(lang)
+                    ? resolveTool("python3", "python")
+                    : resolveTool("node");
+
+            if (interpreter == null) {
+                return missingToolResponse("python".equals(lang) ? "python" : "node", request, startTime);
+            }
+
+            String[] command = { interpreter, tempFile.toString() };
 
             return runProcess(command, request, startTime, tempFile);
 
@@ -130,7 +247,7 @@ public class ExecutionService {
             Files.writeString(javaFile, request.getCode());
 
             // Compile
-            Process compileProcess = new ProcessBuilder("javac", javaFile.toString()).start();
+            Process compileProcess = new ProcessBuilder(jdkTool("javac"), javaFile.toString()).start();
             String compileError = readStream(compileProcess.getErrorStream());
             int compileCode = compileProcess.waitFor();
 
@@ -139,7 +256,7 @@ public class ExecutionService {
             }
 
             // Run
-            String[] command = { "java", "-cp", tempDir.toString(), mainClass };
+            String[] command = { jdkTool("java"), "-cp", tempDir.toString(), mainClass };
             return runProcess(command, request, startTime, null);
 
         } finally {
@@ -159,7 +276,12 @@ public class ExecutionService {
             Files.writeString(srcFile, request.getCode());
 
             Path outFile = tempDir.resolve("main.exe");
-            String compiler = isCpp ? "g++" : "gcc";
+            String wanted = isCpp ? "g++" : "gcc";
+            String compiler = resolveTool(wanted);
+
+            if (compiler == null) {
+                return missingToolResponse(wanted, request, startTime);
+            }
 
             // Compile
             Process compileProcess = new ProcessBuilder(compiler, srcFile.toString(), "-o", outFile.toString()).start();
@@ -412,12 +534,12 @@ public class ExecutionService {
             Path javaFile = tempDir.resolve(mainClass + ".java");
             Files.writeString(javaFile, code);
 
-            Process compileProcess = new ProcessBuilder("javac", javaFile.toString()).start();
+            Process compileProcess = new ProcessBuilder(jdkTool("javac"), javaFile.toString()).start();
             String compileError = readStream(compileProcess.getErrorStream());
             if (compileProcess.waitFor() != 0) {
                 return new DryRunResult("", compileError);
             }
-            return runRaw(new String[] { "java", "-cp", tempDir.toString(), mainClass });
+            return runRaw(new String[] { jdkTool("java"), "-cp", tempDir.toString(), mainClass });
         } finally {
             deleteTree(tempDir);
         }

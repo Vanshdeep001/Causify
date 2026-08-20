@@ -4,14 +4,40 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import useEditorStore from '../../store/useEditorStore';
-import { createSession, joinSession, leaveSession, uploadProject, saveFile, deleteFile, gitStatus } from '../../services/api';
-import { connectWebSocket, sendCodeChange, sendFileDelete, sendProjectSync } from '../../services/socket';
+import { createSession, joinSession, knockSession, getAdmissionStatus, cancelKnock, leaveSession, uploadProject, saveFile, deleteFile, gitStatus } from '../../services/api';
+import { connectWebSocket, sendCodeChange, sendFileDelete, sendProjectSync, sendFileLock } from '../../services/socket';
 import { buildCollabCallbacks } from '../../services/collabCallbacks';
 import { setOrigin, resetOrigin, buildJoinCode, parseJoinCode, getOrigin, setSessionToken, clearSessionToken } from '../../services/backendHost';
+import { publishSession, resolveSession } from '../../services/rendezvous';
 import { detectProject } from '../../services/devserver';
 import { isBinaryAssetPath, isSkippedAssetPath } from '../../utils/binaryAssets';
 import { decorationFor, parseGitStatus } from '../../utils/gitStatusMap';
 import MarioLoader from '../common/MarioLoader';
+
+/* A usable name for someone who has not typed one. The create form has always
+   opened with a name already in it, and an empty one would reach the server as
+   an anonymous author — so resetting the form regenerates rather than blanks. */
+const freshUsername = () => 'User ' + Math.floor(Math.random() * 1000);
+
+/* One step of nesting, in pixels. Rows indent themselves by this much per
+   level and draw their guide lines on the same grid, so the two can never
+   drift apart — which is the usual way a hand-tuned tree ends up with guides
+   that miss the icons they belong to. */
+const FX_INDENT = 15;
+
+/* Both halves of joining fail the same ways — wrong code, wrong password, host
+   unreachable — and the person reading the message cannot tell which request
+   was in flight, so neither should the wording. */
+const joinErrorMessage = (err) => {
+  const msg = err.response?.data?.message || err.response?.data?.error;
+  if (err.response?.status === 404) return 'SESSION NOT FOUND: This session ID does not exist or has expired.';
+  if (err.response?.status === 401) return 'INVALID PASSWORD: Incorrect password for this session.';
+  if (err.response?.status === 403) return 'NOT ADMITTED: The session owner has not let you in.';
+  if (err.code === 'ERR_NETWORK' || !err.response) {
+    return 'CANNOT REACH HOST: The session owner may be offline, or their share link has expired.';
+  }
+  return msg || err.message || 'Join failed';
+};
 
 /* Shown while a project is being read in. Defined at module scope: inside the
    component it would be a new type on every render, so React would rebuild it
@@ -225,6 +251,16 @@ const FileExplorer = ({ onToggle }) => {
   const canEdit = userRole === 'owner'
     || connectedUsers.find((u) => u.id === currentUser?.id)?.permission !== 'viewer';
 
+  /* Files the owner has frozen. Everyone sees which ones they are — a lock
+     nobody can see just looks like the editor being broken. */
+  const lockedFiles = useEditorStore((s) => s.lockedFiles);
+  const isOwner = userRole === 'owner';
+
+  const toggleFileLock = (path) => {
+    if (!sessionId || !isOwner) return;
+    sendFileLock(sessionId, path, !lockedFiles[path], currentUser);
+  };
+
   const setSession = useEditorStore((s) => s.setSession);
   const setCurrentUser = useEditorStore((s) => s.setCurrentUser);
   const setUserRole = useEditorStore((s) => s.setUserRole);
@@ -311,7 +347,7 @@ const FileExplorer = ({ onToggle }) => {
   const [panel, setPanel] = useState(null); // null | 'create' | 'join'
   const [projName, setProjName] = useState('My Project');
   const [password, setPassword] = useState('');
-  const [username, setUsername] = useState('User ' + Math.floor(Math.random() * 1000));
+  const [username, setUsername] = useState(freshUsername);
   const [joinId, setJoinId] = useState('');
   const [joinPwd, setJoinPwd] = useState('');
   const [joinUsername, setJoinUsername] = useState('');
@@ -331,6 +367,89 @@ const FileExplorer = ({ onToggle }) => {
   }, []);
   const [newItem, setNewItem] = useState(null); // { type: 'file'|'folder', parent: '', name: '' }
   const [hoveredIndex, setHoveredIndex] = useState(null);
+  /* Standing at the door: { sessionId, requestId, since }. Null when not
+     waiting, which is also what the join panel keys its two faces off. */
+  const [waiting, setWaiting] = useState(null);
+  // True from the instant an admission is spent until the join settles.
+  const admittingRef = useRef(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const copyTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(copyTimerRef.current), []);
+
+  /* The invitation, available for as long as the session is. The share strip
+   * above the tree retires once someone arrives, and the header shows faces
+   * rather than the code now — without this, a host who wanted to invite a
+   * fourth person had nowhere left to get it. */
+  const copyJoinCode = () => {
+    const code = joinCode || sessionId;
+    if (!code) return;
+    navigator.clipboard.writeText(code);
+    setCodeCopied(true);
+    clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCodeCopied(false), 2000);
+  };
+
+  /* Ask the server whether the owner has answered yet.
+   *
+   * Polled rather than pushed. The obvious alternative — open the session's
+   * socket and listen — would put someone who has not been admitted inside the
+   * topics carrying the code, which is the thing the door is for. */
+  useEffect(() => {
+    if (!waiting) return;
+    let cancelled = false;
+
+    const check = async () => {
+      /* Downloading the project can easily outlast the two-second tick, and the
+         admission is spent the moment the join lands. Without this the next
+         poll reads its own success as "expired" and tears down a join that is
+         going perfectly well. */
+      if (admittingRef.current) return;
+
+      try {
+        const { status } = await getAdmissionStatus(waiting.sessionId, waiting.requestId);
+        if (cancelled || admittingRef.current) return;
+        if (status === 'admitted') {
+          admittingRef.current = true;
+          completeJoin(waiting.sessionId, waiting.requestId);
+        } else if (status === 'denied') {
+          setWaiting(null);
+          resetOrigin();
+          setErrorMsg('NOT ADMITTED: The session owner declined your request.');
+        } else if (status === 'expired') {
+          setWaiting(null);
+          resetOrigin();
+          setErrorMsg('REQUEST EXPIRED: Nobody answered. Ask the owner and try again.');
+        }
+      } catch {
+        /* One failed poll is not an answer — the host may be mid-reconnect.
+           Keep waiting; the interval will ask again. */
+      }
+    };
+
+    check();
+    const timer = setInterval(check, 2000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [waiting]);
+
+  /* The sidebar never unmounts, so this form outlives the session it started.
+   * Leave a session, open "create" again, and you were looking at the last
+   * run's name, project and password — someone else's, if the machine is
+   * shared. Opening a panel is a fresh start, exactly as it looks on a cold
+   * page load. */
+  useEffect(() => {
+    if (panel === 'create') {
+      setUsername(freshUsername());
+      setProjName('My Project');
+      setPassword('');
+    } else if (panel === 'join') {
+      setJoinUsername('');
+      setJoinId('');
+      setJoinPwd('');
+      // Reopening the panel is a fresh attempt, not a return to an old queue.
+      setWaiting(null);
+    }
+    if (panel) setErrorMsg('');
+  }, [panel, setErrorMsg]);
 
 
   useEffect(() => {
@@ -399,6 +518,11 @@ const FileExplorer = ({ onToggle }) => {
         if (res?.ok && res.url) {
           useEditorStore.getState().setJoinCode(buildJoinCode(sessionIdValue, res.url));
           useEditorStore.getState().setTunnel('on');
+          // File this address under the session id, so a joiner who was sent an
+          // older code still lands here. Not awaited: the session is already
+          // shareable, and the phone book being slow or down must not hold that
+          // up — it only ever adds a way to find us.
+          publishSession(sessionIdValue, res.url);
         } else {
           useEditorStore.getState().setTunnel('error', res?.error || 'Tunnel failed to start');
         }
@@ -460,19 +584,57 @@ const FileExplorer = ({ onToggle }) => {
     }
   };
 
+  /* Step one of two: ask.
+   *
+   * Knowing the code and password no longer puts anyone in the session — it
+   * puts them in the queue. Nothing about the project comes back from this
+   * call, so a wait that is never answered leaks nothing. */
   const handleJoin = async () => {
     setIsLoading(true);
     setErrorMsg('');
     try {
-      // The code carries the host address when the session lives on another
-      // machine, so it is resolved before the first request goes out. A plain
-      // id has no host part and leaves the origin alone — which is what keeps
-      // same-machine and browser sessions working exactly as they did.
+      // Where the host actually is, settled before the first request goes out.
+      //
+      // Two answers are available and they are tried in this order:
+      //
+      //   1. the rendezvous, asked for this session id — always current, because
+      //      the host republishes every time its tunnel changes address;
+      //   2. the address baked into the code, if it carries one.
+      //
+      // The lookup goes first precisely because the baked-in address is the one
+      // that rots: a code from yesterday's chat names a tunnel that no longer
+      // exists, and that is the whole reason for asking. When the phone book is
+      // unreachable, has nothing filed, or was never configured, this falls
+      // straight through to the baked-in address — and a plain id with neither
+      // leaves the origin alone, which is what keeps same-machine and browser
+      // sessions working exactly as they always did.
       const { sessionId: parsedId, origin: parsedOrigin } = parseJoinCode(joinId);
-      if (parsedOrigin) setOrigin(parsedOrigin);
+      const { url: publishedOrigin } = await resolveSession(parsedId);
+
+      if (publishedOrigin) setOrigin(publishedOrigin);
+      else if (parsedOrigin) setOrigin(parsedOrigin);
       else resetOrigin();
 
-      const session = await joinSession(parsedId, joinPwd, joinUsername);
+      const knock = await knockSession(parsedId, joinPwd, joinUsername);
+      admittingRef.current = false;
+      setWaiting({ sessionId: parsedId, requestId: knock.requestId, since: Date.now() });
+    } catch (err) {
+      resetOrigin();
+      setErrorMsg(joinErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  /* Step two: the owner said yes.
+   *
+   * Everything below here is the join as it always was — this is the first
+   * moment the server will part with a token or a file. */
+  const completeJoin = async (parsedId, requestId) => {
+    setIsLoading(true);
+    setErrorMsg('');
+    try {
+      const session = await joinSession(parsedId, joinPwd, joinUsername, requestId);
       try { localStorage.setItem('causify-last-username', joinUsername); } catch { /* best effort */ }
 
       // On the desktop, put the shared project on the joiner's own disk and work
@@ -506,23 +668,16 @@ const FileExplorer = ({ onToggle }) => {
       // in-memory copy over the top would sever the disk connection.
       if (!landedOnDisk) setProject(incoming);
       initSocket(session.id, session.user);
+      setWaiting(null);
       setPanel(null);
     } catch (err) {
       // A failed join must not leave the app pointed at someone else's
       // machine, or every later request would go to a host we never reached.
       resetOrigin();
-
-      const msg = err.response?.data?.message || err.response?.data?.error;
-      if (err.response?.status === 404) {
-        setErrorMsg('SESSION NOT FOUND: This session ID does not exist or has expired.');
-      } else if (err.response?.status === 401) {
-        setErrorMsg('INVALID PASSWORD: Incorrect password for this session.');
-      } else if (err.code === 'ERR_NETWORK' || !err.response) {
-        setErrorMsg('CANNOT REACH HOST: The session owner may be offline, or their share link has expired.');
-      } else {
-        setErrorMsg(msg || err.message || 'Join failed');
-      }
+      setWaiting(null);
+      setErrorMsg(joinErrorMessage(err));
     } finally {
+      admittingRef.current = false;
       setIsLoading(false);
     }
   };
@@ -604,19 +759,18 @@ const FileExplorer = ({ onToggle }) => {
                 afterUpload(sessionId);
               })
               .finally(() => setIsUploading(false));
-          } else if (canOpenLocalFolder) {
-            // Desktop: never mint a session behind the user's back. Sessions are
-            // for collaboration and are created only from New Session / Join.
-            setErrorMsg('OPEN A FOLDER FIRST — or start a session to share these files.');
-            setIsUploading(false);
           } else {
-            // Browser has no filesystem access, so a session is the only place
-            // these files can live.
-            handleCreate(projectFiles)
-              .then((sid) => {
-                if (sid) afterUpload(sid);
-              })
-              .finally(() => setIsUploading(false));
+            /* No session, and none is created. Importing is a private act:
+             * these files open in the editor and stay on this machine, exactly
+             * like opening a folder. Sharing is a separate, deliberate choice —
+             * New Session or Join — and it should never happen as a side effect
+             * of opening something.
+             *
+             * In the browser there is no disk to write back to, so they live in
+             * the store, which is persisted; on the desktop this is only
+             * reached for loose files picked outside any folder. */
+            setProject(projectFiles);
+            setIsUploading(false);
           }
         }
       };
@@ -627,13 +781,22 @@ const FileExplorer = ({ onToggle }) => {
     });
   };
 
-  const handleFolderUpload = (e) => {
+  const handleFolderUpload = async (e) => {
     const allFiles = Array.from(e.target.files);
+    if (allFiles.length === 0) return;
 
-    // Desktop app: remember the imported folder's real disk path so
-    // integrated terminals open directly inside the project.
+    /* Importing a folder is opening a folder.
+     *
+     * On the desktop the picked directory is a real place on disk, so it is
+     * adopted as a local workspace — the same state as Open Folder. It used to
+     * read every file into the renderer and then, finding no session to put
+     * them in, create one; so "import" quietly turned a private project into a
+     * shared session nobody asked for.
+     *
+     * Going through the folder path is also far cheaper: no reading, decoding
+     * or uploading of a single file. */
     const first = allFiles[0];
-    if (first?.webkitRelativePath && window.electronAPI?.getPathForFile) {
+    if (first?.webkitRelativePath && window.electronAPI?.getPathForFile && canOpenLocalFolder) {
       try {
         const abs = window.electronAPI.getPathForFile(first);
         const rel = first.webkitRelativePath;
@@ -641,9 +804,26 @@ const FileExplorer = ({ onToggle }) => {
         // the parent dir, then re-append the project folder name.
         if (abs && abs.length > rel.length) {
           const parentDir = abs.slice(0, abs.length - rel.length);
-          setProjectRootPath(parentDir + rel.split('/')[0]);
+          const root = parentDir + rel.split('/')[0];
+
+          setIsUploading(true);
+          setErrorMsg('');
+          try {
+            const result = await window.electronAPI.workspace.reopen(root);
+            if (result) {
+              openLocalWorkspace(result);
+              if (result.truncated) {
+                setErrorMsg(`LARGE PROJECT: showing the first ${result.files.length} files.`);
+              }
+              return;
+            }
+          } finally {
+            setIsUploading(false);
+          }
+          // reopen returned nothing — fall through and load the picked files.
+          setProjectRootPath(root);
         }
-      } catch { /* browser mode — terminal falls back to the home dir */ }
+      } catch { /* browser mode, or the path could not be resolved */ }
     }
 
     const filesArray = allFiles.filter(shouldUploadFile);
@@ -835,19 +1015,17 @@ const FileExplorer = ({ onToggle }) => {
       }
 
       if (!sessionId) {
-        // Desktop with no folder open: make an untitled buffer, exactly as any
-        // editor does. It lives in memory until the first save asks where to put
-        // it — no session invented to hold it, and no dialog before there is
-        // anything to write.
-        if (canOpenLocalFolder) {
-          addFile(pathToSave, '');
-          setNewItem(null);
-          setErrorMsg('');
-          return;
-        }
-        // Browser: no filesystem, so the session is the only available storage.
-        handleCreate([{ path: pathToSave, content: '' }]);
+        /* An untitled buffer, exactly as any editor makes one. It lives in
+         * memory until the first save asks where to put it — no session
+         * invented to hold it, and no dialog before there is anything to write.
+         *
+         * The browser used to create a session here for want of a filesystem,
+         * which meant making a new file quietly published the project. The
+         * store keeps it instead, and is persisted, so a refresh does not lose
+         * it either. Sharing stays a deliberate act. */
+        addFile(pathToSave, '');
         setNewItem(null);
+        setErrorMsg('');
         return;
       }
 
@@ -873,6 +1051,14 @@ const FileExplorer = ({ onToggle }) => {
   };
 
   const handleDelete = async (path, isFolder) => {
+    /* The button is hidden for a locked file, but the keyboard and any future
+       caller are not, and deleting one would destroy exactly what the lock was
+       protecting. */
+    if (useEditorStore.getState().isPathLockedForMe(path)) {
+      setErrorMsg(`${path.split('/').pop()} is locked by ${lockedFiles[path]?.by || 'the owner'}.`);
+      return;
+    }
+
     // Check if the file has unsaved changes
     const isDirty = !isFolder && useEditorStore.getState().isFileDirty(path);
 
@@ -926,6 +1112,30 @@ const FileExplorer = ({ onToggle }) => {
   };
 
   /**
+   * Collapse the whole tree, or open it back up.
+   *
+   * Expanding rebuilds the same set the first-load effect builds — every
+   * directory that has something in it — rather than remembering what was open
+   * before. Restoring a half-open state nobody can see the shape of is more
+   * surprising than simply showing the project.
+   */
+  const toggleCollapseAll = () => {
+    setExpandedPaths((prev) => {
+      if (prev.size > 0) return new Set();
+      const all = new Set();
+      Object.keys(files).forEach((p) => {
+        const parts = p.split('/');
+        let cur = '';
+        for (let i = 0; i < parts.length - 1; i++) {
+          cur = cur ? `${cur}/${parts[i]}` : parts[i];
+          all.add(cur);
+        }
+      });
+      return all;
+    });
+  };
+
+  /**
    * "New file/folder" from a folder row: lands inside that folder.
    *
    * The toolbar buttons can only ever mean "at the top of the tree", which
@@ -947,8 +1157,66 @@ const FileExplorer = ({ onToggle }) => {
   const FileIcon = ({ name, isFolder, isOpen, size = 16 }) => {
     if (isFolder) {
       return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ transition: 'all 0.2s ease' }}>
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2v11z" stroke={isOpen ? "#FFFFFF" : "#A0A0A0"} strokeWidth="2" strokeLinejoin="round" fill={isOpen ? "rgba(255,255,255,0.06)" : "none"} />
+        /* Filled rather than outlined, and warm rather than grey. An outline
+           folder at this size competes with the filled, full-colour file icons
+           beside it and loses, which leaves the structure of the tree reading
+           as fainter than its contents. Two tones — a back flap and a lighter
+           front — give it the depth that keeps it legible at 15px. */
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ transition: 'all 0.2s ease', flexShrink: 0 }}>
+          <path d="M2 5.5A2 2 0 0 1 4 3.5h4.8l2 3H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-13z" fill={isOpen ? '#C98B2E' : '#8A7148'} />
+          <path d="M2 9.2A1.8 1.8 0 0 1 3.8 7.4h16.4A1.8 1.8 0 0 1 22 9.2v9.3a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.2z" fill={isOpen ? '#F0B45A' : '#B79A66'} />
+        </svg>
+      );
+    }
+
+    /* A handful of files are known by their name, not their extension, and they
+       are usually the ones being scanned for. package.json is the npm mark
+       rather than one more JSON blob among the rest. */
+    const lower = name.toLowerCase();
+
+    if (lower === 'package.json' || lower === 'package-lock.json') {
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="24" height="24" rx="3" fill="#CB3837" />
+          <path d="M5 8h14v8h-5.5v-5.5h-2.25V16H5V8z" fill="#FFFFFF" />
+        </svg>
+      );
+    }
+
+    if (lower === '.gitignore' || lower === '.gitattributes' || lower === '.gitmodules') {
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="24" height="24" rx="3" fill="#F05033" />
+          <circle cx="8" cy="8" r="1.9" fill="#FFFFFF" />
+          <circle cx="8" cy="16" r="1.9" fill="#FFFFFF" />
+          <circle cx="16" cy="12" r="1.9" fill="#FFFFFF" />
+          <path d="M8 8v8M8 12h8" stroke="#FFFFFF" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+      );
+    }
+
+    if (lower === 'dockerfile' || lower.startsWith('dockerfile.')) {
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="24" height="24" rx="3" fill="#2496ED" />
+          <g fill="#FFFFFF">
+            <rect x="5" y="12" width="2.6" height="2.6" rx="0.4" />
+            <rect x="8.2" y="12" width="2.6" height="2.6" rx="0.4" />
+            <rect x="11.4" y="12" width="2.6" height="2.6" rx="0.4" />
+            <rect x="8.2" y="8.8" width="2.6" height="2.6" rx="0.4" />
+            <rect x="11.4" y="8.8" width="2.6" height="2.6" rx="0.4" />
+          </g>
+          <path d="M15 13.2c1.6 0 3-.5 3.9-1.4.3.9.1 2.2-.8 3.1-1 1-2.6 1.6-4.6 1.6H5.4" stroke="#FFFFFF" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+        </svg>
+      );
+    }
+
+    if (lower === '.env' || lower.startsWith('.env.')) {
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect width="24" height="24" rx="3" fill="#1A1A1A" stroke="#FFB224" strokeWidth="1.2" />
+          <circle cx="9.5" cy="12" r="2.6" stroke="#FFB224" strokeWidth="1.6" fill="none" />
+          <path d="M12 12h6.5M16 12v2.6" stroke="#FFB224" strokeWidth="1.6" strokeLinecap="round" />
         </svg>
       );
     }
@@ -1054,6 +1322,117 @@ const FileExplorer = ({ onToggle }) => {
             <path d="M9 5C9 7 10 7 10 9M12 4C12 6 13 6 13 8" stroke="#FFFFFF" strokeWidth="1" strokeLinecap="round"/>
           </svg>
         );
+      case 'pdf':
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-7-7z" fill="#E5484D" />
+            <path d="M13 2v7h7" fill="#FF8A8D" />
+            <path d="M7.2 18.2v-4.6h1.7a1.4 1.4 0 0 1 0 2.8H7.2M11.6 18.2v-4.6h1a1.9 2.3 0 0 1 0 4.6h-1M16.9 18.2v-4.6h2.2M16.9 16h1.7"
+              stroke="#FFFFFF" strokeWidth="1.15" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
+        );
+      case 'png':
+      case 'jpg':
+      case 'jpeg':
+      case 'gif':
+      case 'webp':
+      case 'bmp':
+      case 'ico':
+      case 'avif':
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2.5" y="4" width="19" height="16" rx="2.5" fill="#1E2A3A" stroke="#7C6BF0" strokeWidth="1.4" />
+            <circle cx="8.5" cy="9.5" r="1.6" fill="#FFD166" />
+            <path d="M4 17l4.5-4.6 3.2 3.2 3-3L20 17.5" stroke="#7C6BF0" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
+        );
+      case 'svg':
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="24" height="24" rx="3" fill="#FFB13B" />
+            <circle cx="12" cy="12" r="3.2" fill="#FFFFFF" />
+            <path d="M12 4.6v3M12 16.4v3M4.6 12h3M16.4 12h3" stroke="#FFFFFF" strokeWidth="1.7" strokeLinecap="round" />
+          </svg>
+        );
+      case 'go':
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="24" height="24" rx="3" fill="#00ADD8" />
+            <path d="M9.6 9.6a3.4 3.4 0 1 0 3.2 4.5H10.4" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            <circle cx="16.4" cy="12.4" r="2.9" stroke="#FFFFFF" strokeWidth="1.8" fill="none" />
+          </svg>
+        );
+      case 'rs':
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="24" height="24" rx="3" fill="#1A1A1A" stroke="#DEA584" strokeWidth="1.2" />
+            <path d="M8 17V7.6h4.2a2.5 2.5 0 0 1 0 5H8m4.4 0l3.4 4.4" stroke="#DEA584" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
+        );
+      case 'vue':
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M2 4h4.2L12 14.2 17.8 4H22L12 21.2 2 4z" fill="#41B883" />
+            <path d="M6.9 4h3.1L12 7.6 14 4h3.1L12 12.8 6.9 4z" fill="#35495E" />
+          </svg>
+        );
+      case 'sql':
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="12" cy="6.4" rx="7.2" ry="2.9" fill="#00758F" />
+            <path d="M4.8 6.4v11.2c0 1.6 3.2 2.9 7.2 2.9s7.2-1.3 7.2-2.9V6.4" fill="#00758F" opacity="0.55" />
+            <path d="M4.8 11.9c0 1.6 3.2 2.9 7.2 2.9s7.2-1.3 7.2-2.9" stroke="#8ED6E8" strokeWidth="1.3" fill="none" />
+          </svg>
+        );
+      case 'sh':
+      case 'bash':
+      case 'zsh':
+      case 'ps1':
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2.5" y="4" width="19" height="16" rx="2.5" fill="#1A1A1A" stroke="#3DD68C" strokeWidth="1.4" />
+            <path d="M6.6 9.4l3.2 2.7-3.2 2.7M12.4 15.2h5" stroke="#3DD68C" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        );
+      case 'yml':
+      case 'yaml':
+      case 'toml':
+      case 'ini':
+      case 'conf':
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="24" height="24" rx="3" fill="#1A1A1A" stroke="#B3B3B3" strokeWidth="1.2" />
+            <path d="M6 8.5h4M6 12h8M6 15.5h5" stroke="#B3B3B3" strokeWidth="1.7" strokeLinecap="round" />
+            <circle cx="17" cy="8.5" r="1.3" fill="#FFB224" />
+          </svg>
+        );
+      case 'xml':
+      case 'svgz':
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="24" height="24" rx="3" fill="#1A1A1A" stroke="#E37933" strokeWidth="1.2" />
+            <path d="M9 9l-3 3 3 3M15 9l3 3-3 3M13.2 7.6l-2.4 8.8" stroke="#E37933" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        );
+      case 'zip':
+      case 'rar':
+      case 'gz':
+      case 'tar':
+      case '7z':
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3 7.4l9-4.4 9 4.4v9.2l-9 4.4-9-4.4V7.4z" fill="#1A1A1A" stroke="#FFB224" strokeWidth="1.4" strokeLinejoin="round" />
+            <path d="M12 3v18M3 7.4l9 4.4 9-4.4" stroke="#FFB224" strokeWidth="1.2" opacity="0.7" />
+          </svg>
+        );
+      case 'txt':
+      case 'log':
+        return (
+          <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-7-7z" fill="#242424" stroke="#9A9A9A" strokeWidth="1.3" strokeLinejoin="round" />
+            <path d="M7.6 12h8.8M7.6 15h8.8M7.6 18h5.4" stroke="#9A9A9A" strokeWidth="1.4" strokeLinecap="round" />
+          </svg>
+        );
       default:
         return (
           <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#C8C8C8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.85 }}>
@@ -1111,16 +1490,28 @@ const FileExplorer = ({ onToggle }) => {
     color: 'var(--t3)', cursor: 'pointer', padding: 0,
   };
 
-  const FileItem = ({ name, path, isFolder }) => {
+  const FileItem = ({ name, path, isFolder, depth = 1 }) => {
     const isActive = activePath === path;
     const activeEditor = fileActivity[path];
     const isAffected = affectedPaths.has(path);
-    const [isHovered, setIsHovered] = useState(false);
+
+    /* Rows are laid out flat and indented by padding rather than by nesting, so
+       the selection can run the full width of the panel the way a file tree's
+       selection is expected to. `indent` is how many levels of guide line sit
+       to the left of this row; a top-level row has none.
+
+       Hover used to be a useState per row, which meant a state update and a
+       re-render every time the pointer crossed a filename. It is CSS now: the
+       same look, none of the work, and it cannot fall out of sync. */
+    const indent = Math.max(0, depth - 1);
 
     // Users (other than me) currently working in this file.
     const presentUsers = isFolder ? [] : Object.entries(filePresence)
       .filter(([uid, p]) => p.path === path && uid !== currentUser?.id)
       .map(([uid, p]) => ({ uid, ...p }));
+
+    const lock = isFolder ? null : lockedFiles[path];
+    const lockedForMe = Boolean(lock) && !isOwner;
 
     const extension = name.includes('.') ? name.split('.').pop().toUpperCase() : '';
     const nameOnly = name.includes('.') ? name.substring(0, name.lastIndexOf('.')) : name;
@@ -1131,100 +1522,57 @@ const FileExplorer = ({ onToggle }) => {
 
     return (
       <div
-        className="fx-file-item"
+        className={`fx-file-item${isActive ? ' is-active' : ''}`}
         onClick={(e) => {
           e.stopPropagation();
           if (isFolder) toggleFolder(path);
           else openFile(path);
         }}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
         title={path}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          padding: '6px 10px',
-          cursor: 'pointer',
-          transition: 'all 0.12s ease',
-          position: 'relative',
-          background: isActive ? 'var(--lime-dim)' : isHovered ? 'rgba(255, 255, 255, 0.02)' : 'transparent',
-          borderRadius: '4px',
-          margin: '1px 6px'
-        }}
+        style={{ paddingLeft: `${8 + indent * FX_INDENT}px` }}
       >
-        {/* Active state thin left border notch */}
-        {isActive && (
-          <div style={{
-            position: 'absolute',
-            left: 0,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            width: '2px',
-            height: '14px',
-            background: 'var(--lime)'
-          }} />
+        {/* One continuous rule per ancestor level. Drawn per row rather than as
+            a border on a wrapper, because the rows are siblings now — and since
+            each rule spans the row's full height, adjacent rows join into the
+            single unbroken line the nested version used to give for free. */}
+        {Array.from({ length: indent }, (_, i) => (
+          /* Sits on the centre of the ancestor's chevron: that row's padding is
+             8 + i·FX_INDENT and the chevron column is 14 wide, so its centre is
+             7 further in. */
+          <span key={i} className="fx-guide" style={{ left: `${8 + i * FX_INDENT + 7}px` }} />
+        ))}
+
+        {isFolder ? (
+          <span className={`fx-chev${expandedPaths.has(path) ? ' is-open' : ''}`}>
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </span>
+        ) : (
+          /* Files have no chevron, but their icons still have to line up with
+             the folder icons above them — so the column is held open. */
+          <span className="fx-chev-gap" />
         )}
 
-        {isFolder && (
-          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke={isActive || isHovered ? "var(--t1)" : "var(--t4)"} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.15s', transform: expandedPaths.has(path) ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0, marginRight: '2px' }}>
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        )}
+        {/* One row shape for both kinds of entry.
+            A folder is named the same way a file is: shouting it in uppercase
+            display type made every folder outrank the files inside it, which is
+            backwards — the folder is the container, the file is the thing you
+            are looking for. It is told apart by its icon and chevron instead.
+            And a filename is one word: app.js, not a display-font stem plus an
+            uppercase extension pill, which turned eight files into twenty-four
+            competing objects and repeated in text what the icon already says in
+            colour.
 
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
-          {isFolder ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
-              <FileIcon name={name} isFolder={true} isOpen={expandedPaths.has(path)} size={13} />
-              <span style={{
-                fontFamily: 'var(--font-header)',
-                fontWeight: 800,
-                fontSize: '0.64rem',
-                color: gitDecoration ? gitDecoration.color
-                  : isActive ? '#FFFFFF' : isHovered ? 'var(--t1)' : 'var(--t2)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                letterSpacing: '0.01em',
-                textTransform: 'uppercase'
-              }}>
-                {name}
-              </span>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
-              <FileIcon name={name} isFolder={false} size={13} />
-              <span style={{
-                fontFamily: 'var(--font-header)',
-                fontWeight: 800,
-                fontSize: '0.64rem',
-                color: gitDecoration ? gitDecoration.color
-                  : isActive ? '#FFFFFF' : isHovered ? 'var(--t1)' : 'var(--t2)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                letterSpacing: '-0.01em'
-              }}>
-                {nameOnly}
-              </span>
-              {extension && (
-                <span style={{
-                  fontFamily: 'var(--font-number)',
-                  fontSize: '0.45rem',
-                  color: isActive ? 'var(--cyan)' : 'var(--t3)',
-                  fontWeight: 800,
-                  letterSpacing: '0.05em',
-                  background: isActive ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.02)',
-                  padding: '1px 4px',
-                  borderRadius: '3px',
-                  flexShrink: 0
-                }}>
-                  {extension}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
+            Colour and weight come from CSS so the whole row shifts together on
+            hover and selection. Git state is the exception and stays inline —
+            an edited file should read as edited whatever else is going on. */}
+        <span className="fx-row-main">
+          <FileIcon name={name} isFolder={isFolder} isOpen={isFolder && expandedPaths.has(path)} size={16} />
+          <span className="fx-row-name" style={gitDecoration ? { color: gitDecoration.color } : undefined}>
+            {name}
+          </span>
+        </span>
 
         {isAffected && !isFolder && (
           <div title="Affected by recent change" style={{ width: '5px', height: '5px', background: 'var(--amber)', borderRadius: '50%', animation: 'hud-pulse 1.4s infinite' }} />
@@ -1286,6 +1634,54 @@ const FileExplorer = ({ onToggle }) => {
           </div>
         )}
 
+        {/* A frozen file says so on its row, always — not only on hover and not
+            only once you have opened it and found the editor refusing to type.
+            The owner sees the same mark, since they are the one who has to
+            remember it is set. */}
+        {lock && (
+          <div
+            title={`Locked by ${lock.by || 'the owner'}${isOwner ? ' — click the padlock to unlock' : ''}`}
+            style={{
+              display: 'flex', alignItems: 'center', flexShrink: 0,
+              color: '#FFB224', opacity: 0.9,
+            }}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+          </div>
+        )}
+
+        {/* Owner's toggle. Hover-revealed like the other row actions, and only
+            for real files — locking a folder would imply a rule about paths
+            that do not exist yet. */}
+        {isOwner && sessionId && !isFolder && (
+          <button
+            className="fx-file-del"
+            onClick={(e) => { e.stopPropagation(); toggleFileLock(path); }}
+            title={lock ? `Unlock ${name}` : `Lock ${name} — only you will be able to edit it`}
+            style={rowActionStyle}
+            onMouseEnter={(e) => { e.currentTarget.style.color = '#FFB224'; e.currentTarget.style.background = 'rgba(255,178,36,0.12)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--t3)'; e.currentTarget.style.background = 'transparent'; }}
+          >
+            {lock ? (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+              </svg>
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            )}
+          </button>
+        )}
+
         {/* Create inside this folder. Without these the toolbar's only meaning
             is "at the top of the tree", so there is no way to put a file where
             it belongs once a project folder is open. Same hover reveal as
@@ -1327,8 +1723,10 @@ const FileExplorer = ({ onToggle }) => {
         )}
 
         {/* Delete — owner & editor collaborators only. Visibility is CSS-driven
-            (revealed on row :hover) so it survives parent re-renders. */}
-        {canEdit && (
+            (revealed on row :hover) so it survives parent re-renders.
+            A locked file cannot be deleted either: freezing its contents while
+            leaving "remove the whole thing" available protects nothing. */}
+        {canEdit && !lockedForMe && (
           <button
             className="fx-file-del"
             onClick={(e) => { e.stopPropagation(); handleDelete(path, isFolder); }}
@@ -1375,7 +1773,15 @@ const FileExplorer = ({ onToggle }) => {
     return (
       <div className="fx-new-item-form" style={{
         padding: '6px 10px',
-        margin: isInline ? '4px 0' : '6px 14px',
+        /* Inline, this box stands in for a row inside `newItem.parent`, so it
+           lines up on the same indent grid the rows use. It used to inherit
+           that from the padded wrapper each folder drew around its children;
+           with the tree flattened there is no wrapper to inherit from, and the
+           box would otherwise sit flush against the panel edge no matter how
+           deep the folder it belongs to. */
+        margin: isInline
+          ? `4px 8px 4px ${8 + newItem.parent.split('/').length * FX_INDENT}px`
+          : '6px 14px',
         background: 'var(--s0)',
         border: '1px solid var(--line-strong)',
         borderRadius: '6px',
@@ -1451,84 +1857,52 @@ const FileExplorer = ({ onToggle }) => {
     );
   };
 
+  /**
+   * The tree, flattened into one list of rows.
+   *
+   * It used to nest: each folder wrapped its children in a padded div carrying
+   * the indent guide as a left border. That reads well until you want the
+   * selected row highlighted, because a nested row's background can only ever
+   * start where its wrapper starts — so the highlight stopped short of the
+   * panel edge and grew a staircase down the left as the tree got deeper.
+   *
+   * Rows are siblings now, indented by their own padding, which lets the
+   * highlight run edge to edge. The guides are drawn per row instead (see
+   * FileItem) and join up because every row draws them full height.
+   *
+   * Returns an array of rows rather than a wrapper element — the caller drops
+   * them straight into the scroll container.
+   */
   const renderTree = (node, name = '', currentPath = '', depth = 0) => {
     const path = currentPath ? (name ? `${currentPath}/${name}` : currentPath) : name;
     const isFolder = node !== null;
     const isExpanded = depth === 0 || expandedPaths.has(path);
-    
-    // Highlight lines if this item is selected
-    const activePath = useEditorStore.getState().activePath;
-    const isActive = activePath === path;
 
-    return (
-      <div key={path} style={{
-        marginLeft: depth > 0 ? '16px' : '0',
-        position: 'relative'
-      }}>
-        {/* Tree connector lines */}
-        {depth > 0 && (
-           <div style={{
-              position: 'absolute',
-              left: '-10px',
-              top: '-10px',
-              bottom: isFolder ? 'calc(100% - 15px)' : '50%',
-              width: '1px',
-              background: isActive ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.08)',
-              transition: 'background 0.15s ease'
-           }} />
-        )}
-        {depth > 0 && (
-           <div style={{
-              position: 'absolute',
-              left: '-10px',
-              top: '50%',
-              width: '10px',
-              height: '1px',
-              background: isActive ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.08)',
-              transition: 'background 0.15s ease'
-           }} />
-        )}
+    if (!isFolder) {
+      return [<FileItem key={path} name={name} path={path} isFolder={false} depth={depth} />];
+    }
 
-        {/* Creative Elbow Joint Dot */}
-        {depth > 0 && (
-           <div style={{
-              position: 'absolute',
-              left: '-11px',
-              top: 'calc(50% - 1px)',
-              width: '3px',
-              height: '3px',
-              borderRadius: '50%',
-              background: isActive ? '#FFFFFF' : 'var(--line-strong)',
-              boxShadow: isActive ? '0 0 6px #FFFFFF' : 'none',
-              transition: 'all 0.15s ease'
-           }} />
-        )}
+    const rows = [];
+    if (name) rows.push(<FileItem key={path} name={name} path={path} isFolder={true} depth={depth} />);
 
-        {isFolder ? (
-          <>
-            {name && <FileItem name={name} path={path} isFolder={true} />}
-            {isExpanded && (
-              <div style={{ marginLeft: name ? '4px' : '0' }}>
-                {newItem && newItem.parent === path && name && (
-                  <NewItemForm isInline={true} />
-                )}
-                {Object.entries(node)
-                  .sort(([aName, aNode], [bName, bNode]) => {
-                    const aIsFolder = aNode !== null;
-                    const bIsFolder = bNode !== null;
-                    if (aIsFolder && !bIsFolder) return -1;
-                    if (!aIsFolder && bIsFolder) return 1;
-                    return aName.localeCompare(bName);
-                  })
-                  .map(([childName, childNode]) => renderTree(childNode, childName, path, depth + 1))}
-              </div>
-            )}
-          </>
-        ) : (
-          <FileItem name={name} path={path} isFolder={false} />
-        )}
-      </div>
-    );
+    if (isExpanded) {
+      if (newItem && newItem.parent === path && name) {
+        rows.push(<NewItemForm key={`${path}::new`} isInline={true} />);
+      }
+      Object.entries(node)
+        .sort(([aName, aNode], [bName, bNode]) => {
+          const aIsFolder = aNode !== null;
+          const bIsFolder = bNode !== null;
+          if (aIsFolder && !bIsFolder) return -1;
+          if (!aIsFolder && bIsFolder) return 1;
+          return aName.localeCompare(bName);
+        })
+        .forEach(([childName, childNode]) => {
+          rows.push(...renderTree(childNode, childName, path, depth + 1));
+        });
+    }
+
+    return rows;
   };
 
   const sectionLabelSty = {
@@ -1850,7 +2224,7 @@ const FileExplorer = ({ onToggle }) => {
               </div>
             )}
 
-            {panel === 'join' && (
+            {panel === 'join' && !waiting && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <div>
                   <label style={labelStyle}>Your name</label>
@@ -1864,8 +2238,42 @@ const FileExplorer = ({ onToggle }) => {
                   <label style={labelStyle}>Password</label>
                   <input style={inputStyle} type="password" value={joinPwd} onChange={e => setJoinPwd(e.target.value)} />
                 </div>
-                <button style={btnStyle(true)} onClick={handleJoin}>{isLoading ? 'Joining…' : 'Connect'}</button>
+                <button style={btnStyle(true)} onClick={handleJoin}>{isLoading ? 'Asking…' : 'Ask to join'}</button>
                 <button style={backBtnStyle} onClick={() => setPanel(null)}>← Back</button>
+              </div>
+            )}
+
+            {/* Waiting at the door. Deliberately says nothing about the session
+                — not its name, not its size — because none of that has been
+                granted yet and showing it would imply otherwise. */}
+            {panel === 'join' && waiting && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '4px 0' }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '9px',
+                  fontFamily: 'var(--font-header)', fontSize: '0.86rem', fontWeight: 800,
+                  letterSpacing: '-0.02em', color: '#FFFFFF',
+                }}>
+                  <span className="loading-spinner" style={{ width: '11px', height: '11px', flexShrink: 0 }} />
+                  Waiting to be let in
+                </div>
+                <div style={{
+                  fontFamily: 'var(--font-body)', fontSize: '0.62rem',
+                  lineHeight: 1.6, color: 'var(--t4)',
+                }}>
+                  {joinUsername || 'You'} knocked. The session owner has to admit
+                  you before anything is shared.
+                </div>
+                <button
+                  style={backBtnStyle}
+                  onClick={async () => {
+                    const w = waiting;
+                    setWaiting(null);
+                    resetOrigin();
+                    try { await cancelKnock(w.sessionId, w.requestId); } catch { /* the request expires on its own */ }
+                  }}
+                >
+                  ✕ Stop waiting
+                </button>
               </div>
             )}
           </div>
@@ -1921,9 +2329,101 @@ const FileExplorer = ({ onToggle }) => {
 
         {(sessionId || Object.keys(files).length > 0 || newItem) && (
           <div style={{ padding: '8px 0' }}>
+            {/* The tree's whole look lives here rather than in per-row inline
+                styles. Two reasons: hover and selection then cost nothing at
+                runtime — no state, no re-render, just a class — and every row
+                is guaranteed to agree about its own metrics, which is what
+                keeps the guide lines under the icons at any depth. */}
             <style>{`
+              /* ── The row ──
+                 Full-bleed on purpose: no side margin and no radius, so the
+                 selected row reads as a bar across the panel instead of a
+                 floating pill that stops short of both edges. */
+              .fx-file-item {
+                position: relative;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                min-height: 28px;
+                padding-right: 8px;
+                cursor: pointer;
+                user-select: none;
+                color: var(--t2);
+                transition: background 0.1s ease, color 0.1s ease;
+              }
+              .fx-file-item:hover { background: rgba(255, 255, 255, 0.045); color: var(--t1); }
+
+              /* Selection. The theme spends its colour on file-type icons and
+                 on git state, so the selected row asserts itself with contrast
+                 instead of hue — a lifted ground, a hard white rail, and the
+                 name at full white. Borrowing an accent colour here would put
+                 a second loud thing next to the icons and lose to them. */
+              .fx-file-item.is-active { background: rgba(255, 255, 255, 0.10); color: #FFFFFF; }
+              .fx-file-item.is-active::before {
+                content: '';
+                position: absolute;
+                left: 0; top: 0; bottom: 0;
+                width: 2px;
+                background: #FFFFFF;
+              }
+              .fx-file-item.is-active:hover { background: rgba(255, 255, 255, 0.13); }
+
+              /* ── Indent guides ── one per ancestor level, full row height so
+                 consecutive rows join into one unbroken rule. */
+              .fx-guide {
+                position: absolute;
+                top: 0; bottom: 0;
+                width: 1px;
+                background: rgba(255, 255, 255, 0.07);
+                pointer-events: none;
+              }
+              /* The selected row's ground would otherwise be sliced by them. */
+              .fx-file-item.is-active .fx-guide { background: rgba(255, 255, 255, 0.10); }
+
+              /* ── Chevron ── its column is held open for files too, so every
+                 icon in the tree sits on the same vertical line. */
+              .fx-chev, .fx-chev-gap {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 14px;
+                flex-shrink: 0;
+              }
+              .fx-chev {
+                color: var(--t4);
+                transition: transform 0.15s ease, color 0.1s ease;
+              }
+              .fx-chev.is-open { transform: rotate(90deg); }
+              .fx-file-item:hover .fx-chev, .fx-file-item.is-active .fx-chev { color: var(--t1); }
+
+              /* ── Name ── */
+              .fx-row-main {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                gap: 9px;
+                overflow: hidden;
+              }
+              .fx-row-name {
+                font-family: var(--font-code);
+                font-size: 0.8rem;
+                font-weight: 500;
+                letter-spacing: 0.005em;
+                color: inherit;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+              }
+              .fx-file-item.is-active .fx-row-name { font-weight: 700; }
+
+              /* ── Row actions ── revealed on hover, and kept out of the
+                 pointer's way until then so they cannot be clicked blind. */
               .fx-file-del { opacity: 0; pointer-events: none; transition: opacity 0.12s ease; }
               .fx-file-item:hover .fx-file-del { opacity: 1; pointer-events: auto; }
+
+              @media (prefers-reduced-motion: reduce) {
+                .fx-file-item, .fx-chev { transition: none; }
+              }
             `}</style>
             <div style={{ padding: '8px 14px', ...sectionLabelSty, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
               {/* The label yields first: it truncates so the actions keep their
@@ -1972,6 +2472,27 @@ const FileExplorer = ({ onToggle }) => {
                         : 'Download this project as a .zip'}
                     >
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                    </ActionButton>
+                    <div style={{ width: '1px', height: '14px', background: 'var(--line)' }} />
+                  </>
+                )}
+
+                {/* Collapse everything. A deep project auto-expands on load,
+                    which is right the first time and in the way every time
+                    after — this is the one control that gets the whole tree
+                    back to a page you can read. Toggles, so the same button
+                    puts it back the way it was. */}
+                {Object.keys(files).length > 0 && (
+                  <>
+                    <ActionButton
+                      onClick={toggleCollapseAll}
+                      title={expandedPaths.size > 0 ? 'Collapse all folders' : 'Expand all folders'}
+                    >
+                      {expandedPaths.size > 0 ? (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" /></svg>
+                      ) : (
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></svg>
+                      )}
                     </ActionButton>
                     <div style={{ width: '1px', height: '14px', background: 'var(--line)' }} />
                   </>
@@ -2248,6 +2769,51 @@ const FileExplorer = ({ onToggle }) => {
                 {workspaceRoot ? 'ON DISK' : userRole === 'owner' ? 'OWNER' : 'COLLAB'}
               </div>
 
+              {/* Under the badge because that is where someone looks to answer
+                  "what am I in?" — and the next question is always "how does
+                  anyone else get in?". A joiner can pass it on as well as a
+                  host, so this is not owner-only. */}
+              {sessionId && (
+                <button
+                  onClick={copyJoinCode}
+                  title={codeCopied ? 'Copied' : `Copy the invitation — ${joinCode || sessionId}`}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    color: codeCopied ? '#FFFFFF' : 'var(--t3)',
+                    fontFamily: 'var(--font-number)',
+                    fontSize: '0.56rem',
+                    fontWeight: 900,
+                    letterSpacing: '0.08em',
+                    cursor: 'pointer',
+                    marginTop: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    transition: 'color 0.15s ease'
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#FFFFFF'; }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.color = codeCopied ? '#FFFFFF' : 'var(--t3)';
+                  }}
+                >
+                  {codeCopied ? (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  ) : (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                      <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+                    </svg>
+                  )}
+                  <span style={{ textDecoration: 'underline' }}>
+                    {codeCopied ? 'COPIED' : 'COPY SESSION CODE'}
+                  </span>
+                </button>
+              )}
+
               <button
                 onClick={handleDisconnect}
                 title={sessionId
@@ -2263,7 +2829,10 @@ const FileExplorer = ({ onToggle }) => {
                   fontWeight: 900,
                   letterSpacing: '0.08em',
                   cursor: 'pointer',
-                  marginTop: '16px',
+                  /* Tight to the copy control above it — the two are one stack
+                     of session actions. Without it, the 16px that separated
+                     this from the badge became a gap in the middle of a list. */
+                  marginTop: sessionId ? '7px' : '16px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '4px',
