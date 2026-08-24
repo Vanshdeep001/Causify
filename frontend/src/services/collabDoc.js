@@ -459,7 +459,22 @@ export function createBinding(ytext, model, monaco, { path, onLocalChange, onRem
        project shows its opener as the author of every line in it. maybeSeed
        tags the transaction; this is where that tag has to be honoured. */
     const seed = Boolean(transaction.origin && transaction.origin.seed);
-    if (remoteUid) onRemoteChange?.(path, text, remoteUid);
+
+    /* The same distinction, for content arriving from a PEER.
+     *
+     * `seed` above covers this client pushing a file into the shared document.
+     * The other half is receiving one: the sync handshake, or a peer's own seed
+     * relayed to us. Both are already tagged `bulk` on the incoming
+     * transaction — handleAfterTransaction reads it and suppresses attribution
+     * for every file that is not open.
+     *
+     * The open file took the other road and the flag was simply dropped here,
+     * so the ONE file the user happened to be looking at got the whole of its
+     * arriving contents recorded as the sender's work. That is why a checkpoint
+     * taken after nothing more than an upload credited whoever opened a file
+     * with authoring every line in it. */
+    const bulk = Boolean(transaction.origin && transaction.origin.bulk);
+    if (remoteUid) onRemoteChange?.(path, text, remoteUid, bulk);
     else onLocalChange?.(path, text, { seed });
   };
   ytext.observe(yObserver);

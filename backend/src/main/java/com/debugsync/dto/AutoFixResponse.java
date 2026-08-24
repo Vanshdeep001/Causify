@@ -22,6 +22,15 @@ public class AutoFixResponse {
     public static final String NO_AI_KEY = "NO_AI_KEY";
     /** Something broke while talking to the model. */
     public static final String ERROR = "ERROR";
+    /**
+     * The request was not a code change to the open file.
+     *
+     * Distinct from NO_FIX, which means the agent tried and could not. This
+     * means it declined to try: a general question, a chat, a request for
+     * prose. The two must not share a status, because NO_FIX invites the user
+     * to retry and this one should send them somewhere else entirely.
+     */
+    public static final String OUT_OF_SCOPE = "OUT_OF_SCOPE";
 
     private String status;
     private String summary;

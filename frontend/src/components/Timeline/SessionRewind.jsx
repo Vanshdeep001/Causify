@@ -14,13 +14,18 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import useEditorStore from '../../store/useEditorStore';
-import { PixelSprite, QuestionBlock, MARIO_IDLE, GOOMBA } from '../Output/MarioSprites';
+import { PixelSprite, QuestionBlock, Coin, MARIO_IDLE, GOOMBA } from '../Output/MarioSprites';
 
 /* Sprite widths, so nothing walks out of the frame at either end. */
 const MARIO_W = 24;   // 12 cols x px 2
 const BLOCK_W = 16;   // 16 cols x px 1
+const COIN_W = 8;     // 8 cols x px 1 — an unmarked checkpoint
 const FLAG_W = 12;    // pennant width; the post below it is 2px
 const ROWS_PREVIEW = 8;   // lines shown before one edit needs asking to open
+/* Edits listed per file before the rest are summarised. Per FILE rather than
+   per author, so a person who rewrote one file still shows their work in the
+   other four — and every file keeps its own undo within reach. */
+const EDITS_PER_FILE = 8;
 
 /* A checkpoint flag — in Mario it is the thing you return to when a run ends
  * badly, which is exactly what "last working build" means. Gold rather than
@@ -171,12 +176,17 @@ const SessionRewind = () => {
   const canRewind = useEditorStore((s) => s.canRewind);
   const sessionId = useEditorStore((s) => s.sessionId);
   const userRole = useEditorStore((s) => s.userRole);
-  // Subscribed so the author list re-renders as attribution changes.
-  useEditorStore((s) => s.remoteLineChanges);
-  useEditorStore((s) => s.remoteLineDeletions);
+  /* Subscribed so the author list re-renders as attribution changes — and
+     bound to names now, because the memo below needs them as dependencies
+     rather than relying on a re-render happening for some other reason. */
+  const remoteLineChanges = useEditorStore((s) => s.remoteLineChanges);
+  const remoteLineDeletions = useEditorStore((s) => s.remoteLineDeletions);
   const lastGoodRewindIndex = useEditorStore((s) => s.lastGoodRewindIndex);
 
   const captureCheckpoint = useEditorStore((s) => s.captureCheckpoint);
+  const captureMyChanges = useEditorStore((s) => s.captureMyChanges);
+  const deleteMyCheckpoint = useEditorStore((s) => s.deleteMyCheckpoint);
+  const myCheckpoints = useEditorStore((s) => s.myCheckpoints);
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewPath, setPreviewPath] = useState(null);
@@ -186,6 +196,9 @@ const SessionRewind = () => {
   // null | 'ok' | 'fail' — what the owner is marking THIS save as.
   const [draftRun, setDraftRun] = useState(null);
   const [openAuthor, setOpenAuthor] = useState(null);
+  // Why a personal save was refused, and which one is expanded.
+  const [mineNotice, setMineNotice] = useState(null);
+  const [openMine, setOpenMine] = useState(null);
   // Individual edits that have been expanded past the preview cap.
   const [longOpen, setLongOpen] = useState(() => new Set());
 
@@ -209,6 +222,21 @@ const SessionRewind = () => {
     setSaving(true);
     // "Saved" is a brief acknowledgement; the new point on the track is the
     // real confirmation.
+    setTimeout(() => setSaving(false), 1600);
+  };
+
+  /* The collaborator's equivalent. Failure is reported rather than swallowed:
+     the one way this refuses is "you have not changed anything since your last
+     save", which the user needs told or the button looks broken. */
+  const handleSaveMine = () => {
+    const result = captureMyChanges({ label: draftLabel });
+    if (!result?.ok) {
+      setMineNotice(result?.reason || 'Nothing to save yet.');
+      return;
+    }
+    setDraftLabel('');
+    setMineNotice(null);
+    setSaving(true);
     setTimeout(() => setSaving(false), 1600);
   };
 
@@ -277,7 +305,20 @@ const SessionRewind = () => {
   }
 
   const scrubAt = point ? atOf(point.at) : 0;
-  const sinceList = point ? changesSince(point.at) : [];
+
+  /* Memoised: changesSince walks every attribution record in the session, and
+     this renders on every hover, scrub and keystroke. With two people that was
+     free; with ten it is the panel's hot path, so it recomputes only when the
+     selected point or the underlying records actually move. */
+  const sinceList = useMemo(
+    () => (point ? changesSince(point.at) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [point?.at, changesSince, remoteLineChanges, remoteLineDeletions]
+  );
+
+  /* Only this room's. A save carries the session it was made in, so rejoining
+     the same session finds them and a different one starts empty. */
+  const mine = (myCheckpoints || []).filter((p) => p.sessionId === (sessionId || null));
 
   const handleRestore = async () => {
     if (!confirming) { setConfirming(true); return; }
@@ -319,10 +360,51 @@ const SessionRewind = () => {
           </button>
         </div>
       ) : (
-        <div className="rw-save is-passive">
-          <span className="rw-save-note">
-            The session owner decides when the project is checkpointed.
-          </span>
+        /* ── The collaborator's own save ──
+         *
+         * This used to be a sentence explaining that they could not do
+         * anything. True, but only about the PROJECT: checkpointing that
+         * rewrites every file on every screen, so it is one person's call.
+         * Their own work is not the project, and having no way to mark it left
+         * them with no history at all.
+         *
+         * Same control, deliberately different subject — "my changes" rather
+         * than "the project" — and no run marker, because a verdict on the
+         * build is a statement about everybody's code. */
+        <div className="rw-save">
+          <input
+            className="rw-save-input"
+            placeholder="What did you just finish?  (optional)"
+            value={draftLabel}
+            onChange={(e) => setDraftLabel(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveMine(); }}
+            spellCheck={false}
+            maxLength={120}
+            disabled={rewindBusy}
+          />
+          <button
+            className="rw-save-btn"
+            onClick={handleSaveMine}
+            disabled={rewindBusy || saving}
+          >
+            {saving ? 'Saved' : 'Save my changes'}
+          </button>
+        </div>
+      )}
+
+      {/* Said once, plainly, instead of on every disabled control. */}
+      {!mayChange && (
+        <div className="rw-mine-scope">
+          Your saves record <b>your own edits</b> — what each line was and what you
+          made it. Only the session owner can checkpoint or restore the whole
+          project.
+        </div>
+      )}
+
+      {!mayChange && mineNotice && (
+        <div className="rw-notice">
+          {mineNotice}
+          <button className="rw-notice-x" onClick={() => setMineNotice(null)} aria-label="Dismiss">×</button>
         </div>
       )}
 
@@ -350,22 +432,37 @@ const SessionRewind = () => {
       <div className="rwl">
         <div className="rwl-sky">
           {rewindLog.map((p, i) => {
-            if (!p.run) return null;
+            /* Every checkpoint draws something.
+             *
+             * This used to `return null` for any point with no run verdict —
+             * which is most of them, since marking one is optional. So a user
+             * who saved three times and marked none of them saw an empty track
+             * and reasonably concluded only the latest had been kept. The
+             * scrubber worked the whole time; there was simply nothing on it to
+             * suggest there was anywhere to scrub TO.
+             *
+             * A coin for "saved here", the block and the goomba keeping their
+             * meanings for points somebody actually judged. */
             /* The flag stands on the last clean run, so that checkpoint would
                otherwise draw a block underneath it at the same offset. The flag
                already says "ran clean", and says more — it takes the spot. */
             if (i === lastGood) return null;
             const at = atOf(p.at);
+            const ok = p.run === 'ok';
+            const failed = p.run === 'fail';
+            // Offset by the sprite's own width, or a coin drifts past the end.
+            const width = ok || failed ? BLOCK_W : COIN_W;
+            const what = ok ? 'Ran clean' : failed ? 'Run failed' : 'Saved';
             return (
               <span
                 key={p.id}
-                className={`rwl-marker ${p.run === 'ok' ? 'is-ok' : 'is-fail'}`}
-                style={{ left: `calc(${at * 100}% - ${BLOCK_W * at}px)` }}
-                title={`${p.run === 'ok' ? 'Ran clean' : 'Run failed'} at ${clock(p.at)}`}
+                className={`rwl-marker ${ok ? 'is-ok' : failed ? 'is-fail' : 'is-saved'}`}
+                style={{ left: `calc(${at * 100}% - ${width * at}px)` }}
+                title={`${what}${p.label ? ` — “${p.label}”` : ''} at ${clock(p.at)}`}
               >
-                {p.run === 'ok'
-                  ? <QuestionBlock hit={false} px={1} />
-                  : <PixelSprite rows={GOOMBA} px={1} />}
+                {ok ? <QuestionBlock hit={false} px={1} />
+                  : failed ? <PixelSprite rows={GOOMBA} px={1} />
+                  : <Coin px={1} />}
               </span>
             );
           })}
@@ -427,6 +524,9 @@ const SessionRewind = () => {
           <PixelSprite rows={GOOMBA} px={1} /> run failed
         </span>
         <span className="rwl-key">
+          <Coin px={1} /> saved point
+        </span>
+        <span className="rwl-key">
           <CheckpointFlag h={13} /> last working build
         </span>
         <span className="rwl-key">
@@ -460,6 +560,38 @@ const SessionRewind = () => {
               )}
             </>
           )}
+        </div>
+
+        {/* ── Step, don't only drag ──
+         *
+         * The slider is a range input the width of the stage, so with two
+         * checkpoints on it each one is half a screen wide and "go back one"
+         * is a gesture you have to aim. These are the same movement as a click,
+         * they say how many points exist, and they are what makes the per-user
+         * and per-file undo reachable at all — those only appear once you are
+         * standing somewhere earlier than the latest. */}
+        <div className="rw-step">
+          <button
+            className="rw-step-btn"
+            onClick={() => { setRewindIndex(Math.max(0, index - 1)); setConfirming(false); }}
+            disabled={isEmpty || index <= 0}
+            title="Previous checkpoint"
+            aria-label="Previous checkpoint"
+          >
+            ◀
+          </button>
+          <span className="rw-step-pos">
+            {isEmpty ? '—' : `${index + 1} / ${count}`}
+          </span>
+          <button
+            className="rw-step-btn"
+            onClick={() => { setRewindIndex(Math.min(count - 1, index + 1)); setConfirming(false); }}
+            disabled={isEmpty || index >= count - 1}
+            title="Next checkpoint"
+            aria-label="Next checkpoint"
+          >
+            ▶
+          </button>
         </div>
 
         <div className="rw-deck-actions">
@@ -653,7 +785,15 @@ const SessionRewind = () => {
             <div className="rwc-none">Nothing from anyone else after this point</div>
           ) : sinceList.map((u) => {
             const open = openAuthor === u.userId;
-            const shown = open ? u.edits.slice(0, 12) : [];
+            /* Grouped from ALL of this person's edits, not a slice of them.
+             *
+             * It used to take the first twelve and group those, which meant a
+             * busy author's fourth and fifth files never appeared at all — and
+             * now that each file carries its own undo, an unlisted file is an
+             * action the owner cannot reach. Every file is listed; the LINES
+             * inside each are what gets capped, per file, so one noisy file
+             * cannot bury the others either. */
+            const groups = open ? byFile(u.edits) : [];
             return (
               <div key={u.userId} className={`rwc-block ${open ? 'is-open' : ''}`}>
                 <button
@@ -677,7 +817,7 @@ const SessionRewind = () => {
 
                 {open && (
                   <div className="rwc-edits">
-                    {byFile(shown).map((g) => (
+                    {groups.map((g) => (
                       <div key={g.path} className="rwf">
                         <div className="rwf-head">
                           <span className="rwf-name">{g.path.split('/').pop()}</span>
@@ -689,9 +829,33 @@ const SessionRewind = () => {
                           <span className="rwf-n">
                             {g.edits.length} change{g.edits.length === 1 ? '' : 's'}
                           </span>
+
+                          {/* The middle rung. One line was too small and one
+                              person was too big: what actually goes wrong is
+                              one person's work in one file, and until now
+                              fixing that meant clicking twenty lines or
+                              discarding four other files with it.
+
+                              Acts on everything this person changed in this
+                              file since the checkpoint — not only the edits
+                              listed below, which are capped at twelve. */}
+                          {mayChange && (
+                            <button
+                              className="rwf-undo"
+                              disabled={rewindBusy}
+                              onClick={async (ev) => {
+                                ev.stopPropagation();
+                                const res = await undoChangesSince(u.userId, point.at, { path: g.path });
+                                if (!res.ok) useEditorStore.setState({ rewindNotice: res.reason });
+                              }}
+                              title={`Undo everything ${u.username} changed in ${g.path.split('/').pop()} since ${clock(point.at)}`}
+                            >
+                              <IconUndo /> undo file
+                            </button>
+                          )}
                         </div>
 
-                        {g.edits.map((e, i) => (
+                        {g.edits.slice(0, EDITS_PER_FILE).map((e, i) => (
                           <div key={`${e.line}:${i}`} className="rwr">
                             {/* The line number lives in a gutter, as it does in
                                 the editor, so the eye reads down a column
@@ -758,14 +922,18 @@ const SessionRewind = () => {
                             )}
                           </div>
                         ))}
+
+                        {/* Per file now, not one global count. "40 more not
+                            shown" told you nothing about WHERE; this says which
+                            file is still holding work you cannot see — and the
+                            undo beside it acts on all of them regardless. */}
+                        {g.edits.length > EDITS_PER_FILE && (
+                          <div className="rwc-trunc">
+                            {g.edits.length - EDITS_PER_FILE} more in this file
+                          </div>
+                        )}
                       </div>
                     ))}
-
-                    {u.edits.length > shown.length && (
-                      <div className="rwc-trunc">
-                        {u.edits.length - shown.length} more not shown
-                      </div>
-                    )}
 
                     {mayChange && (
                       <button
@@ -781,6 +949,109 @@ const SessionRewind = () => {
                         Undo everything from {u.username}
                       </button>
                     )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── My saved changes ──
+       *
+       * A collaborator's own history, read-only by construction. There is no
+       * Restore here and no per-edit revert: putting any of this back into the
+       * project is a merge, and merging is the owner's call. What it does give
+       * is the thing that was missing — the ability to look at what a line was
+       * before you changed it, hours later, without asking anyone.
+       *
+       * Filtered to the current session so rejoining the same room finds your
+       * notebook where you left it, and a different room never inherits it. */}
+      {!mayChange && mine.length > 0 && (
+        <div className="rw-mine">
+          <div className="rw-mine-head">
+            <span>My saved changes</span>
+            <span className="rw-cap-rule" />
+            <span className="rw-mine-total">
+              {mine.length} save{mine.length === 1 ? '' : 's'}
+            </span>
+          </div>
+
+          {[...mine].reverse().map((p) => {
+            const isOpen = openMine === p.id;
+            return (
+              <div key={p.id} className={`rw-mine-row ${isOpen ? 'is-open' : ''}`}>
+                <button
+                  type="button"
+                  className="rw-mine-bar"
+                  onClick={() => setOpenMine(isOpen ? null : p.id)}
+                  aria-expanded={isOpen}
+                >
+                  <span className="rwc-caret"><IconChevron open={isOpen} /></span>
+                  <span className="rw-mine-time">{clock(p.at)}</span>
+                  {p.label && <span className="rw-mine-label">“{p.label}”</span>}
+                  <span className="rw-mine-lines">
+                    {p.lines} line{p.lines === 1 ? '' : 's'}
+                  </span>
+                  <span className="rw-mine-files">
+                    {(p.files || []).slice(0, 2).map((f) => f.path.split('/').pop()).join(', ')}
+                    {(p.files || []).length > 2 && ` +${p.files.length - 2}`}
+                  </span>
+                </button>
+
+                {isOpen && (
+                  <div className="rw-mine-body">
+                    {byFile(p.edits || []).map((g) => (
+                      <div key={g.path} className="rwf">
+                        <div className="rwf-head">
+                          <span className="rwf-name">{g.path.split('/').pop()}</span>
+                          {g.path.includes('/') && (
+                            <span className="rwf-dir">
+                              {g.path.slice(0, g.path.lastIndexOf('/'))}
+                            </span>
+                          )}
+                          <span className="rwf-n">
+                            {g.edits.length} change{g.edits.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+
+                        {g.edits.map((e, i) => (
+                          <div key={`${e.line}:${i}`} className="rwr">
+                            <span className="rwr-ln">{e.line}</span>
+                            <span className="rwr-body">
+                              {editRows(e).slice(0, ROWS_PREVIEW).map((r, j) => (
+                                <span key={j} className={`rwr-line ${r.cls}`}>
+                                  <i className="rwr-sign">{r.sign}</i>
+                                  {r.text === '' || r.text == null
+                                    ? <em className="rwr-empty">blank line</em>
+                                    : r.text}
+                                </span>
+                              ))}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+
+                    {p.truncated > 0 && (
+                      <div className="rwc-trunc">{p.truncated} more not kept</div>
+                    )}
+
+                    <div className="rw-mine-foot">
+                      <span className="rw-mine-readonly">
+                        Yours to read. Ask the owner to restore anything from here.
+                      </span>
+                      <button
+                        className="rw-mine-del"
+                        onClick={() => {
+                          deleteMyCheckpoint(p.id);
+                          setOpenMine(null);
+                        }}
+                        title="Delete this save"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

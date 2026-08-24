@@ -765,8 +765,12 @@ const MonacoEditor = () => {
         useEditorStore.getState().setCode(text, { attribute: !meta?.seed });
         schedulePersist(p, text);
       },
-      onRemoteChange: (p, text, uid) => {
-        useEditorStore.getState().updateRemoteFile(p, text, uid);
+      /* `bulk` has to be forwarded, not dropped. It marks content that ARRIVED
+         — a sync, a seed, a project handed to a joiner — as opposed to content
+         somebody typed. updateRemoteFile still applies the text either way; the
+         flag only decides whether anyone is credited with having written it. */
+      onRemoteChange: (p, text, uid, bulk) => {
+        useEditorStore.getState().updateRemoteFile(p, text, uid, bulk);
       },
     });
 

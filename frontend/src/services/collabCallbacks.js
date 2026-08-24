@@ -15,8 +15,59 @@
  * ------------------------------------------------------- */
 
 import useEditorStore from '../store/useEditorStore';
-import { getSessionFiles } from './api';
+import { getSessionFiles, uploadProject } from './api';
 import { disconnectWebSocket } from './socket';
+
+/* Sessions whose server copy has already been refreshed from disk this launch.
+ * The STOMP client calls onConnect again on every automatic reconnect, and a
+ * Wi-Fi blink is not a reason to re-read and re-upload an entire project. */
+let diskPushedFor = null;
+
+/**
+ * Bring the session's copy of the project up to date with the folder on disk.
+ *
+ * Only the owner, and only in folder mode. In that combination the disk is the
+ * project and `project_files` is a transport copy that was last written
+ * whenever this session last ran — so after a relaunch it can be behind by
+ * everything the user did in another editor in between.
+ *
+ * That copy is not dead weight: it is what a NEW collaborator is handed when
+ * they join. Left stale, the first fix here would only move the problem — the
+ * host would see their real files while anyone joining received the old ones.
+ *
+ * Strictly one direction. The disk is read and pushed up; nothing comes back.
+ * A collaborator never does this, because their folder is a copy of the
+ * session rather than the source of it.
+ *
+ * Deliberately silent: no project-sync broadcast. The people already in the
+ * room are in sync through the CRDT, and telling them to re-read the database
+ * would make them overwrite their own disk-backed state with it.
+ */
+const refreshSessionCopyFromDisk = async (sessionId) => {
+  const { workspaceRoot, userRole } = useEditorStore.getState();
+  const workspace = typeof window !== 'undefined' ? window.electronAPI?.workspace : null;
+
+  if (userRole !== 'owner') return;
+  if (!workspaceRoot || !workspace?.readAll) return;
+  if (diskPushedFor === sessionId) return;
+  diskPushedFor = sessionId;
+
+  try {
+    const contents = await workspace.readAll(workspaceRoot);
+    const files = Object.entries(contents).map(([path, content]) => ({ path, content }));
+    // An empty read is far more likely to be a failed walk than a genuinely
+    // empty project, and uploading it would clear the session's only copy.
+    if (files.length === 0) return;
+
+    await uploadProject(sessionId, files);
+    console.log(`[Causify] Session copy brought up to date from disk (${files.length} files).`);
+  } catch (err) {
+    /* Best effort. Failing here costs a joiner an up-to-date first copy; it
+       must never stop the owner's own reconnect. */
+    diskPushedFor = null; // let the next reconnect try again
+    console.warn('[Causify] Could not refresh the session copy from disk:', err.message);
+  }
+};
 
 /**
  * @param {Object}   opts
@@ -173,11 +224,38 @@ export const buildCollabCallbacks = ({ sessionId, onConnected }) => ({
 /**
  * The reconnect path's onConnected: the session outlived the page, so re-read
  * the files rather than trusting whatever was cached locally.
+ *
+ * ── Which copy is the truth ──
+ *
+ * "Cached locally" is only true in session-only mode, where the app's own copy
+ * of the project is a snapshot from the last time the window was open and the
+ * database holds the newer one. With a real folder open it is the other way
+ * round: the disk is the project, it has just been re-read on launch, and the
+ * `project_files` rows are the stale party — they were last written whenever
+ * this session last synced, which may be days and one VS Code session ago.
+ *
+ * Overwriting the freshly-read folder with those rows is what made edits made
+ * in another editor disappear on reopen. So the fetch below is skipped
+ * entirely when a folder is open. Nothing else about the reconnect changes:
+ * the socket, presence, locks, the CRDT and the history all still come up, and
+ * collaborators' live edits still arrive and are still written to disk. The
+ * only thing withheld is the database's opinion about what the files contain.
  */
 export const reconnectOnConnected = (sessionId) => () => {
   console.log('[Causify] Reconnected to Collab');
   const currentState = useEditorStore.getState();
   currentState.loadSessionHistory(sessionId);
+
+  /* Read fresh rather than from the snapshot above: the folder is reopened
+     during bootstrap and this runs once the socket answers, so the two are
+     ordered but not atomically. */
+  if (useEditorStore.getState().workspaceRoot) {
+    console.log('[Causify] Local folder is open — keeping the files on disk over the session copy.');
+    // The traffic goes the other way instead: disk up to the session, so the
+    // next person to join is handed what is actually in the folder.
+    refreshSessionCopyFromDisk(sessionId);
+    return;
+  }
 
   getSessionFiles(sessionId).then((serverFiles) => {
     if (!serverFiles || serverFiles.length === 0) return;

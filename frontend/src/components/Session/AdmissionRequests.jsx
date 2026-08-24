@@ -12,9 +12,10 @@
  * while you are typing is a "yes" nobody made. Someone is standing outside; the
  * prompt waits until you say something.
  *
- * Monochrome, like the rest of the app. The urgency is carried by motion — a
- * ring going out from the person's initials, once every couple of seconds, the
- * visual of a knock — and by a clock that counts up while they stand there.
+ * Monochrome, like the rest of the app, and still. The urgency is carried by a
+ * clock counting up while they stand there, and by the dashed frame — the same
+ * mark the agent's proposal uses, which reads as "this is provisional, decide
+ * about it" rather than as another panel that has always been there.
  * Colour would have said "error"; this is not an error, it is someone waiting.
  *
  * Rendered for the owner only. The pending list is broadcast to the whole
@@ -57,19 +58,18 @@ const AdmissionRequests = () => {
 
   return (
     <div className="adm">
-      <div className="adm-rail" />
-
       {pending.length > 1 && (
         <div className="adm-count">{pending.length} waiting</div>
       )}
 
       {pending.map((req) => (
         <div key={req.requestId} className="adm-row">
-          {/* The knock: initials with a ring leaving them on a slow loop. */}
-          <span className="adm-knock">
-            <span className="adm-av">{initials(req.username)}</span>
-            <span className="adm-ring" />
-          </span>
+          {/* Just the initials. The pulsing ring that used to leave them is
+              gone: a strip that already waits for an answer does not also need
+              to twitch to be noticed, and a loop running behind whatever you
+              were reading is the kind of motion you end up working around. The
+              clock counting up carries the waiting on its own. */}
+          <span className="adm-av">{initials(req.username)}</span>
 
           <div className="adm-who">
             <span className="adm-name">{req.username}</span>

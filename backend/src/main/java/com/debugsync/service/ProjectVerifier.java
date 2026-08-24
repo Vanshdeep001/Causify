@@ -74,10 +74,42 @@ public class ProjectVerifier {
             "transform failed", "build failed", "pre-transform error"
     );
 
+    /**
+     * Extensions whose CONTENT cannot stop a dev server coming up.
+     *
+     * The test for membership is narrow: could a file of this type, however
+     * badly mangled, make `npm run dev` fail to reach "ready"? Stylesheets,
+     * markup and prose are served as assets and never executed at boot, so the
+     * answer is no and a restart tells us nothing.
+     *
+     * JSON is deliberately absent — a broken package.json or tsconfig stops a
+     * boot cold — and is handled by its own in-process parse instead. Anything
+     * a bundler compiles (jsx, ts, vue, svelte) is absent for the same reason:
+     * booting is the only check those have.
+     */
+    private static final java.util.Set<String> BOOT_TELLS_NOTHING = java.util.Set.of(
+            "css", "scss", "sass", "less", "styl",
+            "html", "htm", "svg", "md", "mdx", "txt"
+    );
+
+    /** Reused: mappers are thread-safe once configured, and building one per check is waste. */
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
     private final DevServerService devServerService;
 
     public ProjectVerifier(DevServerService devServerService) {
         this.devServerService = devServerService;
+    }
+
+    /** Lower-case extension without the dot, or "" when there is none. */
+    private static String extensionOf(Path target) {
+        String name = target.getFileName().toString().toLowerCase(Locale.ROOT);
+        return name.contains(".") ? name.substring(name.lastIndexOf('.') + 1) : "";
+    }
+
+    private static boolean bootTellsNothing(Path target) {
+        return BOOT_TELLS_NOTHING.contains(extensionOf(target));
     }
 
     /** The verdict on one candidate patch. */
@@ -136,6 +168,27 @@ public class ProjectVerifier {
             // Cheap gate said no. Nothing is on disk and no server was touched.
             return syntax;
         }
+        /* ── When restarting proves nothing ──
+         *
+         * The boot gate costs up to half a minute: back up the file, write the
+         * candidate, restart the server, watch it come up, put the original
+         * back. That is a fair price for a change that could stop the server
+         * starting.
+         *
+         * A stylesheet cannot. Neither can markup or a README. Vite, Next and
+         * the rest serve those as assets — the content is never executed at
+         * boot, so the server comes up green whatever is in them, and the
+         * "verification" is half a minute spent proving something that was
+         * true before the patch. For a one-line colour change typed at the
+         * agent, that half minute IS the feature's latency.
+         *
+         * Reported honestly as unverified rather than dressed up as a pass:
+         * nothing has actually checked that the change is right, and the panel
+         * already knows how to say so. */
+        if (bootTellsNothing(target)) {
+            return Result.unknown("Restarting the dev server can't check a "
+                    + extensionOf(target) + " change, so this was not verified.");
+        }
 
         if (serverType == null || serverType.isBlank()) {
             return Result.unknown("No dev server is running, so the fix could not be booted.");
@@ -164,14 +217,29 @@ public class ProjectVerifier {
      * next, and pretending we checked would be the lie.
      */
     private Result checkSyntax(Path target, String candidate) {
-        String name = target.getFileName().toString().toLowerCase(Locale.ROOT);
-        String ext = name.contains(".") ? name.substring(name.lastIndexOf('.') + 1) : "";
+        String ext = extensionOf(target);
 
         String[] command;
         String suffix;
         switch (ext) {
             case "js", "mjs", "cjs" -> { command = new String[] { "node", "--check", "%s" }; suffix = "." + ext; }
             case "py" -> { command = new String[] { "python", "-m", "py_compile", "%s" }; suffix = ".py"; }
+            /* In process, and therefore instant.
+             *
+             * JSON earns its own gate for two reasons. It is the one "data"
+             * file that genuinely can stop a server booting — a broken
+             * package.json, tsconfig or manifest does exactly that — so it
+             * cannot join the skip list below. And parsing it needs no node,
+             * no python and no subprocess at all, so the answer is conclusive
+             * and free rather than a 25-second restart. */
+            case "json" -> {
+                try {
+                    JSON.readTree(candidate);
+                    return Result.pass();
+                } catch (Exception e) {
+                    return Result.fail(truncate("The patched file is not valid JSON:\n" + e.getMessage()));
+                }
+            }
             default -> {
                 // jsx/tsx/ts/vue/svelte need the project's own toolchain to parse,
                 // which the boot gate exercises properly anyway.

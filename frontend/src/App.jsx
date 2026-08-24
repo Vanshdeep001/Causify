@@ -14,7 +14,7 @@ import useEditorStore from './store/useEditorStore';
 import { connectWebSocket, disconnectWebSocket } from './services/socket';
 import { buildCollabCallbacks, reconnectOnConnected } from './services/collabCallbacks';
 import { saveFile, getSession, touchSession, leaveSession } from './services/api';
-import { setOrigin, buildJoinCode } from './services/backendHost';
+import { setOrigin, resetOrigin, buildJoinCode, clearSessionToken, getSessionToken, isRemoteHost } from './services/backendHost';
 import { publishSession } from './services/rendezvous';
 import MigrateWorkspaceModal from './components/Editor/MigrateWorkspaceModal';
 import causifyLogo from './assets/causify-mark.png';
@@ -76,11 +76,24 @@ const App = () => {
   };
 
   // ── Bootstrap on launch ──
-  // Three cases, none of which creates a session:
-  //   • a folder opened from disk  → re-read it and carry on
-  //   • a live session             → keep it, and mark it as in use
-  //   • files from before local mode existed → offer to move them onto disk
-  // Causify no longer mints a session on its own; that only happens when the
+  //
+  // Two independent responsibilities, run in this order:
+  //
+  //   1. THE FILES. A folder opened from disk is re-read, so anything added,
+  //      removed or edited outside Causify is picked up. Nothing else in this
+  //      function may replace what that read produced.
+  //   2. THE SESSION. A persisted session is verified and marked as in use, or
+  //      cleared if the backend no longer has it.
+  //
+  // These used to be one branch: opening a folder returned before the session
+  // was ever looked at. That had two consequences, both wrong. The session was
+  // never touched, so its retention clock kept running while the user was
+  // demonstrably still working in it — and a session that had already been
+  // swept stayed in localStorage, so the app reconnected to a room that no
+  // longer existed. Having a folder open says nothing about whether the
+  // session behind it is still alive, so the two are decided separately now.
+  //
+  // Causify still never mints a session on its own; that only happens when the
   // user starts or joins one.
   useEffect(() => {
     // StrictMode remount (or a prior mount) already ran the bootstrap — just
@@ -92,50 +105,114 @@ const App = () => {
       try {
         const store = useEditorStore.getState();
 
-        // A folder opened from disk restores itself: re-read the directory so
-        // files added or removed outside Causify are picked up. It deliberately
-        // returns before the session logic below — a local workspace needs no
-        // session, and uploading it would recreate the duplication that local
-        // mode exists to avoid.
+        /* ── 1. The folder ── */
+        let hasWorkspace = false;
         if (store.workspaceRoot && window.electronAPI?.workspace) {
           try {
             const restored = await window.electronAPI.workspace.reopen(store.workspaceRoot);
             if (restored) {
               store.openLocalWorkspace(restored);
+              hasWorkspace = true;
               console.log('[Causify] Reopened local workspace:', restored.root);
             } else {
               console.warn('[Causify] Previously opened folder is gone — clearing it.');
               store.closeLocalWorkspace();
             }
           } catch (err) {
+            /* A folder that is configured but momentarily unreadable — a locked
+               drive, a network share still mounting — is still the project. It
+               must keep its authority over the session copy, or a transient
+               read error would hand the database the right to overwrite it. */
             console.warn('[Causify] Could not reopen the local workspace:', err.message);
+            hasWorkspace = Boolean(useEditorStore.getState().workspaceRoot);
           }
+        }
+
+        /* ── 2. The session ──
+         *
+         * Runs whether or not a folder is open. Touching is what keeps the
+         * retention sweep off a session someone is still using, and it is
+         * deliberately not coupled to loading files: those are two different
+         * questions and only one of them has an answer that depends on mode. */
+        const { sessionId: storedId, currentUser: storedUser } = useEditorStore.getState();
+        let sessionAlive = false;
+        let sessionGone = false;
+
+        if (storedId && storedUser) {
+          try {
+            const data = await getSession(storedId);
+            if (data && (data.id || data.sessionId)) {
+              sessionAlive = true;
+              touchSession(storedId).catch(() => { /* best effort */ });
+            } else {
+              sessionGone = true;
+            }
+          } catch (err) {
+            /* Only a real 404 means the session is gone. A timeout or a refused
+             * connection means the HOST is unreachable — their laptop is shut,
+             * the tunnel is between addresses — and the session may well still
+             * be there when they come back. Discarding it on a network blink
+             * would log the user out of a session that never ended. */
+            if (err.response?.status === 404) {
+              sessionGone = true;
+            } else {
+              console.warn('[Causify] Could not reach the session host — keeping the stored session:', err.message);
+            }
+          }
+        }
+
+        /* ── 3. Files that exist only inside the app ──
+         *
+         * Decided before the dead session is cleared, because clearing it also
+         * clears those files when there is no folder holding them. Offering the
+         * move first is what keeps a pre-local-mode workspace recoverable.
+         *
+         * migrateLegacyWorkspace releases the session itself once the files are
+         * safely on disk, so the clear below is skipped in this one case. */
+        const strandedFiles = hasWorkspace
+          ? 0
+          : Object.keys(useEditorStore.getState().files || {}).length;
+        const offeringMigration = !sessionAlive
+          && strandedFiles > 0
+          && Boolean(window.electronAPI?.workspace);
+
+        if (offeringMigration) {
+          setLegacyWorkspace({
+            fileCount: strandedFiles,
+            name: useEditorStore.getState().sessionName,
+          });
           return;
         }
 
-        const fileEntries = Object.entries(store.files || {});
-
-        // Verify a persisted session — keep it if the backend still has it, and
-        // mark it as in use so the retention sweep leaves it alone.
-        if (store.sessionId && store.currentUser) {
-          try {
-            const data = await getSession(store.sessionId);
-            if (data && (data.id || data.sessionId)) {
-              touchSession(store.sessionId).catch(() => { /* best effort */ });
-              return; // alive — reconnect handles the rest
-            }
-          } catch {
-            console.warn('[Causify] Stored session is no longer on the backend.');
-          }
+        /* Files with nowhere else to live and no way to move them — a browser,
+         * or a desktop build without the workspace bridge. resetSession would
+         * empty `files` here, and localStorage is the only copy of them, so a
+         * tidy-up would be a deletion. The stale id is by far the lesser evil:
+         * it makes the app think it is in a session that has ended, which is
+         * recoverable, and it stops nothing the user can still do locally. */
+        if (sessionGone && strandedFiles > 0) {
+          console.warn(
+            `[Causify] Session is gone but ${strandedFiles} file(s) exist only in this app — keeping them.`
+          );
+          return;
         }
 
-        if (fileEntries.length === 0) return; // fresh start — nothing to attach
-
-        // A workspace from before local mode: its files exist only inside the
-        // app. Offer to move them onto disk rather than silently recreating a
-        // session to hold them, which is what used to make sessions pile up.
-        if (window.electronAPI?.workspace) {
-          setLegacyWorkspace({ fileCount: fileEntries.length, name: store.sessionName });
+        /* ── 4. A session the backend no longer has ──
+         *
+         * Left in place, the id would sit in localStorage forever and the
+         * reconnect below would open a socket to a room that was swept days
+         * ago. Cleared the same way leaving a session clears it — token,
+         * origin, then state.
+         *
+         * resetSession keeps a local workspace intact by design: the folder
+         * belongs to the user, not to the session, so an expired session must
+         * cost them the collaboration and nothing else. They can start or join
+         * a new session from the same folder immediately. */
+        if (sessionGone) {
+          console.warn('[Causify] Stored session is no longer on the backend — clearing it.');
+          clearSessionToken();
+          resetOrigin();
+          useEditorStore.getState().resetSession();
         }
       } catch (err) {
         console.warn('[Causify] Could not bootstrap:', err.message);
@@ -250,6 +327,32 @@ const App = () => {
       sessionId,
       onConnected: reconnectOnConnected(sessionId),
     }));
+
+    /* ── Half a session ──
+     *
+     * The session id survives a reopen (localStorage) but the membership token
+     * does not (sessionStorage, deliberately — it is a credential and windows
+     * are where credentials end). For the host that costs nothing: the guard
+     * only demands a token from requests arriving off-machine, and theirs are
+     * local.
+     *
+     * A collaborator reconnecting through the tunnel is the broken case. The
+     * socket comes up, presence works, editing works — and then Run, the dev
+     * server, git and the agent all fail, because those are exactly the
+     * endpoints that ask for proof of membership. Nothing on screen explains
+     * why, which makes it read as the feature being broken.
+     *
+     * Detected here and said out loud instead. The way back is the join flow
+     * they already know, replayed for the session they are already in; the
+     * token is only reissued by the server, and only to someone who can still
+     * produce the password.
+     */
+    if (useEditorStore.getState().userRole === 'collaborator'
+        && isRemoteHost()
+        && !getSessionToken()) {
+      console.warn('[Causify] Reconnected without a session token — full access needs the password again.');
+      useEditorStore.getState().setReauthNeeded(true);
+    }
   }, [bootstrapDone, sessionId, currentUser]);
 
   // Keyboard Shortcuts

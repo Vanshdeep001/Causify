@@ -46,9 +46,29 @@ public class GeminiProvider implements LlmProvider {
         return key != null && (key.startsWith("AIza") || key.startsWith("AQ."));
     }
 
+    /**
+     * Models that accept {@code thinkingBudget: 0}.
+     *
+     * Gated by name rather than tried-and-caught: 2.5 Pro rejects a budget of
+     * zero (its minimum is 128) and pre-2.5 models do not know the field at
+     * all, so guessing wrong costs a 400 and a retry — which is the opposite of
+     * what the flag is for. The 2.5 Flash line is the one that both supports it
+     * and is fast enough to be worth the switch.
+     */
+    private static boolean canSkipThinking(String modelId) {
+        String m = modelId.toLowerCase(java.util.Locale.ROOT);
+        return m.contains("2.5") && m.contains("flash");
+    }
+
     @Override
     public String complete(String apiKey, String model, String prompt, int maxTokens, double temperature)
             throws Exception {
+        return complete(apiKey, model, prompt, maxTokens, temperature, false);
+    }
+
+    @Override
+    public String complete(String apiKey, String model, String prompt, int maxTokens,
+                           double temperature, boolean preferSpeed) throws Exception {
 
         String modelId = (model == null || model.isBlank()) ? defaultModel() : model;
 
@@ -65,6 +85,22 @@ public class GeminiProvider implements LlmProvider {
         ObjectNode generationConfig = mapper.createObjectNode();
         generationConfig.put("maxOutputTokens", maxTokens);
         generationConfig.put("temperature", temperature);
+
+        /* Thinking off, when the caller asked for speed and the model allows it.
+         *
+         * This is the single largest saving available here. The reasoning pass
+         * is not a small overhead on top of the answer — on short tasks it IS
+         * the request, several times over, and it happens before the first
+         * token of the reply exists. Turning it off for a one-line edit takes
+         * the round trip from seconds to about one.
+         *
+         * Never applied to root-cause analysis or to a retry, where working the
+         * problem through is exactly what is being paid for. */
+        if (preferSpeed && canSkipThinking(modelId)) {
+            ObjectNode thinking = mapper.createObjectNode();
+            thinking.put("thinkingBudget", 0);
+            generationConfig.set("thinkingConfig", thinking);
+        }
 
         ObjectNode body = mapper.createObjectNode();
         body.set("contents", contents);

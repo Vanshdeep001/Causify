@@ -284,6 +284,10 @@ const FileExplorer = ({ onToggle }) => {
   const absolutePathFor = useEditorStore((s) => s.absolutePathFor);
   const canOpenLocalFolder = typeof window !== 'undefined' && Boolean(window.electronAPI?.workspace);
 
+  /* Bumped by the connection banner when a returning collaborator needs to
+     prove membership again — see openRejoinPanel in the store. */
+  const rejoinRequested = useEditorStore((s) => s.rejoinRequested);
+
   /* ── Git decorations in the tree ──
    * Polled here rather than read from the git panel, because the panel is
    * usually closed and the decorations still have to be right. Parsed once per
@@ -370,6 +374,10 @@ const FileExplorer = ({ onToggle }) => {
   /* Standing at the door: { sessionId, requestId, since }. Null when not
      waiting, which is also what the join panel keys its two faces off. */
   const [waiting, setWaiting] = useState(null);
+  /* Set just before the join panel is opened for a rejoin, and consumed by the
+     effect that otherwise blanks the form. A ref rather than state because it
+     has to be readable in that same commit, before any re-render. */
+  const rejoinPrefillRef = useRef(null);
   // True from the instant an admission is spent until the join settles.
   const admittingRef = useRef(false);
   const [codeCopied, setCodeCopied] = useState(false);
@@ -442,14 +450,32 @@ const FileExplorer = ({ onToggle }) => {
       setProjName('My Project');
       setPassword('');
     } else if (panel === 'join') {
-      setJoinUsername('');
-      setJoinId('');
+      /* One exception to the blank slate: a rejoin already knows which session
+         and which person, and asking a returning collaborator to paste back a
+         code they are currently connected to would be the app pretending not to
+         know where it is. The password is never prefilled — proving they still
+         have it is the entire purpose of the trip. */
+      const prefill = rejoinPrefillRef.current;
+      rejoinPrefillRef.current = null;
+      setJoinUsername(prefill?.username || '');
+      setJoinId(prefill?.id || '');
       setJoinPwd('');
       // Reopening the panel is a fresh attempt, not a return to an old queue.
       setWaiting(null);
     }
     if (panel) setErrorMsg('');
   }, [panel, setErrorMsg]);
+
+  /* The banner asked for the join form, for the session already loaded. */
+  useEffect(() => {
+    if (!rejoinRequested) return;
+    const store = useEditorStore.getState();
+    rejoinPrefillRef.current = {
+      id: store.joinCode || store.sessionId || '',
+      username: store.currentUser?.username || '',
+    };
+    setPanel('join');
+  }, [rejoinRequested]);
 
 
   useEffect(() => {
@@ -637,12 +663,29 @@ const FileExplorer = ({ onToggle }) => {
       const session = await joinSession(parsedId, joinPwd, joinUsername, requestId);
       try { localStorage.setItem('causify-last-username', joinUsername); } catch { /* best effort */ }
 
+      /* ── Rejoining the session you are already in ──
+       *
+       * Reached when a collaborator reopens the app: the socket comes back on
+       * its own but the membership token does not survive the window, so they
+       * come through here again purely to be issued a new one.
+       *
+       * The project is already on their disk from the first join, and it is
+       * newer than what the server is holding — they may have worked in it, or
+       * in another editor entirely, since. Writing the incoming copy over it
+       * would be the same stale-overwrite the reconnect path was just taught
+       * not to do, and materialize would additionally ask them to choose a
+       * folder for a project they already have open. So on a rejoin with a
+       * workspace, the files that arrive with the join are ignored: the token
+       * is the only thing being collected. */
+      const alreadyHere = useEditorStore.getState().sessionId === parsedId;
+      const keepDisk = alreadyHere && Boolean(useEditorStore.getState().workspaceRoot);
+
       // On the desktop, put the shared project on the joiner's own disk and work
       // from there. Both sides then edit real files, and the session is only the
       // channel between them — which is what lets it be deleted afterwards.
-      let landedOnDisk = false;
+      let landedOnDisk = keepDisk;
       const incoming = session.files || [];
-      if (canOpenLocalFolder && incoming.length > 0) {
+      if (!keepDisk && canOpenLocalFolder && incoming.length > 0) {
         try {
           const asMap = Object.fromEntries(incoming.map((f) => [f.path, f.content]));
           const placed = await window.electronAPI.workspace.materialize(asMap);
@@ -667,6 +710,9 @@ const FileExplorer = ({ onToggle }) => {
       // If the files went to disk the tree already reflects them; loading the
       // in-memory copy over the top would sever the disk connection.
       if (!landedOnDisk) setProject(incoming);
+      // Proof of membership is back, so the endpoints that were refusing are
+      // reachable again and the banner has nothing left to report.
+      useEditorStore.getState().setReauthNeeded(false);
       initSocket(session.id, session.user);
       setWaiting(null);
       setPanel(null);

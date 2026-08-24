@@ -35,6 +35,22 @@ const CONNECTION_GRACE_MS = 15000;
  * file is edited by tooling, and losing it silently corrupts stored history. */
 const NL = '\n';
 
+/* Split text into lines, whatever it thinks a line ending is.
+ *
+ * The one rule every comparison in the attribution code has to agree on. A
+ * project uploaded from a Windows disk arrives with CRLF; Monaco hands its
+ * model back with LF; the two live side by side in `files` depending on whether
+ * a file has been opened yet. Any check that splits on '\n' alone leaves a
+ * trailing '\r' on the stored side and finds every line different from a record
+ * that was written after normalising — text identical on screen, differing by
+ * an invisible character.
+ *
+ * Written once and shared, because that is exactly how the two sides drifted
+ * apart: recordLineDiff normalised, pruneAttribution did not, and every
+ * attribution for a CRLF file was silently deleted the moment the rewind panel
+ * opened. `\r\n?` rather than `\r\n` so a lone CR counts too. */
+const splitLines = (text) => String(text ?? '').replace(/\r\n?/g, NL).split(NL);
+
 /* Depth counter, not a boolean: restoring walks many files and each one may
  * take a different route into the store, so the guard has to survive nesting.
  *
@@ -54,6 +70,69 @@ const MAX_REWIND_POINTS = 240;
    summary into a diff viewer, and without putting an unbounded payload on the
    wire for every participant. */
 const MAX_CREDIT_EDITS = 12;
+
+/* A personal save is meant to be READ back, so it keeps far more of the detail
+ * than a credit line does — a summary that stops at twelve edits is no use as a
+ * record of an afternoon. Still bounded, because it is persisted. */
+const MAX_MINE_EDITS = 200;
+const MAX_MY_CHECKPOINTS = 60;
+
+/* ── Rewind history across a tab close ──
+ *
+ * The history used to live only in memory: close the tab, reopen it, and every
+ * checkpoint the user had deliberately saved was gone — including the ones
+ * labelled "last working build", which is exactly the thing somebody comes back
+ * for. It is persisted now, and the only real question is how much of it.
+ *
+ * Entry 0 is a full copy of the project and the rest are deltas, so a long
+ * session's log can be several megabytes. localStorage is a handful of
+ * megabytes TOTAL and shared with the session identity and the workspace — and
+ * the writer is all-or-nothing, so one oversized log does not lose the history,
+ * it loses everything written in that same call. Hence a budget.
+ */
+const REWIND_STORAGE_BUDGET = 1_200_000; // characters, ~1.2 MB of JSON
+
+/* Approximate, and deliberately so: a real JSON.stringify of the whole log on
+ * every keystroke would cost more than the feature is worth. Path plus content
+ * lengths track the serialised size closely enough to decide what to drop. */
+const rewindWeight = (log) => log.reduce((total, point) => (
+  total + Object.entries(point.files || {}).reduce(
+    (n, [path, content]) => n + path.length + (content ? content.length : 0), 40)
+), 0);
+
+/* Memoised on the array's identity.
+ *
+ * partialize runs on EVERY state change — every keystroke, every cursor move —
+ * while rewindLog is only replaced when a checkpoint is captured. Comparing the
+ * reference makes all but those rare calls free, which is what keeps persisting
+ * a multi-megabyte history off the typing path. */
+let rewindStorageCache = { source: null, value: [] };
+
+const rewindForStorage = (log) => {
+  if (!Array.isArray(log) || log.length === 0) return [];
+  if (rewindStorageCache.source === log) return rewindStorageCache.value;
+
+  let next = log;
+  /* Fold the oldest delta into the keyframe rather than dropping it — the same
+   * operation captureRewindPoint uses for MAX_REWIND_POINTS, so a trimmed
+   * history still starts from a state that genuinely existed. */
+  while (next.length > 1 && rewindWeight(next) > REWIND_STORAGE_BUDGET) {
+    const [keyframe, oldest, ...rest] = next;
+    const merged = { ...keyframe.files };
+    Object.entries(oldest.files).forEach(([path, content]) => {
+      if (content === null) delete merged[path];
+      else merged[path] = content;
+    });
+    next = [{ ...keyframe, at: oldest.at, files: merged }, ...rest];
+  }
+
+  /* A single copy of the project is still over budget — a very large project.
+   * Storing nothing beats taking the whole persisted state down with it. */
+  if (rewindWeight(next) > REWIND_STORAGE_BUDGET) next = [];
+
+  rewindStorageCache = { source: log, value: next };
+  return next;
+};
 
 /**
  * The credit list a checkpoint carries, in one known shape.
@@ -330,6 +409,19 @@ const useEditorStore = create(persist((set, get) => ({
    * Broadcast to the whole session, rendered only for the owner. */
   pendingAdmissions: [],
 
+  /* True when this client is in a session it can no longer prove it belongs to.
+   *
+   * The only way in: a collaborator reopening the app. The session id is
+   * persisted and the membership token is not, so the socket reconnects while
+   * every endpoint that runs something on the host — Run, the dev server, git,
+   * the agent — starts refusing them. Editing keeps working, which is what
+   * makes it confusing rather than merely broken.
+   *
+   * Set by the reconnect in App.jsx, read by ConnectionBanner (which says so)
+   * and FileExplorer (which reopens the join panel). Cleared by a completed
+   * rejoin, which is the only thing that mints a new token. */
+  reauthNeeded: false,
+
   // ---- Editor State ----
   files: {},                // Map of { path: content }
   projectRootPath: null,    // Real disk folder of the imported project (Electron) — terminal cwd
@@ -396,6 +488,35 @@ const useEditorStore = create(persist((set, get) => ({
    * a record of a moment has to stop moving with it.
    */
   rewindLog: [],
+
+  /* ── A collaborator's own record of their own work ──
+   *
+   * Checkpointing the PROJECT is the owner's call and stays that way: it
+   * rewrites every file on every screen, so one person has to own it. But that
+   * left everybody else with no way to mark their own progress at all — and
+   * "what had I written before I went down this road" is a question a
+   * collaborator asks about their own code, not about the project.
+   *
+   * So this is the other half. Each entry freezes what THIS user changed since
+   * their previous personal save: the lines, with what each one was and what
+   * they made it. Enough to look back at, which is what it is for.
+   *
+   * Three deliberate limits, and they are the point rather than a shortcut:
+   *
+   *   - It holds line records, never file snapshots. A snapshot of the project
+   *     is the owner's checkpoint under another name.
+   *   - It is local to this client and never broadcast. It is a personal
+   *     notebook, not a claim on the session's history.
+   *   - Nothing here can be applied. Reading it back into the project is a
+   *     merge, and merging is the owner's decision — see restoreRewindPoint,
+   *     which every write path already goes through.
+   *
+   * Each entry:
+   *   { id, at, label, lines, files: [{ path, lines }],
+   *     edits: [{ kind, path, line, oldLine, newLine, removedText, count }] }
+   */
+  myCheckpoints: [],
+
   /* Verdict of the most recent run, waiting to be stamped onto the next
      checkpoint. Not history in itself. */
   lastRunStatus: null,
@@ -704,6 +825,19 @@ const useEditorStore = create(persist((set, get) => ({
     }
   },
 
+  /* Whether this client still needs to prove its membership. Never granted
+     locally — only a completed rejoin clears it, because only the server can
+     issue the token that makes it false in fact rather than on screen. */
+  setReauthNeeded: (reauthNeeded) => set({ reauthNeeded }),
+
+  /* Ask the file panel to open its join form for the session already loaded.
+   *
+   * A counter rather than a flag: the user may dismiss the form and come back
+   * to the banner, and a boolean that is already true produces no change for
+   * the panel to react to. Incrementing always does. */
+  openRejoinPanel: () => set((s) => ({ rejoinRequested: s.rejoinRequested + 1 })),
+  rejoinRequested: 0,
+
   resetConnectionState: () => {
     clearTimeout(connectionLostTimer);
     connectionLostTimer = null;
@@ -987,6 +1121,13 @@ const useEditorStore = create(persist((set, get) => ({
       // linger in this folder's gutter, pointing at lines it never described.
       remoteLineChanges: {},
       remoteLineDeletions: {},
+      /* The rewind history belongs to the project that was open, and it is
+         persisted now — so without this, opening a second folder would inherit
+         the first one's checkpoints and offer to "restore" this project to a
+         snapshot of a different one. */
+      rewindLog: [],
+      rewindIndex: null,
+      rewindNotice: null,
       // Cleared here and repopulated below if this folder has been opened before.
       snapshots: [],
       currentSnapshotIndex: -1,
@@ -1324,10 +1465,10 @@ const useEditorStore = create(persist((set, get) => ({
      * thing — text that looked identical on screen, because the difference was
      * an invisible character. Nobody typed a line ending; it is not a fact about
      * a person and must not be recorded as one. */
-    const oldLines = String(oldContent || '').replace(/\r\n/g, '\n').split('\n');
-    const newLines = String(newContent || '').replace(/\r\n/g, '\n').split('\n');
+    const oldLines = splitLines(oldContent);
+    const newLines = splitLines(newContent);
     const now = Date.now();
-    const existingPathChanges = { ...(get().remoteLineChanges[path] || {}) };
+    let existingPathChanges = { ...(get().remoteLineChanges[path] || {}) };
 
     let top = 0;
     while (top < oldLines.length && top < newLines.length && oldLines[top] === newLines[top]) {
@@ -1339,6 +1480,34 @@ const useEditorStore = create(persist((set, get) => ({
     while (bottomOld >= top && bottomNew >= top && oldLines[bottomOld] === newLines[bottomNew]) {
       bottomOld--;
       bottomNew--;
+    }
+
+    /* ── Follow the lines that moved ──
+     *
+     * Every record says "line N holds this text". Adding or removing a line
+     * shifts everything below it, so those records now name the wrong line —
+     * and the sweep at the bottom of this function DELETES anything whose text
+     * no longer matches its line.
+     *
+     * That is why a checkpoint could report "no edits by anyone" over an
+     * afternoon of work: press Enter once near the top of a file and every
+     * earlier attribution below the cursor was thrown away, silently, because
+     * it had moved down by one. The record was never wrong — only its index
+     * was, and an index is something we can recompute.
+     *
+     * The edit replaced old lines [top..bottomOld] with new lines
+     * [top..bottomNew], so everything after the replaced region moves by the
+     * difference. Records inside the region are left alone: they describe text
+     * the edit has just rewritten, and the sweep is right to drop those. */
+    const shift = bottomNew - bottomOld;
+    if (shift !== 0) {
+      const firstMoved = bottomOld + 2; // 1-based line after the changed region
+      const shifted = {};
+      Object.entries(existingPathChanges).forEach(([ln, rec]) => {
+        const n = Number(ln);
+        shifted[n >= firstMoved ? n + shift : n] = rec;
+      });
+      existingPathChanges = shifted;
     }
 
     // Range [top, bottomNew] in the NEW file is what changed
@@ -1982,6 +2151,75 @@ const useEditorStore = create(persist((set, get) => ({
     return { ok: true, at: meta.at };
   },
 
+  /* ── Save what I have changed ──
+   *
+   * The collaborator's counterpart to captureCheckpoint. Same gesture, a
+   * deliberately smaller subject: not "the project as it stands" but "the work
+   * I have done since I last marked it".
+   *
+   * Open to everyone, including the owner — a person's own record of their own
+   * edits is not a permission question. What stays owner-only is putting any of
+   * it back, which lives in restoreRewindPoint and is untouched by this.
+   *
+   * Nothing is broadcast. The owner's checkpoint publishes its metadata because
+   * the whole room shares one history; this is one person's notebook and the
+   * room has no stake in it.
+   */
+  captureMyChanges: ({ label = '' } = {}) => {
+    const { currentUser, myCheckpoints, isReplaying, sessionId } = get();
+
+    if (isReplaying) {
+      return { ok: false, reason: 'Exit replay mode before saving your changes.' };
+    }
+
+    const meId = currentUser?.id || 'local';
+    /* Since the last one of MINE, not the last checkpoint the owner took. The
+       two histories run independently — the owner saving the project says
+       nothing about where this person's own work begins. */
+    const since = myCheckpoints.length ? myCheckpoints[myCheckpoints.length - 1].at : 0;
+    const mine = get().changesSince(since).find((u) => u.userId === meId);
+
+    if (!mine || !Array.isArray(mine.edits) || mine.edits.length === 0) {
+      return { ok: false, reason: 'Nothing of yours has changed since your last save.' };
+    }
+
+    const at = Date.now();
+    const point = {
+      id: `mine-${at}`,
+      at,
+      /* Stamped so leaving a session and coming back to it finds the notebook
+         intact, while a DIFFERENT session never inherits it. Filtering on the
+         way out beats clearing on the way through: the same collaborator
+         rejoining the same room is the case this feature exists for. */
+      sessionId: sessionId || null,
+      label: (label || '').trim().slice(0, 120) || null,
+      lines: mine.lines,
+      // changesSince calls it `count`; everything downstream reads `lines`.
+      files: (mine.files || []).map((f) => ({ path: f.path, lines: f.lines ?? f.count ?? 0 })),
+      edits: mine.edits.slice(0, MAX_MINE_EDITS).map((e) => ({
+        kind: e.kind,
+        path: e.path,
+        line: e.line,
+        // Capped: this is persisted, and one pasted minified line should not be
+        // able to fill the whole store on its own.
+        oldLine: typeof e.oldLine === 'string' ? e.oldLine.slice(0, 400) : '',
+        newLine: typeof e.newLine === 'string' ? e.newLine.slice(0, 400) : '',
+        removedText: typeof e.removedText === 'string' ? e.removedText.slice(0, 800) : '',
+        count: e.count || 1,
+      })),
+      // So the panel can say "and 40 more" rather than quietly losing them.
+      truncated: Math.max(0, mine.edits.length - MAX_MINE_EDITS),
+    };
+
+    set({ myCheckpoints: [...myCheckpoints, point].slice(-MAX_MY_CHECKPOINTS) });
+    return { ok: true, at, lines: point.lines };
+  },
+
+  /** Drop one of my own saves. Mine to make, mine to discard. */
+  deleteMyCheckpoint: (id) => set((s) => ({
+    myCheckpoints: s.myCheckpoints.filter((p) => p.id !== id),
+  })),
+
   /* The same checkpoint, on everyone else's screen. Their own files, the
    * owner's account of who changed them. */
   applyRemoteCheckpoint: (meta) => {
@@ -2119,7 +2357,12 @@ const useEditorStore = create(persist((set, get) => ({
     // Reverting is itself a change worth being able to take back.
     get().captureRewindPoint({ force: true });
 
-    const split = content.split(NL);
+    /* Normalised, like every other comparison against a record. On a CRLF file
+       the raw split made `anchorNow === rec.anchorAfter` and the newLine checks
+       below fail on the invisible '\r', so reverting a single edit reported
+       that the surrounding lines had moved and refused to act. The join below
+       writes LF back, which is what the editor holds anyway. */
+    const split = splitLines(content);
     let summary = '';
 
     if (edit.kind === 'removed') {
@@ -2185,13 +2428,25 @@ const useEditorStore = create(persist((set, get) => ({
   }),
 
   /**
-   * Take back one person's work since a moment, across every file they touched.
+   * Take back one person's work since a moment.
    *
    * The thing git structurally cannot do: a revert undoes commits, which bundle
    * everyone together. This undoes a person.
+   *
+   * @param {string}  userId
+   * @param {number}  since
+   * @param {object}  [opts]
+   * @param {string}  [opts.path]
+   *   Confine it to one file. Between "revert this one line" and "take back
+   *   everything this person did today" there was nothing, and the middle is
+   *   where the real request lives: someone's work in ONE file went wrong and
+   *   the rest of what they did that afternoon is fine. Without this the owner
+   *   had to choose between clicking twenty individual lines and throwing away
+   *   work in four other files to fix a problem in one.
    */
-  undoChangesSince: async (userId, since) => asHistoryOp(async () => {
+  undoChangesSince: async (userId, since, opts = {}) => asHistoryOp(async () => {
     const { remoteLineChanges, remoteLineDeletions, files, isReplaying } = get();
+    const onlyPath = typeof opts.path === 'string' && opts.path ? opts.path : null;
     if (isReplaying) return { ok: false, reason: 'Exit replay mode first.' };
     // This had no permission check of any kind: any collaborator could take
     // back any other collaborator's work, including the owner's.
@@ -2215,6 +2470,9 @@ const useEditorStore = create(persist((set, get) => ({
     ]);
 
     for (const path of paths) {
+      // Scoped to one file when asked. Everything below is unchanged, so the
+      // whole-person undo and the single-file one cannot drift apart.
+      if (onlyPath && path !== onlyPath) continue;
       const lines = remoteLineChanges[path] || {};
       const content = files[path];
       if (typeof content !== 'string') continue;
@@ -2227,7 +2485,9 @@ const useEditorStore = create(persist((set, get) => ({
       if (records.length === 0 && !hasDeletions) continue;
       if (records.length) username = records[0].username || username;
 
-      const split = content.split('\n');
+      // Normalised for the same reason as revertEdit above: a raw split makes
+      // every record on a CRLF file look inapplicable.
+      const split = splitLines(content);
 
       /* Only lines that still hold exactly what was recorded. If someone has
        * edited the same line since, it is no longer purely this person's work
@@ -2295,7 +2555,12 @@ const useEditorStore = create(persist((set, get) => ({
     }
 
     if (reverted === 0) {
-      return { ok: false, reason: 'Those lines have been edited since — nothing safe to undo.' };
+      return {
+        ok: false,
+        reason: onlyPath
+          ? `Nothing safe to undo in ${onlyPath.split('/').pop()} — those lines have been edited since.`
+          : 'Those lines have been edited since — nothing safe to undo.',
+      };
     }
 
     // Tell the room, so work vanishing from their screen has a reason.
@@ -2304,9 +2569,14 @@ const useEditorStore = create(persist((set, get) => ({
       sendRevert(sessionId, currentUser.id, touched[0], currentUser.username, username);
     }
 
+    // Names the file when that is what was undone. "across 1 file" is a worse
+    // answer than the file's name when the owner just picked it deliberately.
+    const scope = onlyPath
+      ? `in ${onlyPath.split('/').pop()}`
+      : `across ${touched.length} file${touched.length === 1 ? '' : 's'}`;
+
     set({
-      rewindNotice: `Undid ${reverted} line${reverted === 1 ? '' : 's'} from ${username} `
-        + `across ${touched.length} file${touched.length === 1 ? '' : 's'}`
+      rewindNotice: `Undid ${reverted} line${reverted === 1 ? '' : 's'} from ${username} ${scope}`
         + (skipped ? ` — ${skipped} left alone because someone edited them since.` : '.'),
     });
 
@@ -2324,7 +2594,17 @@ const useEditorStore = create(persist((set, get) => ({
 
     Object.entries(remoteLineChanges).forEach(([path, lines]) => {
       const content = files[path];
-      const split = typeof content === 'string' ? content.split(NL) : null;
+      /* splitLines, not content.split(NL).
+       *
+       * This is the line that broke Session Rewind. Records are written with
+       * their line endings normalised; this compared them against the raw
+       * stored text. For any file with CRLF — i.e. any project uploaded from a
+       * Windows machine — every record failed the comparison by one invisible
+       * character and the entire map was wiped. Because this runs when the
+       * rewind panel mounts, the wipe happened at precisely the moment the
+       * user opened the panel to save a checkpoint, so the checkpoint recorded
+       * "no edits by anyone" over work that had definitely happened. */
+      const split = typeof content === 'string' ? splitLines(content) : null;
       const kept = {};
       Object.entries(lines).forEach(([ln, rec]) => {
         if (rec.oldLine === rec.newLine) { removed++; return; }
@@ -2531,11 +2811,25 @@ const useEditorStore = create(persist((set, get) => ({
     const isClassicFileFix = Boolean(rootCause) && !instruction;
 
     if (isClassicFileFix && !code) return;
-    if (!isClassicFileFix && !workspaceRoot && !(code && activePath)) {
+
+    /* What counts as "something to work on".
+     *
+     * An open file does, even an empty one. This used to require `code` as well
+     * as `activePath`, which meant a brand-new file — the single most obvious
+     * moment to ask an agent to write something — was rejected as nothing at
+     * all, with a message telling the user to open a file they already had
+     * open. Emptiness is a state of the file, not an absence of one.
+     *
+     * A folder still qualifies on its own: in project mode the agent finds the
+     * file itself, so nothing needs to be open. */
+    if (!isClassicFileFix && !workspaceRoot && !activePath) {
       set({
         autoFix: {
           status: 'NO_FIX',
-          message: 'Open a project folder or a file first — the agent needs something to work on.',
+          // Carried so the panel knows this answers a typed request and renders
+          // it as one — without it, "no file open" arrives dressed as GAME OVER.
+          instruction: instruction || null,
+          message: 'Open a file or a project folder first — the agent needs something to work on.',
         },
         autoFixState: 'failed',
       });
@@ -3127,6 +3421,8 @@ const useEditorStore = create(persist((set, get) => ({
       // a local folder with no owner left to unfreeze it.
       lockedFiles: {},
       pendingAdmissions: [],
+      // Nothing left to prove membership of.
+      reauthNeeded: false,
       impactWarnings: [],
       revertNotification: null,
       ...keepWorkspace,
@@ -3270,6 +3566,22 @@ const useEditorStore = create(persist((set, get) => ({
     savedContents: state.savedContents,
     fileSavedPaths: state.fileSavedPaths,
     activeView: state.activeView,
+    /* ── Session Rewind ──
+     *
+     * Checkpoints are things the user chose to save, often labelled "last
+     * working build". Losing them to a tab close made the panel a record of the
+     * current sitting only, which is the opposite of what a history is for.
+     *
+     * The attribution travels with it. Without those two maps the restored
+     * checkpoints would come back saying "no edits by anyone" — a record of the
+     * project's contents with the account of who changed what stripped out. */
+    rewindLog: rewindForStorage(state.rewindLog),
+    remoteLineChanges: state.remoteLineChanges,
+    remoteLineDeletions: state.remoteLineDeletions,
+    /* A collaborator's own saves. Line records only, already capped in both
+       directions, so this is small next to the log above — and losing it to a
+       reload would defeat the point of saving anything. */
+    myCheckpoints: state.myCheckpoints,
     /* Where the user parked Mario. A placement preference, like where a tool is
        left on a desk — worth remembering, and clamped back on screen on mount
        in case the window is smaller this time. `marioOpen` is deliberately not

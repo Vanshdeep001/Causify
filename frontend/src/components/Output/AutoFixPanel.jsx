@@ -308,10 +308,14 @@ const AutoFixPanel = () => {
   const autoFixState = useEditorStore((s) => s.autoFixState);
   const requestAutoFix = useEditorStore((s) => s.requestAutoFix);
   const applyAutoFix = useEditorStore((s) => s.applyAutoFix);
-  const undoAutoFix = useEditorStore((s) => s.undoAutoFix);
   const clearAutoFix = useEditorStore((s) => s.clearAutoFix);
-  const runCode = useEditorStore((s) => s.runCode);
+  /* Undo and Run moved out with the applied panel — Mario's bubble owns the
+     undo now, and running is the user's own call once the change is in. */
   const devServers = useEditorStore((s) => s.devServers);
+  /* Read so the panel can tell a retry worth offering from one that cannot
+     possibly go differently — see nothingToWorkFrom below. */
+  const code = useEditorStore((s) => s.code);
+  const setMarioOpen = useEditorStore((s) => s.setMarioOpen);
 
   const workspaceRoot = useEditorStore((s) => s.workspaceRoot);
 
@@ -350,53 +354,20 @@ const AutoFixPanel = () => {
     setNotice(result.ok ? null : result.reason);
   };
 
-  const handleUndo = () => {
-    const result = undoAutoFix();
-    if (!result.ok && result.reason) setNotice(result.reason);
-  };
 
-  /* ── Applied — 1-UP ──
+  /* ── Applied ──
    *
-   * The edits survive in state after applying, so they are shown rather than
-   * discarded. Throwing them away left a single line of confirmation floating
-   * in an otherwise empty pane, and it threw away the one thing worth having
-   * at that moment: a record of what just changed in the file, sitting next to
-   * the button that undoes it. */
-  if (autoFix && autoFix.applied) {
-    const appliedEdits = Array.isArray(autoFix.edits) ? autoFix.edits : [];
-
-    return (
-      <div className="afx-panel is-applied">
-        <div className="afx-applied">
-          <PixelSprite rows={MARIO_JUMP} px={2} className="afx-applied-sprite" />
-          <div className="afx-applied-text">
-            <div className="afx-applied-title">1-UP · FIX APPLIED</div>
-            <div className="afx-applied-sub">
-              {renderInline(autoFix.summary) || 'The agent edited your code.'}
-            </div>
-          </div>
-          <div className="afx-applied-actions">
-            <button className="afx-btn afx-btn-primary" onClick={runCode}>Run it</button>
-            <button className="afx-btn afx-btn-ghost" onClick={handleUndo}>Undo</button>
-          </div>
-        </div>
-
-        {notice && <div className="afx-notice">{notice}</div>}
-
-        {appliedEdits.length > 0 && (
-          <>
-            <SectionHead
-              label="What changed in your file"
-              meta={`${appliedEdits.length} ${appliedEdits.length === 1 ? 'edit' : 'edits'}`}
-            />
-            <div className="afx-diffs">
-              {appliedEdits.map((edit, i) => <EditDiff key={i} edit={edit} />)}
-            </div>
-          </>
-        )}
-      </div>
-    );
-  }
+   * Nothing. Mario says it.
+   *
+   * This used to be a full panel: a 1-UP banner, the summary again, Run it and
+   * Undo, and the whole diff repeated underneath. All of it described a
+   * decision the user had just finished making — they read that diff and
+   * accepted it a second ago, so re-presenting it made accepting feel like it
+   * had opened another form rather than finished the job.
+   *
+   * The confirmation is now a line from the character, and the undo lives in
+   * that same speech bubble (see MarioCompanion). One beat instead of a screen. */
+  if (autoFix && autoFix.applied) return null;
 
   /* ── Working ── */
   if (autoFixState === 'working') {
@@ -407,10 +378,19 @@ const AutoFixPanel = () => {
   if (!autoFix) {
     /* onStart is wired to a click, which hands requestAutoFix the event as its
        options argument. Harmless — it reads only `instruction`, which an event
-       does not have — but passed explicitly so it stays harmless. */
+       does not have — but passed explicitly so it stays harmless.
+     *
+     * With an empty editor and no diagnosis there is nothing to repair, so
+     * starting a repair can only end in a refusal. The press goes to the one
+     * thing that WOULD work instead: Mario's field, where saying what you want
+     * written is what turns an empty file into code. */
+    const blank = !rootCause && !workspaceRoot && !(code && code.trim());
     return (
       <div className="afx-panel is-bare">
-        <StartScene onStart={() => requestAutoFix()} isProject={isProjectFix} />
+        <StartScene
+          onStart={() => (blank ? setMarioOpen(true) : requestAutoFix())}
+          isProject={isProjectFix}
+        />
       </div>
     );
   }
@@ -418,6 +398,59 @@ const AutoFixPanel = () => {
   /* ── A proposal came back ── */
   const hasPatch = Boolean(autoFix.fixedCode) && Array.isArray(autoFix.edits) && autoFix.edits.length > 0;
   const needsKey = autoFix.status === 'NO_AI_KEY';
+
+  /* Did the user ask for this, or did we offer it?
+   *
+   * The scene below is a verdict on a REPAIR: a goomba and ANOTHER CASTLE mean
+   * "your program still fails", coins score the confidence, WORLD counts the
+   * attempts. None of that is true of a change somebody typed. Told to delete a
+   * CSS rule, the agent deletes it — there is no failure to report, and a file
+   * that cannot be executed is not a fix that did not hold.
+   *
+   * So an instructed change skips the scene entirely and shows what it did. */
+  const instructed = Boolean(autoFix.instruction);
+
+  /* Nothing said, nothing to read, nothing broken.
+   *
+   * An empty file with no request and no diagnosis is the one state where the
+   * agent genuinely cannot act: there is no failure to repair and no
+   * description of what to build, so any retry returns the same refusal. The
+   * project case is excluded — with a folder open the agent finds its own file
+   * and an empty editor says nothing about whether there is work to do. */
+  const nothingToWorkFrom = !instructed
+    && !rootCause
+    && !workspaceRoot
+    && !(code && code.trim());
+
+  /* ── Declined ──
+   *
+   * The agent was asked for something it does not do. There is no patch, no
+   * verdict and no run, so every part of the normal panel would be furniture
+   * around one sentence — and the arcade scene would be actively wrong, since
+   * GAME OVER and a goomba read as "your code is broken" when nothing about
+   * the code was ever examined.
+   *
+   * What the user needs is the sentence and a way out. Their request stays
+   * above it: seeing what the agent thought it was answering is what makes a
+   * refusal feel like an answer rather than a malfunction. */
+  if (autoFix.status === 'OUT_OF_SCOPE') {
+    return (
+      <div className="afx-panel">
+        {instructed && (
+          <div className="afx-asked">
+            <span className="afx-asked-label">You asked</span>
+            <p className="afx-asked-text">{autoFix.instruction}</p>
+          </div>
+        )}
+        <div className="afx-declined">
+          <p className="afx-declined-text">{autoFix.message}</p>
+        </div>
+        <div className="afx-actions">
+          <button className="afx-btn afx-btn-ghost" onClick={clearAutoFix}>Got it</button>
+        </div>
+      </div>
+    );
+  }
 
   /* Bare while asking for a key: the coin slot below is the whole cabinet, so
      the panel adds nothing but a second border. */
@@ -429,12 +462,28 @@ const AutoFixPanel = () => {
           same sentence twice, in three accent colours, for a screen whose only
           job is to take one string. Missing a key is not a verdict on a run;
           there was nothing to run. */}
-      {!needsKey && (
+      {/* And no scene when nothing was played.
+          The scoreboard reports on a RUN: GAME OVER, a goomba, WORLD 1-N. A
+          precondition that failed before the agent started — no file open, no
+          folder, nothing to read — has no run to report, so the arcade frame
+          announced a defeat in a game that never began. Rendering it only once
+          an attempt exists keeps the verdict attached to something that
+          actually happened. */}
+      {!needsKey && !instructed && autoFix.attemptsUsed > 0 && (
         <ResultScene
           status={autoFix.status}
           attemptsUsed={autoFix.attemptsUsed}
           confidence={hasPatch ? autoFix.confidence : 0}
         />
+      )}
+
+      {/* What was asked, echoed back. Replaces the verdict scene for an
+          instructed change: the useful context is the request, not a score. */}
+      {instructed && (
+        <div className="afx-asked">
+          <span className="afx-asked-label">You asked</span>
+          <p className="afx-asked-text">{autoFix.instruction}</p>
+        </div>
       )}
 
       {/* The coin slot on the front of the cabinet. Joined to the scene above
@@ -447,8 +496,17 @@ const AutoFixPanel = () => {
           variant="arcade"
           /* Inserting the coin starts the game. There is no "Try again" button
              because there is nothing left for the user to decide once the key
-             is live — the run they already asked for simply proceeds. */
-          onActivated={requestAutoFix}
+             is live — the run they already asked for simply proceeds.
+
+             "The run they already asked for" has to include what they asked
+             FOR. This was `onActivated={requestAutoFix}`, called with no
+             arguments, so the instruction that triggered the whole thing was
+             dropped on the floor the moment a key was pasted: type "code for
+             linear search", get asked for a key, provide it — and the agent
+             restarts as a REPAIR with no request and nothing to repair. */
+          onActivated={() => requestAutoFix(
+            autoFix.instruction ? { instruction: autoFix.instruction } : {}
+          )}
         />
       )}
 
@@ -462,12 +520,20 @@ const AutoFixPanel = () => {
 
       {hasPatch && (
         <>
-          <div className="afx-brief">
-            {autoFix.summary && <h4 className="afx-summary">{renderInline(autoFix.summary)}</h4>}
-            {autoFix.explanation && (
-              <p className="afx-explanation">{renderInline(autoFix.explanation)}</p>
-            )}
-          </div>
+          {/* Suppressed for an instructed change.
+              The user typed the instruction a moment ago and it is quoted back
+              directly above; a headline and a paragraph restating it in the
+              model's words is the machine explaining the user's own sentence to
+              them. What they came to read is the diff. On a repair the summary
+              stays — there the change was not theirs, so it needs describing. */}
+          {!instructed && (
+            <div className="afx-brief">
+              {autoFix.summary && <h4 className="afx-summary">{renderInline(autoFix.summary)}</h4>}
+              {autoFix.explanation && (
+                <p className="afx-explanation">{renderInline(autoFix.explanation)}</p>
+              )}
+            </div>
+          )}
 
           <SectionHead
             label="The patch"
@@ -516,8 +582,34 @@ const AutoFixPanel = () => {
               </button>
               <button className="afx-btn afx-btn-ghost" onClick={clearAutoFix}>Reject</button>
             </>
+          ) : nothingToWorkFrom ? (
+            /* A dead end, so this must not be a retry.
+             *
+             * "Continue?" here re-ran the identical request and produced the
+             * identical refusal — a button whose only function was to redraw
+             * the message above it. With an empty file and no request there is
+             * genuinely nothing for a repair agent to do, and the way out is to
+             * say what you want written. So the button goes and gets that:
+             * closing the proposal lets Mario's field take focus again. */
+            <button
+              className="afx-btn afx-btn-primary"
+              onClick={() => { clearAutoFix(); setMarioOpen(true); }}
+            >
+              Tell me what to write
+            </button>
           ) : (
-            <button className="afx-btn afx-btn-ghost" onClick={requestAutoFix}>Continue?</button>
+            /* A retry that carries the request with it. Passed explicitly
+               because this is an onClick: handed the event as its options, the
+               agent read no instruction and quietly downgraded a "write me X"
+               into a repair. */
+            <button
+              className="afx-btn afx-btn-ghost"
+              onClick={() => requestAutoFix(
+                autoFix.instruction ? { instruction: autoFix.instruction } : {}
+              )}
+            >
+              {autoFix.instruction ? 'Try again' : 'Continue?'}
+            </button>
           )}
         </div>
       )}
