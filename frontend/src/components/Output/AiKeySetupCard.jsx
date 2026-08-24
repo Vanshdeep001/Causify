@@ -21,11 +21,18 @@ import { PixelSprite, Coin, MARIO_JUMP } from './MarioSprites';
 
 /**
  * @param {'diagnosis'|'autofix'} context  tailors the copy
- * @param {'card'|'arcade'} variant
+ * @param {'card'|'arcade'|'compact'} variant
  *   'arcade' drops the heading, the badge and the explanatory paragraph and
  *   attaches the form to the level above it. Inside the agent panel the scene
  *   already says INSERT COIN and "an api key is needed to play" — repeating
  *   that in a titled card was three statements of one fact stacked vertically.
+ *
+ *   'compact' is the same idea for a panel that is 380px wide and already has a
+ *   title bar. The full card led with "Unlock the Auto-Fix Agent", a red API
+ *   KEY REQUIRED badge and two sentences of pitch — three restatements of a
+ *   heading the panel had already written, above the one field anyone came for.
+ *   At that width it filled the frame with preamble. This is the field, the
+ *   button, and the options behind a disclosure.
  * @param {() => void} [onActivated]
  *   Fired once the key is verified and live, after a beat so the confirmation
  *   is readable. Lets the caller carry straight on with whatever the missing
@@ -212,8 +219,13 @@ const AiKeySetupCard = ({ forceVisible = false, context = 'diagnosis', variant =
         </div>
 
         <div className="ai-status-side">
+          {/* Not "for this session" any more. The backend writes the verified
+              settings to the user's data directory and restores them on the
+              next launch, so a note promising nothing beyond this session now
+              understates it — and would have people re-pasting a key they no
+              longer need to. */}
           <div className="ai-status-note">
-            {window.electronAPI ? 'Encrypted on this device' : 'Held by local backend'}
+            {window.electronAPI ? 'Encrypted on this device' : 'Saved on this machine'}
           </div>
           <div className="ai-status-actions">
             <button className="ai-btn" onClick={() => { setEditing(true); setStatus('idle'); }}>
@@ -231,6 +243,125 @@ const AiKeySetupCard = ({ forceVisible = false, context = 'diagnosis', variant =
   }
 
   const arcade = variant === 'arcade';
+  const compact = variant === 'compact';
+
+  /* ── Compact: the form, and nothing that is not the form ── */
+  if (compact) {
+    return (
+      <div className="aik">
+        {status === 'success' ? (
+          <div className="aik-done">
+            <span className="aik-done-mark">✓</span>
+            <span className="aik-done-text">
+              {activated?.providerName || 'Provider'} is live
+              {activated?.model ? <> on <b>{activated.model}</b></> : null}
+            </span>
+            <button className="aik-btn is-ghost" onClick={() => setStatus('idle')}>Done</button>
+          </div>
+        ) : (
+          <>
+            <div className="aik-row">
+              <input
+                type="password"
+                className="aik-input"
+                placeholder={chosen?.keyHint || 'Paste your API key'}
+                value={keyInput}
+                onChange={(e) => { setKeyInput(e.target.value); clearError(); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleActivate(); }}
+                spellCheck={false}
+                autoFocus
+              />
+              <button
+                className="aik-btn is-primary"
+                onClick={handleActivate}
+                disabled={!keyInput.trim() || status === 'saving'}
+              >
+                {status === 'saving' ? 'Checking' : 'Activate'}
+              </button>
+            </div>
+
+            {status === 'error' && <div className="aik-error">{errorMsg}</div>}
+
+            {/* The provider, once something recognises the key. Confirmation
+                that the paste landed, without asking a question the key has
+                already answered. */}
+            <div className="aik-meta">
+              <button
+                type="button"
+                className="aik-toggle"
+                onClick={() => setShowAdvanced((v) => !v)}
+              >
+                {showAdvanced ? '▾' : '▸'} provider &amp; model
+              </button>
+              <span className={`aik-detected ${detected ? 'is-on' : ''}`}>
+                {detected?.providerName || (unrecognised ? 'not recognised' : '')}
+              </span>
+            </div>
+
+            {showAdvanced && (
+              <div className="aik-options">
+                {unrecognised && (
+                  <div className="aik-note">
+                    That key isn’t one we recognise — pick its provider.
+                  </div>
+                )}
+
+                <label className="aik-field">
+                  <span className="aik-label">Provider</span>
+                  <select
+                    className="aik-select"
+                    value={provider}
+                    onChange={(e) => { setProvider(e.target.value); setModel(''); clearError(); }}
+                  >
+                    <option value="">
+                      {detected?.providerName ? `Detected: ${detected.providerName}` : 'Detect from key'}
+                    </option>
+                    {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </label>
+
+                {needsBaseUrl && (
+                  <label className="aik-field">
+                    <span className="aik-label">Base URL</span>
+                    <input
+                      type="text"
+                      className="aik-input is-plain"
+                      placeholder="https://api.together.xyz/v1"
+                      value={baseUrl}
+                      onChange={(e) => { setBaseUrl(e.target.value); clearError(); }}
+                      spellCheck={false}
+                    />
+                  </label>
+                )}
+
+                <label className="aik-field">
+                  <span className="aik-label">Model</span>
+                  <input
+                    type="text"
+                    className="aik-input is-plain"
+                    placeholder={modelPlaceholder}
+                    value={model}
+                    onChange={(e) => { setModel(e.target.value); clearError(); }}
+                    spellCheck={false}
+                  />
+                </label>
+
+                {chosen?.consoleUrl && (
+                  <a className="aik-link" href={chosen.consoleUrl} target="_blank" rel="noreferrer">
+                    Get a {chosen.name} key →
+                  </a>
+                )}
+              </div>
+            )}
+
+            <p className="aik-foot">
+              Checked with a live call, then remembered on this machine.
+            </p>
+          </>
+        )}
+      </div>
+    );
+  }
 
   /* ── Coin accepted ── */
   if (status === 'success') {
@@ -284,60 +415,93 @@ const AiKeySetupCard = ({ forceVisible = false, context = 'diagnosis', variant =
         {/* Nothing but the slot. Anyone holding a key knows where it came from,
             so asking them to name the provider was a question with a known
             answer — it is worked out from the key instead. */}
-        {/* ── Marquee ──
-            Says what this is, once. The credit counter is the arcade's own way
-            of saying "nothing has been paid in yet", and it ticks to 1 the
-            moment a key is in the field — so the screen answers "did that
-            register?" before you press anything. */}
-        <div className="afx-slot-marquee">
-          <span className="afx-slot-title">Insert coin</span>
-          <span className={`afx-slot-credit ${keyInput.trim() ? 'is-live' : ''}`}>
-            CREDIT {keyInput.trim() ? 1 : 0}
+        {/* ── The HUD ──
+            Mario's status bar, which is the one piece of that game's interface
+            that is genuinely structural rather than decorative: four labelled
+            columns, small caps over big values, running the width of the
+            screen. A heading with a counter tucked in the corner was a web
+            card header wearing a pixel font; this is a layout the game
+            actually has.
+
+            It also carries more than the old heading did. COINS ticks as the
+            key lands, STATUS is the plain-language answer to "is this thing
+            working", and both update live — so the strip is a readout, not a
+            title. */}
+        <div className="afx-hud-strip">
+          <span className="afx-hud-col">
+            <span className="afx-hud-k">Player</span>
+            <span className="afx-hud-v">CAUSIFY</span>
+          </span>
+          <span className="afx-hud-col">
+            <span className="afx-hud-k">Coins</span>
+            <span className={`afx-hud-v ${keyInput.trim() ? 'is-coin' : ''}`}>
+              ×{keyInput.trim() ? 1 : 0}
+            </span>
+          </span>
+          <span className="afx-hud-col">
+            <span className="afx-hud-k">World</span>
+            <span className="afx-hud-v">1-1</span>
+          </span>
+          <span className="afx-hud-col is-right">
+            <span className="afx-hud-k">Status</span>
+            <span className={`afx-hud-v ${keyInput.trim() ? 'is-ready' : 'is-locked'}`}>
+              {status === 'saving' ? 'CHECKING' : keyInput.trim() ? 'READY' : 'NO KEY'}
+            </span>
           </span>
         </div>
-        <p className="afx-slot-sub">
-          An API key is needed to play. It is stored on this machine and sent only
-          to the provider it belongs to.
-        </p>
 
-        {/* The slot itself: a coin waiting beside the opening it goes into. */}
-        <div className="afx-slot-row is-coin">
+        {/* ── The control deck ──
+            A cabinet's panel has exactly two things on it: a slot you drop a
+            coin into, and a button you hit afterwards. Both are objects, not
+            form fields — which is the whole reason this reads as a machine
+            rather than as a login box with a retro typeface. They share one
+            row at one height, the way they would on real hardware. */}
+        <div className="afx-deck">
           <span className={`afx-slot-coin ${status === 'saving' ? 'is-dropping' : ''}`}>
             <Coin px={2} />
           </span>
-          <input
-            type="password"
-            className="afx-slot-input is-key"
-            placeholder={chosen?.keyHint || 'paste your api key'}
-            value={keyInput}
-            onChange={(e) => { setKeyInput(e.target.value); clearError(); }}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleActivate(); }}
-            spellCheck={false}
-          />
+
+          {/* The slot: milled into the plate, lit along its lower lip. */}
+          <span className="afx-mouth">
+            <input
+              type="password"
+              className="afx-slot-input is-key"
+              placeholder={chosen?.keyHint || 'paste your api key'}
+              value={keyInput}
+              onChange={(e) => { setKeyInput(e.target.value); clearError(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleActivate(); }}
+              spellCheck={false}
+            />
+          </span>
+
+          {/* START is round because arcade buttons are round. A rectangle here
+              is the single thing that made the whole panel read as a web form
+              wearing a pixel font — the shape is doing more work than any
+              amount of styling on a slab could. */}
+          <button
+            className={`afx-start-btn ${keyInput.trim() && status !== 'saving' ? 'is-live' : ''}`}
+            onClick={handleActivate}
+            disabled={!keyInput.trim() || status === 'saving'}
+            title={status === 'saving' ? 'Checking…' : 'Start'}
+          >
+            <span className="afx-start-face">
+              <span className="afx-start-label">
+                {status === 'saving' ? '···' : 'START'}
+              </span>
+            </span>
+          </button>
         </div>
 
-        {/* The button gets its own full-width row.
-            It used to sit on the coin row, which worked in a wide terminal and
-            fell apart here: inside Mario's panel three items on one line left
-            the key field about twelve characters wide. Full width also gives
-            the press somewhere to travel, which is what makes it feel like a
-            button on a cabinet rather than a link.
-
-            It says START, not INSERT COIN — the heading above already said that
-            once, and on a real cabinet the coin goes in the slot and START is
-            the separate thing you press afterwards. Which is exactly the shape
-            of this form: the key goes in the field, then you commit it. */}
-        <button
-          className={`afx-coin-btn ${!keyInput.trim() && status !== 'saving' ? 'is-attract' : ''}`}
-          onClick={handleActivate}
-          disabled={!keyInput.trim() || status === 'saving'}
-        >
-          <span className="afx-coin-btn-label">
-            {status === 'saving' ? 'CHECKING…' : '1P  START'}
-          </span>
-        </button>
-
         {status === 'error' && <div className="afx-slot-error">{errorMsg}</div>}
+
+        {/* Below the slot, not above it.
+            As a preamble this was three lines standing between the user and the
+            one field they came here to fill. It is reassurance about where the
+            key goes — which matters, but matters *after* you have seen what is
+            being asked for, not before. */}
+        <p className="afx-slot-sub">
+          Stored on this machine. Sent only to the provider it belongs to.
+        </p>
 
         <div className="afx-slot-foot">
           <button type="button" className="afx-slot-toggle" onClick={() => setShowAdvanced((v) => !v)}>
@@ -535,7 +699,7 @@ const AiKeySetupCard = ({ forceVisible = false, context = 'diagnosis', variant =
       <div className="rca2-keysetup-note">
         {window.electronAPI
           ? 'Verified with a live call · Stored encrypted on this device · Never shared'
-          : 'Verified with a live call · Held by your local backend for this session'}
+          : 'Verified with a live call · Saved on this machine · Never shared'}
       </div>
     </div>
   );
@@ -553,16 +717,20 @@ export default AiKeySetupCard;
  * reason to think of opening a report to find it. This chip puts the state on
  * screen at all times and is the door to the card.
  */
-export const AiProviderChip = ({ onManage }) => {
+export const AiProviderChip = ({ onManage, refreshToken }) => {
   const [status, setStatus] = useState(null);
 
+  /* Re-asked whenever `refreshToken` changes, which the caller flips when the
+     settings close. Without it the chip keeps reporting whatever was true when
+     it mounted — so activating a key left it still reading "Add AI key", which
+     looks exactly like the key not having worked. */
   useEffect(() => {
     let cancelled = false;
     getAiStatus()
       .then((res) => { if (!cancelled) setStatus(res); })
       .catch(() => { /* backend unreachable — say nothing rather than guess */ });
     return () => { cancelled = true; };
-  }, []);
+  }, [refreshToken]);
 
   if (!status) return null;
 

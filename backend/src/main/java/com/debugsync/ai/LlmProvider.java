@@ -47,6 +47,27 @@ public interface LlmProvider {
     String complete(String apiKey, String model, String prompt, int maxTokens, double temperature) throws Exception;
 
     /**
+     * The same call, with a hint that latency matters more than deliberation.
+     *
+     * Reasoning models spend output tokens thinking before they write, and on a
+     * chat-style model that is most of the wall clock: Gemini 2.5 Flash was
+     * measured spending ~700 tokens reasoning before a ~120 token answer, on
+     * every request. For a hard root-cause repair that is money well spent. For
+     * "make the total red" it is the user watching a spinner for ten seconds
+     * while the model considers a one-line change.
+     *
+     * Providers that can turn that off should override this. The default
+     * ignores the hint entirely, so a provider only opts in when it has
+     * something real to do with it — nothing changes for the others.
+     *
+     * @param preferSpeed true when the caller would rather have the answer now
+     */
+    default String complete(String apiKey, String model, String prompt, int maxTokens,
+                            double temperature, boolean preferSpeed) throws Exception {
+        return complete(apiKey, model, prompt, maxTokens, temperature);
+    }
+
+    /**
      * Verify a key by making a real, minimal generation call.
      *
      * Deliberately not a call to a models-list endpoint: listing is free and
@@ -55,6 +76,18 @@ public interface LlmProvider {
      *
      * @return null when the key works, otherwise a short reason it does not
      */
+    /**
+     * A model id this key can actually use, when the built-in default cannot.
+     *
+     * Providers retire models, so {@link #defaultModel()} is a preference with
+     * an expiry date rather than a guarantee. Implementations that can enumerate
+     * what a key serves should do so here; returning null simply means no
+     * suggestion is available and the caller reports the original failure.
+     */
+    default String suggestModel(String apiKey) {
+        return null;
+    }
+
     default String testKey(String apiKey, String model) {
         try {
             // Budget is generous because reasoning models spend part of it

@@ -472,15 +472,35 @@ public class ExecutionService {
     public static class DryRunResult {
         private final String stdout;
         private final String stderr;
+        private final boolean toolchainMissing;
 
         public DryRunResult(String stdout, String stderr) {
+            this(stdout, stderr, false);
+        }
+
+        private DryRunResult(String stdout, String stderr, boolean toolchainMissing) {
             this.stdout = stdout == null ? "" : stdout;
             this.stderr = stderr == null ? "" : stderr;
+            this.toolchainMissing = toolchainMissing;
+        }
+
+        /**
+         * The compiler or interpreter could not be launched at all.
+         *
+         * Kept apart from an ordinary failure because it says nothing about the
+         * code. Without the distinction, a machine with no g++ turns every C++
+         * patch into "the fix still fails" — three attempts, three rewrites of
+         * code that was probably right the first time, and a verdict blaming
+         * the patch for a tool that was never installed.
+         */
+        public static DryRunResult toolchainMissing(String message) {
+            return new DryRunResult("", message, true);
         }
 
         public String getStdout() { return stdout; }
         public String getStderr() { return stderr; }
         public boolean hasError() { return !stderr.isBlank(); }
+        public boolean isToolchainMissing() { return toolchainMissing; }
     }
 
     /**
@@ -508,8 +528,28 @@ public class ExecutionService {
             return dryRunScript(code, "python".equals(lang));
         } catch (Exception e) {
             log.warn("Dry run failed to start: {}", e.getMessage());
-            return new DryRunResult("", "Could not run the patched code: " + e.getMessage());
+            return DryRunResult.toolchainMissing(missingToolMessage(e));
         }
+    }
+
+    /**
+     * Name the tool that is not there.
+     *
+     * The JDK phrases this as {@code Cannot run program "g++": CreateProcess
+     * error=2}, which is precise and unreadable. Pulling the program name out
+     * turns it into something the user can act on — and when the shape does not
+     * match, the original text is passed through rather than replaced by a
+     * guess.
+     */
+    private String missingToolMessage(Exception e) {
+        String raw = e.getMessage() == null ? "" : e.getMessage();
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile("Cannot run program \"([^\"]+)\"").matcher(raw);
+        if (m.find()) {
+            return m.group(1) + " isn't installed on this machine, so the patched code "
+                    + "could not be run here.";
+        }
+        return "The patched code could not be run on this machine: " + raw;
     }
 
     private DryRunResult dryRunScript(String code, boolean isPython) throws Exception {

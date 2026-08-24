@@ -26,6 +26,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import useEditorStore from '../../store/useEditorStore';
 import AutoFixPanel from '../Output/AutoFixPanel';
+import AiKeySetupCard from '../Output/AiKeySetupCard';
+import { getAiStatus } from '../../services/api';
 import { PixelSprite } from '../common/pixelArt';
 import {
   AGENT_PAL, AGENT_IDLE, AGENT_BLINK, AGENT_WALK, AGENT_JUMP,
@@ -84,6 +86,22 @@ const IDLE_LINES = [
   'Just say the word.',
 ];
 
+/* Said the moment a change lands in the file. Short and a little pleased with
+   itself — this is the payoff beat, and a payoff that reads like a status bar
+   is not a payoff. */
+const APPLIED_LINES = [
+  'Done!',
+  '1-UP!',
+  'Wahoo!',
+  'In it goes!',
+  "That's-a done.",
+];
+
+/* An undo offer has to outlast a normal line: it is the only way back, and a
+   confirmation that vanishes before you have finished reading it is worse than
+   no confirmation at all. */
+const UNDO_MS = 7000;
+
 const defaultPos = () => ({
   x: Math.max(MARGIN, window.innerWidth - CHAR_W - 44),
   y: Math.max(MARGIN, window.innerHeight - 240),
@@ -125,6 +143,7 @@ const MarioCompanion = () => {
   const autoFixState = useEditorStore((s) => s.autoFixState);
   const requestAutoFix = useEditorStore((s) => s.requestAutoFix);
   const clearAutoFix = useEditorStore((s) => s.clearAutoFix);
+  const undoAutoFix = useEditorStore((s) => s.undoAutoFix);
   const activePath = useEditorStore((s) => s.activePath);
 
   /* The terminal is ground he has to stand on top of, so its geometry is part
@@ -151,29 +170,59 @@ const MarioCompanion = () => {
   const [blinking, setBlinking] = useState(false);
   const [bubble, setBubble] = useState(null);   // { text, id }
 
+  /* ── Whose brain he is borrowing ──
+   *
+   * The provider belongs here rather than in a toolbar. Mario IS the agent, so
+   * "which model is answering" is a fact about him, and the moment anyone wants
+   * to change it — a key expired, the credit ran out, a different model for a
+   * different job — is a moment they are already talking to him.
+   *
+   * Re-asked whenever the panel closes, so removing or replacing a key updates
+   * the tag instead of leaving it advertising the provider that just left. */
+  const [aiStatus, setAiStatus] = useState(null);
+  const [keyPanel, setKeyPanel] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAiStatus()
+      .then((res) => { if (!cancelled) setAiStatus(res); })
+      .catch(() => { /* backend unreachable — the tag just stays quiet */ });
+    return () => { cancelled = true; };
+  }, [keyPanel]);
+
   const grab = useRef({ x: 0, y: 0 });
   const inputRef = useRef(null);
   const lastLine = useRef('');
   const bubbleTimer = useRef(null);
 
   const busy = autoFixState === 'working';
-  const hasResult = Boolean(autoFix);
+  /* An applied change is not a result to review any more — the panel closes and
+     the bubble takes over. `autoFix` itself is kept, because the undo offer in
+     that bubble needs the previous contents it is holding. */
+  const hasResult = Boolean(autoFix) && !autoFix.applied;
 
   /* Open when there is a reason to be. Hover starts it; everything else here is
      a reason not to take it away again while the user is mid-thought. */
-  const open = !dragging && (hovered || focused || busy || hasResult || text.length > 0);
+  /* `keyPanel` counts: the settings are anchored to the bar, so letting the bar
+     retract on mouse-out would leave a card floating with nothing holding it. */
+  const open = !dragging && (hovered || focused || busy || hasResult || keyPanel || text.length > 0);
 
   /* The bar precedes nothing in flow — it is anchored to him — but it still has
      to grow into the screen rather than off it. */
   const openRight = pos.x < window.innerWidth / 2;
 
-  /* ── Speaking ── */
-  const say = useCallback((line) => {
+  /* ── Speaking ──
+     `undo` turns the bubble into the one place a just-applied change can be
+     taken back from, so it is held on screen noticeably longer. */
+  const say = useCallback((line, opts = {}) => {
     if (!line) return;
     clearTimeout(bubbleTimer.current);
     lastLine.current = line;
-    setBubble({ text: line, id: Date.now() });
-    bubbleTimer.current = setTimeout(() => setBubble(null), SAY_MS);
+    setBubble({ text: line, id: Date.now(), undo: Boolean(opts.undo) });
+    bubbleTimer.current = setTimeout(
+      () => setBubble(null),
+      opts.undo ? UNDO_MS : SAY_MS,
+    );
   }, []);
 
   const hop = useCallback(() => {
@@ -266,13 +315,32 @@ const MarioCompanion = () => {
      changes when a fix is applied — reacting to that would have him celebrating
      twice for one result. */
   const verdict = autoFix?.status;
+  const applied = Boolean(autoFix?.applied);
+
   useEffect(() => {
-    if (!verdict) return;
+    // Once applied, the verdict is history — the applied line below owns the
+    // moment, and announcing both would talk over the confirmation.
+    if (!verdict || applied) return;
     if (verdict === 'VERIFIED') { say('Course clear!'); hop(); }
     else if (verdict === 'NO_AI_KEY') say('Insert coin…');
     else if (verdict === 'UNVERIFIED') say('Have a look first.');
+    /* A refusal is not a failure, and "Mamma mia!" would announce it as one —
+       the same alarm he uses for code that will not run, for a request he
+       simply does not take. Wrong pipe, not a lost life. */
+    else if (verdict === 'OUT_OF_SCOPE') say('Wrong pipe!');
     else say('Mamma mia!');
-  }, [verdict, say, hop]);
+  }, [verdict, applied, say, hop]);
+
+  /* ── The change landed ──
+     The whole confirmation, in one line and one hop. What used to be a panel
+     here — banner, summary, Run it, Undo, and the diff all over again —
+     described a decision the user had just finished making. */
+  useEffect(() => {
+    if (!applied) return;
+    const choices = APPLIED_LINES.filter((l) => l !== lastLine.current);
+    say(choices[Math.floor(Math.random() * choices.length)], { undo: true });
+    hop();
+  }, [applied, say, hop]);
 
   // Focus the field as it opens, so hovering and typing is one motion.
   useEffect(() => {
@@ -303,9 +371,18 @@ const MarioCompanion = () => {
     if (!dragging) return;
     setDragging(false);
     e.currentTarget.releasePointerCapture?.(e.pointerId);
-    // Persist once, at the end — not on every pointermove.
-    setPos((p) => { setMarioPos(p); return p; });
-  }, [dragging, setMarioPos]);
+    /* Persist once, at the end — not on every pointermove.
+     *
+     * `pos` directly, not `setPos((p) => { setMarioPos(p); return p; })`. That
+     * older form was reading the latest position by smuggling the write into a
+     * state updater, and React runs updaters during the RENDER phase — so
+     * persisting to the store from inside one updated a component mid-render
+     * and produced "Cannot update a component while rendering a different
+     * component" on every drop. Listing `pos` in the deps gets the same value
+     * honestly: the last pointermove has already committed by the time a
+     * pointerup can fire, so the closure is current. */
+    setMarioPos(pos);
+  }, [dragging, pos, setMarioPos]);
 
   if (!marioOpen) return null;
 
@@ -345,14 +422,27 @@ const MarioCompanion = () => {
       {/* ── The proposal ──
           Above him: a diff needs width and height a command line does not, and
           growing upward keeps him on the spot the user parked him. */}
-      {hasResult && (
+      {/* One panel, two things it can hold: a proposal, or the provider
+          settings. They never need to be on screen together and a second
+          floating card anchored to the same character would be one card too
+          many — so the settings open in the frame the diff already uses, and
+          closing them drops straight back to whatever was underneath. */}
+      {(hasResult || keyPanel) && (
         <div className="mario-result">
           <div className="mario-result-head">
-            <span>{autoFix?.targetPath || scope}</span>
-            <button onClick={clearAutoFix} title="Dismiss">✕</button>
+            <span>{keyPanel ? 'AI provider' : (autoFix?.targetPath || scope)}</span>
+            <button
+              onClick={() => (keyPanel ? setKeyPanel(false) : clearAutoFix())}
+              title="Dismiss"
+            >
+              ✕
+            </button>
           </div>
-          <div className="mario-result-body">
-            <AutoFixPanel />
+          <div className={`mario-result-body ${keyPanel ? 'is-settings' : ''}`}>
+            {/* No forceVisible: the card works out for itself whether to show
+                "here is your provider, replace or remove it" or the form to
+                paste a key into, which is exactly the split this needs. */}
+            {keyPanel ? <AiKeySetupCard context="autofix" variant="compact" /> : <AutoFixPanel />}
           </div>
         </div>
       )}
@@ -360,9 +450,23 @@ const MarioCompanion = () => {
       {/* ── Speech ──
           Keyed by id so a new line re-triggers the pop animation instead of
           silently swapping the text inside a bubble that is already open. */}
-      {bubble && !hasResult && (
-        <div className="mario-bubble" key={bubble.id}>
+      {bubble && !hasResult && !keyPanel && (
+        <div className={`mario-bubble${bubble.undo ? ' has-undo' : ''}`} key={bubble.id}>
           <span>{bubble.text}</span>
+          {/* The way back, in the same breath as the confirmation. Undo used to
+              be a button on a panel that no longer exists, so it lives here —
+              which is also where the user is already looking. */}
+          {bubble.undo && (
+            <button
+              className="mario-bubble-undo"
+              onClick={() => {
+                const res = undoAutoFix();
+                say(res?.ok ? 'Put it back.' : (res?.reason || 'Too late for that.'));
+              }}
+            >
+              ↩ undo
+            </button>
+          )}
           <i className="mario-bubble-tail" />
         </div>
       )}
@@ -377,6 +481,23 @@ const MarioCompanion = () => {
             </span>
           ) : (
             <>
+              {/* Small, and at the quiet end of the bar. It answers a question
+                  people only occasionally ask — "who is answering me?" — so it
+                  states it in as few characters as possible and gets out of the
+                  way of the field, which is what the bar is for. */}
+              <button
+                className={`mario-provider ${aiStatus?.configured ? 'is-live' : ''}`}
+                onClick={() => setKeyPanel(true)}
+                title={aiStatus?.configured
+                  ? `${aiStatus.providerName || 'AI'}${aiStatus.model ? ` · ${aiStatus.model}` : ''} — click to change or remove the key`
+                  : 'No AI key yet — click to add one'}
+              >
+                <span className="mario-provider-dot" />
+                <span className="mario-provider-name">
+                  {aiStatus?.configured ? (aiStatus.providerName || 'AI') : 'no key'}
+                </span>
+              </button>
+
               <input
                 ref={inputRef}
                 className="mario-input"

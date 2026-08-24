@@ -109,6 +109,29 @@ public class AiConfigController {
         }
 
         String error = aiAnalysisService.testConfig(key, provider, model, baseUrl);
+
+        /* The key may be perfectly good and only our default model retired.
+         *
+         * Only when the user named no model of their own: if they typed one and
+         * it does not exist, that is theirs to correct and silently substituting
+         * a different model would be worse than the error. Blank means they
+         * expressed no preference, so picking a live one is doing what they
+         * asked rather than overriding them.
+         *
+         * The retry is a real verification call, exactly like the first, so a
+         * suggestion that also fails is reported as the original failure — the
+         * user never hears about a model that did not work either. */
+        if (error != null && model.isEmpty()) {
+            String suggested = aiAnalysisService.suggestModel(key, provider, baseUrl);
+            if (suggested != null && !suggested.isBlank()) {
+                String retryError = aiAnalysisService.testConfig(key, provider, suggested, baseUrl);
+                if (retryError == null) {
+                    model = suggested;
+                    error = null;
+                }
+            }
+        }
+
         if (error != null) {
             return ResponseEntity.ok(Map.of("success", false, "error", error));
         }

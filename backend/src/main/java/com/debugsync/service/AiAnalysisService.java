@@ -38,6 +38,7 @@ public class AiAnalysisService {
     private static final Logger log = LoggerFactory.getLogger(AiAnalysisService.class);
 
     private final ProviderRegistry registry;
+    private final AiConfigStore configStore;
 
     /* All three are volatile and settable at runtime — see updateConfig(). The
      * @Value defaults only seed the initial state from env or application.yml. */
@@ -54,8 +55,47 @@ public class AiAnalysisService {
     @Value("${AI_BASE_URL:${debugsync.ai.base-url:}}")
     private volatile String baseUrl;
 
-    public AiAnalysisService(ProviderRegistry registry) {
+    public AiAnalysisService(ProviderRegistry registry, AiConfigStore configStore) {
         this.registry = registry;
+        this.configStore = configStore;
+    }
+
+    /**
+     * Pick up a key the user activated on a previous run.
+     *
+     * Only when nothing else has supplied one. AI_API_KEY (or a value in
+     * application.yml) is an explicit instruction from whoever started the
+     * process — including the desktop app, which passes the keychain copy that
+     * way — and a file on disk must not quietly overrule it.
+     *
+     * @PostConstruct rather than the constructor: the @Value fields above are
+     * injected after construction, so a constructor could only ever see them
+     * null and would restore over a perfectly good env key every time.
+     */
+    @jakarta.annotation.PostConstruct
+    void restoreSavedConfig() {
+        if (isConfigured()) {
+            log.info("AI provider supplied by the environment — the saved settings are left alone");
+            return;
+        }
+
+        AiConfigStore.Saved saved = configStore.load();
+        if (saved == null) return;
+
+        this.apiKey = saved.key;
+        this.providerId = (saved.provider == null || saved.provider.isBlank())
+                ? providerIdFor(saved.key)
+                : saved.provider;
+        this.model = saved.model;
+        this.baseUrl = saved.baseUrl;
+
+        /* Deliberately not verified here. Startup is the worst possible moment
+         * to spend a network round trip on a provider that is probably fine,
+         * and a key that HAS expired reports itself clearly on the first real
+         * request. Verification belongs where the user is watching: the moment
+         * they paste it. */
+        log.info("AI provider restored from saved settings: {} (model={})",
+                this.providerId, (model == null || model.isBlank()) ? "default" : model);
     }
 
     /* ─────────────────────────────────────────────────────────
@@ -78,6 +118,10 @@ public class AiAnalysisService {
                 : provider;
         this.model = model;
         this.baseUrl = baseUrl;
+        // Written now rather than on shutdown: the app is killed far more often
+        // than it is closed cleanly, and a setting that only survives a polite
+        // exit is one the user will be re-entering regularly.
+        configStore.save(key, this.providerId, model, baseUrl);
         log.info("AI provider set to {} (model={})", this.providerId, (model == null || model.isBlank()) ? "default" : model);
     }
 
@@ -92,6 +136,10 @@ public class AiAnalysisService {
         this.providerId = "";
         this.model = "";
         this.baseUrl = "";
+        // Including the copy on disk. Clearing only the running service would
+        // look like it worked right up until the next launch restored the key
+        // the user had just asked to be rid of.
+        configStore.clear();
         log.info("AI credentials cleared");
     }
 
@@ -131,6 +179,23 @@ public class AiAnalysisService {
         }
     }
 
+    /**
+     * A model this key can use, asked of the provider itself.
+     *
+     * Used when our built-in default has been retired, so a good key is not
+     * rejected over a model id the user never chose.
+     *
+     * @return a usable model id, or null when the provider cannot say
+     */
+    public String suggestModel(String key, String provider, String baseUrl) {
+        try {
+            LlmProvider p = registry.resolve(provider, key, baseUrl);
+            return p.suggestModel(key);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /* ─────────────────────────────────────────────────────────
      * The one call everything else goes through
      * ───────────────────────────────────────────────────────── */
@@ -141,9 +206,21 @@ public class AiAnalysisService {
      * @return the reply, or null when the model returned nothing usable
      */
     public String complete(String prompt, int maxTokens, double temperature) throws Exception {
+        return complete(prompt, maxTokens, temperature, false);
+    }
+
+    /**
+     * The same call, for work where waiting costs more than deliberation does.
+     *
+     * See {@link LlmProvider#complete(String, String, String, int, double, boolean)}
+     * — providers that cannot act on the hint ignore it, so passing true is
+     * never worse than not passing it.
+     */
+    public String complete(String prompt, int maxTokens, double temperature, boolean preferSpeed)
+            throws Exception {
         if (!isConfigured()) throw new IllegalStateException("No AI provider is configured.");
         LlmProvider provider = registry.resolve(providerId, apiKey, baseUrl);
-        return provider.complete(apiKey, model, prompt, maxTokens, temperature);
+        return provider.complete(apiKey, model, prompt, maxTokens, temperature, preferSpeed);
     }
 
     /**
